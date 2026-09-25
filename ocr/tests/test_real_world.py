@@ -99,6 +99,52 @@ class TestValueFormats(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------
+# OCR boxes that swallow several columns
+# --------------------------------------------------------------------------
+def tests_from_boxes(*rows: list[tuple[str, float, float]]) -> list:
+    """Structure OCR detection boxes; each row is [(text, x0, x1), ...]."""
+    items = [
+        {"text": text, "bbox": [x0, 100 + i * 50, x1, 130 + i * 50], "confidence": 0.99}
+        for i, row in enumerate(rows) for text, x0, x1 in row
+    ]
+    tokens, layout, _ = dp._tokens_from_ocr({"pages": [{"page_number": 1, "items": items}]})
+    doc = structure_document(tokens, **layout)
+    return [t for s in doc["sections"] for t in s["tests"]]
+
+
+class TestMergedOcrBoxes(unittest.TestCase):
+    """Real PaddleOCR output for a report with tight column spacing."""
+
+    def test_a_whole_row_in_one_box(self):
+        tests = tests_from_boxes([("Test Analyte 5 5.5 mg/dL 1.0 - 9.0", 133, 714)])
+        self.assertEqual(tests, [{"name": "Test Analyte 5", "value": "5.5", "unit": "mg/dL",
+                                  "reference": "1.0 - 9.0", "flag": None}])
+
+    def test_name_value_and_unit_in_one_box_with_the_range_apart(self):
+        tests = tests_from_boxes([("Hemoglobin 11.2 L g/dL", 134, 568), ("12.0 - 15.5", 581, 713)])
+        self.assertEqual(tests, [{"name": "Hemoglobin", "value": "11.2", "unit": "g/dL",
+                                  "reference": "12.0 - 15.5", "flag": "L"}])
+
+    def test_value_glued_to_its_unit(self):
+        tests = tests_from_boxes([("Glucose Fasting", 136, 348), ("92mg/dL", 428, 574), ("70 - 100", 576, 713)])
+        self.assertEqual(tests, [{"name": "Glucose Fasting", "value": "92", "unit": "mg/dL",
+                                  "reference": "70 - 100", "flag": None}])
+
+    def test_header_lines_are_not_read_as_tests(self):
+        for text in ("Age 31 Years", "Page 1 of 2", "Report generated on 12/10/2025",
+                     "Collected: 12/10/2025 10:30"):
+            with self.subTest(text=text):
+                self.assertEqual(tests_from_boxes([(text, 100, 700)]), [])
+
+    def test_merged_rows_are_only_read_this_way_for_ocr_text(self):
+        # A PDF text layer splits columns by geometry; prose in it that happens
+        # to end in a range must stay prose.
+        tokens = line_tokens("Values above 5.7 - 6.4 indicate prediabetes", page=0, top=100)
+        doc = structure_document(tokens)
+        self.assertEqual([t for s in doc["sections"] for t in s["tests"]], [])
+
+
+# --------------------------------------------------------------------------
 # Notes / comments blocks
 # --------------------------------------------------------------------------
 class TestNotesBlocks(unittest.TestCase):

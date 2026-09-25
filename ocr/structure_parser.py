@@ -204,12 +204,103 @@ def split_value_flag(s: str) -> tuple[str, str | None] | None:
     return match.group("num").strip(), flag
 
 
+#: A value with its unit glued on, as OCR reads a tight column: "1.5mg/dL".
+_VALUE_UNIT_RE = re.compile(r"^(?P<num>[<>≤≥]?\s*[-+]?" + _NUM + r")\s*(?P<unit>[A-Za-z%µμ/][^\s]*)$")
+
+
+def split_value_unit(s: str) -> tuple[str, str] | None:
+    """("1.5", "mg/dL") for "1.5mg/dL" or "1.5 mg/dL"; None otherwise."""
+    match = _VALUE_UNIT_RE.match(s.strip())
+    if not match or not looks_like_lab_unit(match.group("unit")):
+        return None
+    return match.group("num").strip(), match.group("unit")
+
+
+#: Units short enough to be mistaken for words, accepted on their own; any
+#: other unit must carry "/" or "%" ("mg/dL", "x10^3/uL", "%").
+_BARE_LAB_UNITS = {"fl", "pg", "g", "mg", "ng", "iu", "u", "sec", "secs", "seconds", "ratio", "mmhg"}
+
+
+def looks_like_lab_unit(s: str) -> bool:
+    s = s.strip()
+    # A letter or "%" is required: "/10/2025" is the tail of a date, not a unit.
+    if not looks_like_unit(s) or not re.search(r"[A-Za-z%µμ]", s):
+        return False
+    return "/" in s or "%" in s or s.lower() in _BARE_LAB_UNITS
+
+
 def looks_like_qualitative(s: str) -> bool:
     return " ".join(s.lower().split()) in _QUALITATIVE_VALUES
 
 
 def looks_like_value(s: str) -> bool:
-    return split_value_flag(s) is not None or looks_like_qualitative(s)
+    return (
+        split_value_flag(s) is not None
+        or looks_like_qualitative(s)
+        or split_value_unit(s) is not None
+    )
+
+
+_TRAILING_REF_RE = re.compile(
+    r"\s+(?P<ref>[<>≤≥]\s*" + _NUM + r"|" + _NUM + r"\s*[-–]\s*" + _NUM + r")$"
+)
+
+
+def parse_inline_test_row(text: str) -> dict | None:
+    """Read a test row that OCR returned as one run of text.
+
+    PaddleOCR merges neighbouring columns into one box when the gap between
+    them is small - "Hemoglobin 11.2 L g/dL 12.0 - 15.5" arrives as a single
+    phrase, so there are no field gaps to split on. The row is read from the
+    right, where the shape is fixed: [reference] [unit] [flag] value, and
+    whatever precedes the value is the name.
+
+    Only accepted with a lab unit or a reference range present, so header
+    lines such as "Age 31 Years" or "Page 1 of 2" are not taken as tests.
+    """
+    text = " ".join(text.split())
+    if ":" in text:
+        return None
+
+    reference = None
+    match = _TRAILING_REF_RE.search(text)
+    if match:
+        reference = match.group("ref")
+        text = text[: match.start()]
+
+    words = text.split(" ")
+    unit = None
+    # Glued "92mg/dL" first: it would also pass as a bare unit ("10^3/uL"
+    # legitimately starts with digits), leaving no value behind it.
+    if len(words) >= 2 and split_value_unit(words[-1]):
+        value, unit = split_value_unit(words.pop())
+        words.append(value)
+    elif len(words) >= 3 and looks_like_lab_unit(words[-1]):
+        unit = words.pop()
+
+    flag = None
+    if len(words) >= 3 and is_flag(words[-1]):
+        flag = words.pop()
+
+    if len(words) < 2:
+        return None
+    split = split_value_flag(words[-1])
+    if split is None:
+        return None
+    value, glued_flag = split
+    flag = flag or glued_flag
+    name = " ".join(words[:-1])
+
+    if unit is None and reference is None:
+        return None
+    if not re.search(r"[A-Za-z]", name) or re.search(r"[-–]$", name):
+        return None
+    return {"name": name, "value": value, "unit": unit, "reference": reference, "flag": flag}
+
+
+def _is_ocr_line(line: Line) -> bool:
+    """True when every token came from PaddleOCR rather than a PDF text layer."""
+    return all(str(getattr(t, "source", "")) == "paddleocr" for t in line.tokens)
 
 
 #: A serial-number cell ("1", "12", "3.") in front of the test name.
@@ -353,11 +444,13 @@ def parse_test_row(fields: list[Field]) -> dict | None:
     name = fields[0].text
     value = fields[1].text.strip()
     flag = None
+    unit = None
+    reference = None
     split = split_value_flag(value)
     if split is not None:
         value, flag = split
-    unit = None
-    reference = None
+    elif split_value_unit(value) is not None:
+        value, unit = split_value_unit(value)
 
     for f in fields[2:]:
         text = f.text.strip()
@@ -427,6 +520,14 @@ def normalize_key(key: str) -> str:
 # ------------------------------------------------------------------
 # Top-level
 # ------------------------------------------------------------------
+def _parse_row(line: Line, fields: list[Field]) -> dict | None:
+    """A test row from the line's fields, or from its text if OCR merged them."""
+    test = parse_test_row(fields)
+    if test is None and _is_ocr_line(line):
+        test = parse_inline_test_row(line.text)
+    return test
+
+
 def structure_document(
     tokens: Sequence,
     y_tol: float = 3.0,
@@ -473,7 +574,7 @@ def structure_document(
 
             if mode in ("notes", "comments"):
                 # A test row means the note ended and the table resumed.
-                if parse_test_row(split_fields(line, x_gap=x_gap)) is not None:
+                if _parse_row(line, split_fields(line, x_gap=x_gap)) is not None:
                     mode = "body"
                 else:
                     (notes if mode == "notes" else comments).append(text)
@@ -486,7 +587,7 @@ def structure_document(
             if not fields:
                 continue
 
-            test = parse_test_row(fields)
+            test = _parse_row(line, fields)
             if test:
                 if current_section is None:
                     current_section = {"title": None, "method": None, "tests": []}
