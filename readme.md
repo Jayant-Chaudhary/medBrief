@@ -1,259 +1,128 @@
-# MedBrief — Maternal Health Platform
+# Health-On (Maternal Health Platform)
 
-MedBrief connects pregnant patients and their clinician around every appointment. Patients complete a pre-visit check-in (symptoms, vitals, a red-flag questionnaire) and upload lab reports; the platform reads those reports with OCR, standardizes the values, and shows the clinician a ready-to-use brief with trends and a triage queue. After the visit, the clinician records notes, prescriptions and action items that the patient can follow.
+Welcome to **Health-On** (also internally referred to as MedBrief), a comprehensive platform designed for maternal health clinics. The platform streamlines patient onboarding, appointment tracking, vitals logging, pre-visit questionnaires, and automates the digitization of physical lab reports using an Optical Character Recognition (OCR) pipeline.
 
-> MVP scope: a single doctor / single clinic. `clinician_id` is an explicit foreign key everywhere, so adding more clinicians later is a data change, not a schema change.
+This project is structured as a monorepo containing the frontend client, backend server, a dedicated Python-based OCR microservice, and database configurations.
 
-## Table of contents
+## Architecture & Tech Stack
 
-- [Features](#features)
-- [Architecture](#architecture)
-- [Repository layout](#repository-layout)
-- [Tech stack](#tech-stack)
-- [Prerequisites](#prerequisites)
-- [Getting started](#getting-started)
-- [Configuration](#configuration)
-- [API overview](#api-overview)
-- [OCR pipeline](#ocr-pipeline)
-- [Database](#database)
-- [Testing](#testing)
-- [Deployment](#deployment)
-- [Further documentation](#further-documentation)
+The application follows a modern full-stack architecture:
 
-## Features
+- **Client (Frontend)**
+  - **Framework**: React 18 with Vite
+  - **Styling**: Tailwind CSS & Lucide React for icons
+  - **Routing**: React Router DOM
+  - **Integration**: `@supabase/supabase-js` for authentication and real-time updates
 
-**Patients**
-- Sign up, onboarding, and joining via a clinician's emailed invite link
-- Pre-visit check-in: symptoms, vitals logging, and a yes/no red-flag questionnaire with autosave
-- Pre-visit checklist generated per appointment (static rules, with rules that trigger on OCR failure or missing reports)
-- Upload lab reports (PDF, PNG, JPG), preview OCR results, and choose which appointments each report is shared with
-- Post-visit summary with action items and prescriptions
-- Light / dark theme
+- **Server (Backend)**
+  - **Framework**: Node.js & Express.js
+  - **Validation**: Zod
+  - **Testing**: Jest & Supertest
+  - **Features**: Handles business logic, triggers standardization of OCR results, and sends appointment invites (via Nodemailer)
 
-**Clinicians**
-- Onboarding and verification flow (with a demo self-verify switch for development)
-- Dashboard, schedule, patient list and new-appointment creation with email invites
-- Patient history grid and metric trend charts across visits
-- Triage queue that flags abnormal or low-confidence lab values
-- Reusable questionnaire and checklist templates
-- Consultation notes, prescription upload, post-visit action items
-- *Lab Inbox* and *Analytics* pages are placeholders ("Coming soon")
+- **OCR Service (PaddleOCRFastAPI)**
+  - **Framework**: FastAPI (Python)
+  - **Engine**: PaddleOCR for extracting text from physical medical reports
+  - **Containerization**: Docker support included
 
-**Lab report intelligence**
-- Digital PDFs are parsed directly; scans and photos fall back to PaddleOCR
-- Extracted metrics are matched to a metric dictionary and unit-converted to a standard form
-- Low-confidence or unparseable values are marked `needs_review` instead of being trusted blindly
+- **Database (Supabase / Postgres)**
+  - **Type**: Relational PostgreSQL via Supabase
+  - **Storage**: Supabase Storage for lab reports and prescriptions
+  - **Schema**: Encompasses patient profiles, appointments, vitals, lab report metrics, and checklists.
 
-## Architecture
+## Repository Structure
 
-```
-                    ┌────────────────────┐
-                    │  React client       │  Vite + Tailwind (port 5173)
-                    └─────────┬──────────┘
-                              │ REST (JWT from Supabase Auth)
-                    ┌─────────▼──────────┐        ┌─────────────────────────┐
-                    │  Express API        │──────► │ Supabase                │
-                    │  (port 4000)        │        │ Postgres + Auth +       │
-                    └─────────┬──────────┘        │ Storage (RLS policies)  │
-                              │ multipart          └─────────────────────────┘
-                    ┌─────────▼──────────┐
-                    │ PaddleOCRFastAPI    │  POST /document/process (port 8000)
-                    │  └─ ocr/ pipeline   │  pdfplumber → PaddleOCR fallback
-                    └────────────────────┘
+```text
+health-on-project/
+├── client/                 # React frontend application
+├── server/                 # Node.js Express backend API
+├── PaddleOCRFastAPI/       # FastAPI service for document OCR
+├── supabase/               # Database migrations and seed data
+├── docs/                   # Architecture and deployment documentation
+├── ocr/                    # Additional OCR related scripts/tools
+└── readme.md               # This README file
 ```
 
-Upload flow: `POST /api/lab-reports/upload` → file stored in Supabase Storage → OCR service extracts → metrics standardized → `lab_reports` and `lab_report_metrics` saved. If OCR is down the report is still saved with `ocr_status = failed` so it can be reviewed by hand.
+## Features (MVP)
 
-## Repository layout
+1. **Role-Based Access**: Specialized views for `patient` and `clinician`.
+2. **Appointment Management**: Clinicians can schedule appointments and send magic-link invites to patients.
+3. **Pre-Visit Workflows**: Patients can fill out Yes/No questionnaires that highlight red flags for clinicians.
+4. **Automated Lab Report Processing**:
+   - Patients upload physical lab reports (e.g., blood work).
+   - The OCR microservice parses the text.
+   - The backend maps raw OCR text (e.g., "HGB") to standard medical dictionary keys ("hemoglobin") and converts units.
+   - Low-confidence parses are flagged for manual clinical review ("AI Triage Alerts").
+5. **Vitals Tracking**: Continuous timeline of patient vitals across appointments.
+6. **Post-Visit Summaries**: Prescriptions, consultation notes, and action-item checklists.
 
-```
-.
-├── client/              React + Tailwind frontend (pages, components, services, hooks)
-├── server/              Node.js / Express API
-│   ├── src/controllers  Request handlers
-│   ├── src/routes       Route definitions per resource
-│   ├── src/services     Business logic (triage, checklist, OCR, standardization, invites, storage)
-│   ├── src/middleware   authGuard, roleGuard, validateBody (zod), upload, logging, errors
-│   ├── src/tests        Jest + supertest suites
-│   └── scripts          verifyClinician, restandardizeMetrics, ocrSmoke
-├── ocr/                 Python extraction pipeline (digital + OCR engines, structure parser)
-├── PaddleOCRFastAPI/    FastAPI service that hosts the OCR pipeline (vendored from neozhu/PaddleOCRFastAPI)
-├── supabase/            config.toml, SQL migrations, seed data
-└── docs/                Architecture and schema notes
-```
+## Getting Started
 
-## Tech stack
+### Prerequisites
 
-| Layer | Technology |
-| --- | --- |
-| Frontend | React 18, React Router 7, Vite 5, Tailwind CSS 3, lucide-react, date-fns |
-| Backend | Node.js, Express 4, zod, multer, nodemailer, axios |
-| Database / Auth / Storage | Supabase (Postgres, Row Level Security, buckets `lab-reports` and `prescriptions`) |
-| OCR | Python, FastAPI, PaddleOCR / PaddleX, pdfplumber, PyMuPDF |
-| Testing | Jest, supertest, Python `unittest` |
-| Hosting | Vercel (client, see `client/vercel.json`), Docker for the OCR service |
+- Node.js (v20+)
+- Python (3.9+)
+- Docker (optional, for OCR microservice)
+- A Supabase Project
 
-## Prerequisites
+### 1. Client Setup
 
-- Node.js 18+ and npm
-- A Supabase project, or the [Supabase CLI](https://supabase.com/docs/guides/cli) + Docker for a local stack
-- Python 3.9+ (3.12 recommended) or Docker, for the OCR service
-- An SMTP account for invite emails (optional in development)
-
-## Getting started
-
-### 1. Clone and install
+Navigate to the client directory and install dependencies:
 
 ```bash
-git clone https://github.com/jayant-chaudhary/health-on-project.git
-cd health-on-project
-
-npm --prefix server install
-npm --prefix client install
+cd client
+npm install
 ```
 
-### 2. Set up the database
-
-Using the Supabase CLI (local stack, API on `54321`, DB on `54322`):
+Start the development server:
 
 ```bash
-supabase start
-supabase db reset        # applies supabase/migrations/* then supabase/seed/seed.sql
+npm run dev
 ```
 
-For a hosted project, link it and push the migrations with `supabase db push`, then run `supabase/seed/seed.sql`. Copy the project URL, anon key and service-role key for the next step.
+### 2. Server Setup
 
-### 3. Configure environment variables
+Navigate to the server directory and install dependencies:
 
 ```bash
-cp server/.env.example server/.env
-cp client/.env.example client/.env
+cd server
+npm install
 ```
 
-Fill in the Supabase values — see [Configuration](#configuration).
+Create a `.env` file in the `server` directory based on required environment variables (e.g., Supabase keys, DB connection strings, SMTP credentials).
 
-### 4. Start the OCR service
+Start the backend in development mode:
+
+```bash
+npm run dev
+```
+
+### 3. OCR Microservice Setup
+
+Navigate to the `PaddleOCRFastAPI` directory. It is highly recommended to use a virtual environment:
 
 ```bash
 cd PaddleOCRFastAPI
-python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
+python -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-uvicorn main:app --port 8000
 ```
 
-Or with Docker: `docker compose up --build` from `PaddleOCRFastAPI/`.
-
-`GET http://localhost:8000/health` reports `ocr_models: pending` while models load/download on first run, then `ready`. Digital PDFs are served before that.
-
-### 5. Start the API and the client
+Run the FastAPI application:
 
 ```bash
-npm --prefix server run dev      # http://localhost:4000  (health: /health)
-npm --prefix client run dev      # http://localhost:5173
+uvicorn main:app --reload
 ```
+Alternatively, you can use the provided `docker-compose.yml` to spin up the OCR service via Docker.
 
-The app works without the OCR service running; uploads will simply be saved as `failed` for manual review.
+### 4. Database Setup
 
-## Configuration
+Ensure you have the Supabase CLI installed, or use the Supabase web dashboard to run the SQL definitions located in `docs/folderstructure` (or in the `supabase/migrations` folder) to initialize your tables, enums, and Row Level Security (RLS) policies.
 
-### `server/.env`
+## Documentation
 
-| Variable | Purpose |
-| --- | --- |
-| `PORT` | API port (default `4000`) |
-| `NODE_ENV` | `development` / `production` / `test` |
-| `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Supabase connection; the service-role key stays server-side only |
-| `CLIENT_APP_URL` | Frontend origin, used for CORS and invite links |
-| `OCR_SERVICE_URL` | Base URL of the OCR service (default `http://localhost:8000`) |
-| `OCR_TIMEOUT_MS` | How long an upload waits for extraction (default `180000`) |
-| `OCR_CONFIDENCE_REVIEW_THRESHOLD` | Metrics below this confidence go to review (default `0.85`) |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Invite email delivery |
-| `INVITE_TOKEN_TTL_HOURS` | Invite link lifetime (default `72`) |
-| `LOG_LEVEL`, `LOG_FORMAT` | `debug\|info\|warn\|error\|silent`; `pretty` or `json` |
-| `DEMO_SELF_VERIFY` | Lets clinicians verify themselves. **Set to `false` for real use** |
+For a deep dive into the database schema, table structures, and detailed folder mapping, please refer to [docs/folderstructure](./docs/folderstructure). deployment instructions can be found in `docs/deploy-railway.md`.
 
-### `client/.env`
+## License
 
-| Variable | Purpose |
-| --- | --- |
-| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Supabase project (anon key only) |
-| `VITE_API_BASE_URL` | Express API URL (default `http://localhost:4000`) |
-| `VITE_DEBUG_API` | Log every API call to the browser console |
-
-OCR service tuning variables (`OCR_DET_MODEL`, `OCR_DEVICE`, `OCR_MAX_UPLOAD_BYTES`, …) are documented in [`server/OCR_INTEGRATION.md`](server/OCR_INTEGRATION.md).
-
-## API overview
-
-All routes are under `/api` and require a Supabase JWT unless noted. Role restrictions are enforced by `roleGuard`. `GET /health` is unauthenticated.
-
-| Prefix | Purpose |
-| --- | --- |
-| `/api/auth` | signup, login, logout, `me`, invite lookup and acceptance |
-| `/api/profile` | read/update profile, clinician demo-verify |
-| `/api/patients` | patient list (clinician) |
-| `/api/appointments` | create (clinician), list, get, update status |
-| `/api/vitals` | log (patient) and list vitals |
-| `/api/questionnaire` | templates (clinician), patient responses, responses per appointment |
-| `/api/templates` | reusable clinician checklist/questionnaire templates |
-| `/api/checklist` | per-appointment pre-visit checklist and item toggling |
-| `/api/lab-reports` | upload, list, history, metric trends, triage queue, share/unshare with appointments, delete |
-| `/api/post-visit` | visit summary, consultation notes, prescriptions, action items |
-| `/api/ocr` | `GET /health` (no auth), `POST /recognize` (raw text lines for an image) |
-
-See `server/src/routes/` for the exact endpoints and request schemas.
-
-## OCR pipeline
-
-Located in `ocr/` and served by `PaddleOCRFastAPI/` at `POST /document/process`.
-
-- **Images** (png/jpg/jpeg) go straight to PaddleOCR.
-- **PDFs** are first read by the digital engine (pdfplumber + PyMuPDF); if the result is scanned, garbled, empty or yields no test rows, PaddleOCR is used and the better reading wins.
-- Results map to `ocr_status`: `success`, `partial` (low confidence or no rows), or `failed`.
-- A metric is flagged `needs_review` when the value is non-numeric, a bound like `<0.5`, has an unconvertible unit, or is under the confidence threshold.
-
-Details: [`ocr/README.md`](ocr/README.md) and [`server/OCR_INTEGRATION.md`](server/OCR_INTEGRATION.md).
-
-## Database
-
-Schema lives in `supabase/migrations/` (Postgres with RLS). Main tables:
-
-`profiles`, `patient_details`, `clinician_details`, `appointments`, `appointment_invites`, `vitals_logs`, `questionnaire_templates`, `questionnaire_responses`, `lab_reports`, `lab_report_metrics`, `metric_dictionary`, `appointment_lab_reports`, `checklist_rule_templates`, `pre_visit_checklist_items`, `clinician_templates`, `consultation_checklist_items`, `consultation_notes`, `prescriptions`, `post_visit_action_items`, `quick_action_templates`.
-
-Key enums: `user_role` (patient, clinician, receptionist), `appointment_status` (invited, active, checked_in, completed, cancelled), `ocr_status` (pending, success, partial, failed).
-
-The metric dictionary is reference data and ships as migrations — add new lab spellings there, not in the seed.
-
-Maintenance scripts (from `server/`):
-
-```bash
-npm run verify-clinician        # mark a clinician account as verified
-npm run restandardize-metrics   # re-run standardization over stored lab metrics
-node scripts/ocrSmoke.js path/to/report.pdf   # run one file through OCR and print the result
-```
-
-## Testing
-
-```bash
-# API: unit + route tests with Supabase and OCR mocked
-cd server && npm test
-
-# API end-to-end against a running OCR service
-OCR_SERVICE_URL=http://localhost:8000 npm run test:e2e
-
-# OCR pipeline routing tests (no engines needed)
-cd ocr && python -m unittest discover -s tests
-```
-
-## Deployment
-
-- **Client:** deploy `client/` to Vercel (`vercel.json` configures the Vite build and SPA rewrites). Set the `VITE_*` variables in the project settings.
-- **API:** run `npm start` in `server/` on any Node host; set the environment from `server/.env.example`.
-- **OCR service:** build the Docker image in `PaddleOCRFastAPI/`. Run one worker per container and keep it off the public internet — the API server should be the only caller.
-- **Before going live:** set `DEMO_SELF_VERIFY=false`, use real SMTP credentials, and never expose `SUPABASE_SERVICE_ROLE_KEY` to the client.
-
-## Further documentation
-
-- [`docs/folderstructure`](docs/folderstructure) — original architecture and schema design notes
-- [`ocr/README.md`](ocr/README.md) — extraction pipeline internals
-- [`server/OCR_INTEGRATION.md`](server/OCR_INTEGRATION.md) — how the API talks to the OCR service
-- [`PaddleOCRFastAPI/README.md`](PaddleOCRFastAPI/README.md) — the OCR service and its endpoints (upstream: neozhu/PaddleOCRFastAPI, see its `LICENSE`)
+Please refer to the `LICENSE` file in individual subdirectories if applicable.
