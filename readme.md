@@ -35,6 +35,7 @@ The application follows a modern full-stack architecture:
 ```text
 health-on-project/
 ├── client/                 # React frontend application
+├── mobile/                 # Flutter patient app (Android first)
 ├── server/                 # Node.js Express backend API
 ├── PaddleOCRFastAPI/       # FastAPI service for document OCR
 ├── supabase/               # Database migrations and seed data
@@ -120,6 +121,8 @@ Alternatively, you can use the provided `docker-compose.yml` to spin up the OCR 
 Ensure you have the Supabase CLI installed, or use the Supabase web dashboard to run the SQL definitions located in `docs/folderstructure` (or in the `supabase/migrations` folder) to initialize your tables, enums, and Row Level Security (RLS) policies.
 
 ## Documentation
+
+Android patient app setup and authentication workflow: [mobile/README.md](./mobile/README.md).
 
 For a deep dive into the database schema, table structures, and detailed folder mapping, please refer to [docs/folderstructure](./docs/folderstructure). deployment instructions can be found in `docs/deploy-railway.md`.
 
