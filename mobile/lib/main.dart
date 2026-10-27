@@ -4,13 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
-import 'features/community/community_push.dart';
-import 'features/community/community_repository.dart';
 import 'core/api_client.dart';
 import 'core/app_config.dart';
 import 'core/secure_session_storage.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/auth/auth_repository.dart';
+import 'features/community/community_push.dart';
+import 'features/community/community_repository.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
