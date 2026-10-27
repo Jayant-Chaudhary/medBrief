@@ -4,6 +4,9 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Builds without project configuration keep push disabled.
+if (file("google-services.json").exists()) { apply(plugin = "com.google.gms.google-services") }
+
 android {
     namespace = "com.healthon.health_on_patient"
     compileSdk = flutter.compileSdkVersion

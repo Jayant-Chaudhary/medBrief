@@ -19,7 +19,7 @@ export class ApiError extends Error {
 }
 
 function trace(method, path, response, startedAt) {
-  if (!DEBUG_API) return;
+  if (!DEBUG_API || path.startsWith('/api/community')) return;
   const ms = Math.round(performance.now() - startedAt);
   const requestId = response.headers.get('X-Request-Id');
   const log = response.ok ? console.debug : console.warn;

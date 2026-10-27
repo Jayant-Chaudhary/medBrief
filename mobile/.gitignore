@@ -50,3 +50,9 @@ app.*.map.json
 # Per-developer build configuration. Only public/anon Supabase keys belong here.
 config.json
 config.local.json
+
+# Firebase project config is supplied per environment.
+/android/app/google-services.json
+
+# Kotlin compiler cache
+/android/.kotlin/

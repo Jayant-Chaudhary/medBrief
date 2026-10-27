@@ -1,0 +1,15 @@
+{
+  "enabled": false,
+  "consent_version": null,
+  "outreach_text": null,
+  "tier_hours": {"urgent": null, "soon": null, "normal": null},
+  "reporter_threshold": null,
+  "minimum_account_age_hours": null,
+  "on_call": [],
+  "retention_policy": null,
+  "reveal_minutes": null,
+  "emergency_protocol": null,
+  "publication_delay_seconds": {"min": null, "max": null},
+  "timestamp_bucket_seconds": null,
+  "single_approver_allowed": null
+}

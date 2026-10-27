@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
+import 'features/community/community_push.dart';
+import 'features/community/community_repository.dart';
 import 'core/api_client.dart';
 import 'core/app_config.dart';
 import 'core/secure_session_storage.dart';
@@ -51,6 +53,7 @@ Future<void> main() async {
   final auth = AuthController(
     SupabaseAuthRepository(supabase: supabase, api: api),
   );
-  runApp(HealthOnApp(auth: auth));
+  final push = CommunityPush(CommunityRepository(api), auth);
+  runApp(HealthOnApp(auth: auth, api: api, push: push));
   unawaited(auth.start());
 }

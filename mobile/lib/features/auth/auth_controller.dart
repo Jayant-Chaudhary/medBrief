@@ -10,6 +10,7 @@ enum AuthStage { restoring, signedOut, onboarding, signedIn, unavailable }
 class AuthController extends ChangeNotifier {
   AuthController(this.repository);
   final AuthRepository repository;
+  Future<void> Function()? beforeSignOut;
   AuthStage stage = AuthStage.restoring;
   PatientProfile? profile;
   String? error;
@@ -75,6 +76,7 @@ class AuthController extends ChangeNotifier {
   });
 
   Future<void> signOut() => _run(() async {
+    await beforeSignOut?.call();
     await repository.signOut();
     _generation++;
     profile = null;

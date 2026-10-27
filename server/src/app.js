@@ -20,6 +20,12 @@ const templatesRoutes = require('./routes/templates.routes');
 
 const app = express();
 
+// Community must terminate before the identified care logger and error handler.
+app.use('/api/community', cors({
+  origin: [env.clientAppUrl, 'http://localhost:5173', 'http://localhost:3000'],
+  credentials: true,
+}), express.json({ limit: '64kb' }), require('./community/router').configuredRouter(), require('./community/internal').safeErrors);
+
 app.use(requestLogger);
 app.use(cors({
   origin: [env.clientAppUrl, 'http://localhost:5173', 'http://localhost:3000'],

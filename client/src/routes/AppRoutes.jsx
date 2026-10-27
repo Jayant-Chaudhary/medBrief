@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import ProtectedRoute from './ProtectedRoute';
 import PublicOnlyRoute from './PublicOnlyRoute';
 import AppShell from '../layouts/AppShell';
+import CommunityWorkspace from '../pages/community/CommunityWorkspace';
 import CheckinLayout from '../layouts/CheckinLayout';
 import AuthLayout from '../layouts/AuthLayout';
 
@@ -63,6 +64,9 @@ export function AppRoutes() {
         <Route path="/checkin/checklist" element={<ChecklistStep />} />
       </Route>
       <Route path="/checkin/done" element={<ProtectedRoute><CheckinDonePage /></ProtectedRoute>} />
+
+      {/* Separate community workspace; API checks community roles independently. */}
+      <Route path="/community-care" element={<ProtectedRoute><CommunityWorkspace /></ProtectedRoute>} />
 
       {/* Clinician Routes */}
       <Route path="/clinician" element={<ProtectedRoute requireVerifiedClinician><ClinicianDashboard /></ProtectedRoute>} />

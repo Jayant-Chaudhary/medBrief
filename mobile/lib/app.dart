@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'core/app_theme.dart';
+import 'core/api_client.dart';
+import 'features/community/community_push.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/auth/auth_widgets.dart';
 import 'features/auth/login_page.dart';
@@ -8,8 +10,16 @@ import 'features/auth/onboarding_page.dart';
 import 'features/home/signed_in_page.dart';
 
 class HealthOnApp extends StatelessWidget {
-  const HealthOnApp({super.key, this.auth, this.setupError});
+  const HealthOnApp({
+    super.key,
+    this.auth,
+    this.setupError,
+    this.api,
+    this.push,
+  });
   final AuthController? auth;
+  final ApiClient? api;
+  final CommunityPush? push;
   final String? setupError;
 
   @override
@@ -27,7 +37,11 @@ class HealthOnApp extends StatelessWidget {
               ),
               AuthStage.signedOut => LoginPage(auth: auth),
               AuthStage.onboarding => OnboardingPage(auth: auth!),
-              AuthStage.signedIn => SignedInPage(auth: auth!),
+              AuthStage.signedIn => SignedInPage(
+                auth: auth!,
+                api: api,
+                push: push,
+              ),
               AuthStage.unavailable => AuthFrame(
                 children: [
                   const BrandHeader(),
