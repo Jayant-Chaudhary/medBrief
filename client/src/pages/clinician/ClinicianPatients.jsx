@@ -114,6 +114,12 @@ export function ClinicianPatients() {
                             </Link>
                           )}
                           <Link
+                            to={`/clinician/patients/${patient.id}/maternal-record`}
+                            className="rounded-xl border border-line bg-surface px-3 py-1.5 text-label-md text-cypress hover:bg-subcanvas"
+                          >
+                            Maternal record
+                          </Link>
+                          <Link
                             to={`/clinician/appointments/new?patient=${patient.id}`}
                             className="rounded-xl bg-cypress px-3 py-1.5 text-label-md text-surface hover:bg-cypress-deep"
                           >

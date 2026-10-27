@@ -61,6 +61,11 @@ export async function fetchMyPatients() {
   return request('/api/patients');
 }
 
+/** All lab reports this clinician can see for a patient, across shared visits. */
+export async function fetchPatientLabHistory(patientId) {
+  return request(`/api/lab-reports/history?patientId=${encodeURIComponent(patientId)}`);
+}
+
 /** Patients in the clinician's queue, for the sidebar and search. */
 export async function fetchPatients() {
   const appointments = await request('/api/appointments');

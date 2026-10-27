@@ -38,6 +38,15 @@ module.exports = {
     timeoutMs: Number(process.env.OCR_TIMEOUT_MS || 180000),
   },
   maxUploadBytes: Number(process.env.MAX_UPLOAD_BYTES || 20 * 1024 * 1024),
+  ml: {
+    // Optional until a maternal-health model service is available.
+    serviceUrl: process.env.ML_SERVICE_URL || '',
+    maternalRiskUrl: process.env.ML_MATERNAL_RISK_URL || '',
+    patientSimilarityUrl: process.env.ML_PATIENT_SIMILARITY_URL || '',
+    templateRecommendationUrl: process.env.ML_TEMPLATE_RECOMMENDATION_URL || '',
+    apiKey: process.env.ML_SERVICE_API_KEY || '',
+    timeoutMs: Number(process.env.ML_TIMEOUT_MS || 10000),
+  },
   // Demo only: lets a clinician verify their own account from the
   // verification-pending page. Set DEMO_SELF_VERIFY=false to switch it off
   // once real (administrator) verification is in place.

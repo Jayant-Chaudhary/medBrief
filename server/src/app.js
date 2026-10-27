@@ -17,6 +17,8 @@ const profileRoutes = require('./routes/profile.routes');
 const ocrRoutes = require('./routes/ocr.routes');
 const patientsRoutes = require('./routes/patients.routes');
 const templatesRoutes = require('./routes/templates.routes');
+const maternalRecordsRoutes = require('./routes/maternalRecords.routes');
+const mlRoutes = require('./routes/ml.routes');
 
 const app = express();
 
@@ -45,6 +47,8 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/ocr', ocrRoutes);
 app.use('/api/patients', patientsRoutes);
 app.use('/api/templates', templatesRoutes);
+app.use('/api/maternal-records', maternalRecordsRoutes);
+app.use('/api/ml', mlRoutes);
 
 app.use((req, res) => res.status(404).json({ error: 'Endpoint not found', requestId: req.id }));
 app.use(errorHandler);

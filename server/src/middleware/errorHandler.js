@@ -9,6 +9,9 @@ const UPLOAD_ERROR_CODES = {
 
 function resolveStatus(err) {
   if (err.name === 'MulterError') return UPLOAD_ERROR_CODES[err.code] || 400;
+  // PostgREST reports a missing table/view in its schema cache with
+  // PGRST205. This is a deployment/schema setup issue, not an opaque 500.
+  if (err.code === 'PGRST205' || err.code === '42P01') return 503;
   // A rejected file type arrives as a plain Error from multer's fileFilter.
   if (/^Unsupported file type/.test(err.message || '')) return 415;
   // Malformed JSON from express.json().
@@ -18,6 +21,9 @@ function resolveStatus(err) {
 
 function errorHandler(err, req, res, next) {
   const status = resolveStatus(err);
+  const message = err.code === 'PGRST205' || err.code === '42P01'
+    ? 'A required database table is missing. Apply the pending Supabase migration, then refresh the schema cache.'
+    : (err.message || 'Internal Server Error');
   const log = req.log || logger;
   const meta = { method: req.method, url: req.originalUrl, status };
 
@@ -28,7 +34,7 @@ function errorHandler(err, req, res, next) {
   if (res.headersSent) return next(err);
 
   res.status(status).json({
-    error: err.message || 'Internal Server Error',
+    error: message,
     ...(req.id && { requestId: req.id }),
     ...(process.env.NODE_ENV === 'development' && { details: err.stack }),
   });
