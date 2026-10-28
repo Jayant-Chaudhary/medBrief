@@ -30,6 +30,12 @@
         "--strictPort"
       ],
       "port": 4173
+    },
+    {
+      "name": "maternity-card",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "5510", "--directory", "maternity card"],
+      "port": 5510
     }
   ]
 }

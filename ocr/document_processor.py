@@ -379,18 +379,74 @@ def _parse_report_date(structured: dict) -> str | None:
     return None
 
 
-def _metrics_from_structured(structured: dict, confidence: float | None) -> list[dict]:
+#: Differential white-cell types. Under an "Absolute ... Count" heading labs
+#: print them bare ("Neutrophils 6.97 thou/mm3"), which reads as the
+#: percentage test of the same name.
+_WBC_TYPES_RE = re.compile(r"^(segmented\s+)?(neutrophils?|lymphocytes?|monocytes?|eosinophils?|basophils?)$", re.I)
+_ABSOLUTE_HEADING_RE = re.compile(r"\babsolute\b", re.I)
+
+
+def _qualified_name(name: str, section_title: str | None) -> str:
+    """"Neutrophils" under "Absolute Leucocyte Count" -> "Absolute Neutrophils"."""
+    if section_title and _ABSOLUTE_HEADING_RE.search(section_title) and _WBC_TYPES_RE.match(name):
+        return f"Absolute {name}"
+    return name
+
+
+def _normalized_box(box, page: int, page_sizes: dict[int, tuple[float, float]]) -> list[float] | None:
+    """A token-coordinate box as fractions of its page: [x0, y0, x1, y1] in 0..1.
+
+    Tokens were pushed down by `page * _PAGE_Y_STRIDE` so pages could not merge
+    during line grouping; that offset comes off first. Dividing by the page's
+    own size makes the result independent of the reader (PDF points or OCR
+    pixels) and of whatever size the page is later drawn at. Without a known
+    page size there is no honest answer, so None.
+    """
+    size = page_sizes.get(page)
+    if not box or not size or not size[0] or not size[1]:
+        return None
+    width, height = size
+    offset = page * _PAGE_Y_STRIDE
+    x0, top, x1, bottom = box
+    if top >= offset:
+        top, bottom = top - offset, bottom - offset
+
+    def clamp(v: float) -> float:
+        return round(min(1.0, max(0.0, v)), 5)
+
+    out = [clamp(x0 / width), clamp(top / height), clamp(x1 / width), clamp(bottom / height)]
+    return out if out[2] > out[0] and out[3] > out[1] else None
+
+
+def _source_of(test: dict, page_sizes: dict[int, tuple[float, float]] | None) -> dict | None:
+    """Where a test row was printed: {page (1-based), row, value} as page fractions."""
+    location = test.get("location") or {}
+    if not page_sizes or not location:
+        return None
+    page = int(location.get("page") or 0)
+    row = _normalized_box(location.get("row"), page, page_sizes)
+    if row is None:
+        return None
+    return {"page": page + 1, "row": row, "value": _normalized_box(location.get("value"), page, page_sizes)}
+
+
+def _metrics_from_structured(
+    structured: dict,
+    confidence: float | None,
+    page_sizes: dict[int, tuple[float, float]] | None = None,
+) -> list[dict]:
     """Flatten parsed test rows into the metric shape the backend ingests.
 
-    Keys stay exactly as printed on the report ("HGB", "Hb"); mapping them to
+    Keys stay as printed on the report ("HGB", "Hb"); mapping them to
     `metric_dictionary.standard_key` is the Node standardization service's job,
-    not ours.
+    not ours. The one exception is a bare white-cell name under an "Absolute"
+    heading, which is qualified so it isn't read as the percentage test.
     """
     metrics: list[dict] = []
     for section in structured.get("sections", []) or []:
         title = section.get("title")
         for test in section.get("tests", []) or []:
-            name = (test.get("name") or "").strip()
+            name = _qualified_name((test.get("name") or "").strip(), title)
             value = test.get("value")
             if not name or value in (None, ""):
                 continue
@@ -403,6 +459,7 @@ def _metrics_from_structured(structured: dict, confidence: float | None) -> list
                     "flag": test.get("flag"),
                     "section": title,
                     "confidence": confidence,
+                    "source": _source_of(test, page_sizes),
                 }
             )
     return metrics
@@ -525,7 +582,12 @@ def _fill_from_digital(envelope: dict, result, separate_pages: bool) -> dict:
     envelope["tables"] = list(getattr(result, "tables", []) or [])
     # Native text is exact; there is no per-glyph confidence to average.
     envelope["confidence"] = 1.0 if tokens else None
-    envelope["metrics"] = _metrics_from_structured(structured, envelope["confidence"])
+    page_sizes = {
+        page.index: (page.width, page.height)
+        for page in getattr(result, "pages", []) or []
+        if getattr(page, "width", None) and getattr(page, "height", None)
+    }
+    envelope["metrics"] = _metrics_from_structured(structured, envelope["confidence"], page_sizes)
     envelope["report_date"] = _parse_report_date(structured)
 
     summary = result.summary() if hasattr(result, "summary") else {}
@@ -584,7 +646,18 @@ def _fill_from_ocr(envelope: dict, payload: dict) -> dict:
     envelope["text"] = "\n\n".join(page["text"] for page in pages if page["text"])
     envelope["structured"] = structured
     envelope["confidence"] = confidence
-    envelope["metrics"] = _metrics_from_structured(structured, confidence)
+    # Positions only from real detection boxes; the text-only fallback lays
+    # lines out on an invented grid that says nothing about the page.
+    page_sizes = (
+        {
+            int(page.get("page_number", 1)) - 1: (page.get("width"), page.get("height"))
+            for page in payload.get("pages", []) or []
+            if page.get("width") and page.get("height")
+        }
+        if has_geometry
+        else {}
+    )
+    envelope["metrics"] = _metrics_from_structured(structured, confidence, page_sizes)
     envelope["report_date"] = _parse_report_date(structured)
     envelope["diagnostics"]["ocr"] = {
         "total_pages": payload.get("total_pages", 0),
@@ -761,7 +834,8 @@ def to_ingest_payload(
 ) -> dict:
     """Shape an envelope into the body of ``POST /lab-reports``.
 
-    Mirrors `ocrPayloadSchema`: metrics carry only key/value/unit/confidence,
+    Mirrors `ocrPayloadSchema`: metrics carry key/value/unit/confidence and,
+    when known, `source` (where the row is printed, as page fractions),
     `confidence` is clamped to [0, 1] because the validator rejects anything
     outside it, and optional fields are omitted rather than sent as null.
     """
@@ -773,6 +847,8 @@ def to_ingest_payload(
         confidence = metric.get("confidence")
         if isinstance(confidence, (int, float)):
             item["confidence"] = max(0.0, min(1.0, float(confidence)))
+        if metric.get("source"):
+            item["source"] = metric["source"]
         metrics.append(item)
 
     payload: dict[str, Any] = {

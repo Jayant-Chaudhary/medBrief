@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Icon } from '../common/Icon.jsx';
 import { Button } from '../common/Button.jsx';
 import { formatDate } from '../../utils/format.js';
+import { SourcePreview } from './SourcePreview.jsx';
 
 /**
  * Human-in-the-loop OCR review.
@@ -65,6 +66,7 @@ function AlertItem({ alert, onResolve }) {
   const [value, setValue] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [showSource, setShowSource] = useState(false);
 
   async function submit(event) {
     event.preventDefault();
@@ -107,20 +109,37 @@ function AlertItem({ alert, onResolve }) {
           className="field h-9 flex-1"
         />
         {alert.imageUrl && (
-          <a
-            href={alert.imageUrl}
-            target="_blank"
-            rel="noreferrer"
+          <button
+            type="button"
+            onClick={() => setShowSource(true)}
+            aria-haspopup="dialog"
             className="shrink-0 rounded-xl border border-line px-3 py-2 text-label-md text-cypress hover:bg-subcanvas"
           >
-            View scan
-          </a>
+            View on report
+          </button>
         )}
         <Button type="submit" size="sm" disabled={saving || !value.trim()}>
           {saving ? 'Saving…' : 'Resolve'}
         </Button>
       </form>
       {error && <p className="mt-1.5 text-body-sm text-terracotta">{error}</p>}
+      {/* The correction box is already right here, so the preview only shows the line. */}
+      <SourcePreview
+        item={
+          showSource
+            ? {
+                name: alert.label,
+                value: alert.printed || '—',
+                printed: alert.printed,
+                scanUrl: alert.imageUrl,
+                fileKind: alert.fileKind,
+                sourcePage: alert.sourcePage,
+                sourceBox: alert.sourceBox,
+              }
+            : null
+        }
+        onClose={() => setShowSource(false)}
+      />
     </li>
   );
 }

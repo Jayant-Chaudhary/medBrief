@@ -278,11 +278,30 @@ def page_items(page_result, min_confidence: float = 0.6) -> list[dict]:
     return _reading_order(items)
 
 
-def _page_payload(page_number: int, items: list[dict]) -> dict:
+def page_size(page_result) -> tuple[int | None, int | None]:
+    """(width, height) in pixels of the page image PaddleOCR read.
+
+    Box coordinates are in this image's pixels, so the size is what turns a box
+    into a position on the page. PaddleOCR 3.x keeps the image it worked on
+    under doc_preprocessor_res.output_img even with the preprocessor steps off.
+    """
+    try:
+        fields = page_result if hasattr(page_result, "keys") else getattr(page_result, "res", None)
+        image = (fields.get("doc_preprocessor_res") or {}).get("output_img")
+        height, width = image.shape[:2]
+        return int(width), int(height)
+    except Exception:  # noqa: BLE001 - older result shapes carry no image
+        return None, None
+
+
+def _page_payload(page_number: int, items: list[dict], width: int | None = None, height: int | None = None) -> dict:
     lines = [item["text"] for item in items]
     confidences = [item["confidence"] for item in items]
     return {
         "page_number": page_number,
+        # Pixel size of the page image the boxes below are measured in.
+        "width": width,
+        "height": height,
         "line_count": len(lines),
         "avg_confidence": round(sum(confidences) / len(confidences), 3) if confidences else 0.0,
         "lines": lines,
@@ -323,7 +342,7 @@ def extract_and_format(
     # is what exhausts memory on a long scanned PDF.
     with _ocr_lock:
         pages = [
-            _page_payload(index + 1, page_items(page_result, min_confidence))
+            _page_payload(index + 1, page_items(page_result, min_confidence), *page_size(page_result))
             for index, page_result in enumerate(ocr.predict(file_path))
         ]
 

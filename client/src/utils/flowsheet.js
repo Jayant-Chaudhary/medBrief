@@ -6,6 +6,8 @@
  * and fetch so they can be checked against real data in isolation.
  */
 
+import { fileKindOf } from './sourceCrop.js';
+
 /** Mirrors OCR_CONFIDENCE_REVIEW_THRESHOLD on the server, for wording only. */
 export const REVIEW_CONFIDENCE = 0.85;
 
@@ -145,6 +147,12 @@ export function buildFlowsheet(reports = [], currentAppointmentId = null) {
         metricId: metric.id,
         reportId: report.id,
         scanUrl: report.signed_url ?? null,
+        // Where the value is printed, for the source preview (null on reports
+        // stored before locations were recorded).
+        sourcePage: metric.source_page ?? null,
+        sourceBox: metric.source_box ?? null,
+        fileKind: fileKindOf(report.storage_path),
+        printed: [metric.raw_value, metric.unit_raw].filter(Boolean).join(' '),
         date,
       };
 

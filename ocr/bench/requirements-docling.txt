@@ -1,0 +1,10 @@
+# Docling for the OCR benchmark only. Install into its own venv
+# (ocr/bench/.venv-docling), never into the Paddle environment the OCR service
+# uses: Docling brings PyTorch.
+#
+#   python -m venv bench/.venv-docling
+#   bench/.venv-docling/Scripts/python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+#   bench/.venv-docling/Scripts/python -m pip install -r bench/requirements-docling.txt
+docling
+rapidocr_onnxruntime   # Docling's RapidOCR engine: PaddleOCR models run through ONNX
+onnxruntime

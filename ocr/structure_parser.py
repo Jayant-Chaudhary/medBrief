@@ -176,6 +176,14 @@ def is_column_header(line: Line) -> bool:
     return hits >= 3 and hits / len(words) >= 0.5
 
 
+#: Interpretation tables drawn with text characters ("| Insufficient | 50-74 |",
+#: "|------|------|"). Their rows look like test rows but are guidance, not
+#: results: a ">= 2 pipes, starting or ending with one" line is never a test.
+_ASCII_TABLE_RE = re.compile(r"^\|.*\||^\|[-=+|\s*]+|[-=+\s*]+\|$")
+#: Page footers, including OCR misreads of the "P" ("Hage 1 of 3").
+_PAGE_FOOTER_RE = re.compile(r"^\W*[a-z]{0,2}age\s*\d+\s*(?:of|/)\s*\d+\b", re.I)
+
+
 def is_noise(line: Line) -> bool:
     text = line.text.strip()
     if len(text) <= 1:
@@ -183,6 +191,10 @@ def is_noise(line: Line) -> bool:
     if re.fullmatch(r"\d+", text):
         return True
     if re.fullmatch(r"[\W_]+", text):
+        return True
+    if text.count("|") >= 2 and _ASCII_TABLE_RE.search(text):
+        return True
+    if _PAGE_FOOTER_RE.match(text):
         return True
     return False
 
@@ -345,6 +357,19 @@ def parse_kv(fields: list[Field]) -> tuple[str, str] | None:
     return pairs[0] if pairs else None
 
 
+def _box(fields: Sequence[Field]) -> list[float] | None:
+    """[x0, top, x1, bottom] around every token of these fields, in token coordinates."""
+    tokens = [t for f in fields for t in f.tokens]
+    if not tokens:
+        return None
+    return [
+        min(float(t.x0) for t in tokens),
+        min(float(t.top) for t in tokens),
+        max(float(t.x1) for t in tokens),
+        max(float(t.bottom) for t in tokens),
+    ]
+
+
 def parse_test_row(fields: list[Field]) -> dict | None:
     if not is_test_row(fields):
         return None
@@ -373,7 +398,15 @@ def parse_test_row(fields: list[Field]) -> dict | None:
         elif reference is None:
             reference = text
 
-    return {"name": name, "value": value, "unit": unit, "reference": reference, "flag": flag}
+    # Where the row sits on the page, so a reviewer can be shown the printed
+    # line. Raw token coordinates; document_processor turns them into page
+    # fractions once it knows each page's size.
+    location = {
+        "page": getattr(fields[0].tokens[0], "page", 0) if fields[0].tokens else 0,
+        "row": _box(fields),
+        "value": _box(fields[1:2]),
+    }
+    return {"name": name, "value": value, "unit": unit, "reference": reference, "flag": flag, "location": location}
 
 
 # ------------------------------------------------------------------

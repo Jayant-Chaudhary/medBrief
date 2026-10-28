@@ -2,13 +2,17 @@ const supabaseAdmin = require('../config/supabaseAdminClient');
 const { standardizeMetrics } = require('../services/standardization/standardizeLabReport.service');
 const { maybeFlagReportForTriage, getTriageQueue } = require('../services/triage.service');
 const { processDocument } = require('../services/ocrService');
-const { shareAllReportsWithAppointment } = require('../services/reportSharing.service');
+const {
+  shareAllReportsWithAppointment,
+  reportIdsSharedWithClinician,
+} = require('../services/reportSharing.service');
 const {
   LAB_REPORTS_BUCKET,
   uploadFile,
   createSignedUrl,
   removeFile,
 } = require('../services/storage.service');
+const { metricSourceSchema } = require('../validators/labReports.validators');
 const {
   assertAppointmentAccess,
   clinicianHasPatient,
@@ -29,27 +33,6 @@ async function assertAppointmentForPatient(appointmentId, patientId, user) {
     return { ok: false, status: 403, error: 'That appointment belongs to a different patient' };
   }
   return access;
-}
-
-/** Ids of the reports a patient has shared with any of this clinician's appointments. */
-async function reportIdsSharedWithClinician(clinicianId, patientId) {
-  const { data: appointments, error } = await supabaseAdmin
-    .from('appointments')
-    .select('id')
-    .eq('clinician_id', clinicianId)
-    .eq('patient_id', patientId);
-  if (error) throw error;
-
-  const appointmentIds = (appointments || []).map((a) => a.id);
-  if (appointmentIds.length === 0) return [];
-
-  const { data: shares, error: shareError } = await supabaseAdmin
-    .from('appointment_lab_reports')
-    .select('lab_report_id')
-    .in('appointment_id', appointmentIds);
-  if (shareError) throw shareError;
-
-  return [...new Set((shares || []).map((row) => row.lab_report_id))];
 }
 
 /**
@@ -78,7 +61,19 @@ async function persistReport({ patientId, appointmentId, storagePath, reportDate
 
   let savedMetrics = [];
   if (standardized.length > 0) {
-    const rows = standardized.map((m) => ({ ...m, lab_report_id: labReport.id }));
+    // standardizeMetrics keeps input order but not extra fields, so each
+    // value's printed location is joined back by index. Uploads reach here
+    // without passing the request validator, so the shape is checked here;
+    // a malformed box is dropped rather than stored.
+    const rows = standardized.map((m, i) => {
+      const source = metricSourceSchema.safeParse(metrics[i]?.source);
+      return {
+        ...m,
+        lab_report_id: labReport.id,
+        source_page: source.success ? source.data.page : null,
+        source_box: source.success ? { row: source.data.row, value: source.data.value ?? null } : null,
+      };
+    });
     const { data: insertedMetrics, error: metricsError } = await supabaseAdmin
       .from('lab_report_metrics')
       .insert(rows)
