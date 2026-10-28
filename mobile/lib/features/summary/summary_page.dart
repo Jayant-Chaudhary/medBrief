@@ -38,20 +38,36 @@ class _SummaryPageState extends State<SummaryPage> {
       final selected = widget.controller.selectedAppointmentId;
       final exists = widget.completedAppointments.any((a) => a.id == selected);
       if (!exists) {
-        widget.controller.selectAppointment(widget.completedAppointments.first.id);
+        widget.controller.selectAppointment(
+          widget.completedAppointments.first.id,
+        );
       }
     }
   }
 
   String _formatDate(DateTime dt) {
     final months = [
-      '', 'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
+      '',
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     return '${months[dt.month]} ${dt.day}, ${dt.year}';
   }
 
-  Widget _buildSummaryContent(SummaryController controller, PostVisitSummary summary) {
+  Widget _buildSummaryContent(
+    SummaryController controller,
+    PostVisitSummary summary,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -75,7 +91,9 @@ class _SummaryPageState extends State<SummaryPage> {
               style: TextStyle(
                 fontSize: 14,
                 height: 1.5,
-                color: summary.notes?.notesText.isNotEmpty == true ? ink : muted,
+                color: summary.notes?.notesText.isNotEmpty == true
+                    ? ink
+                    : muted,
               ),
             ),
           ),
@@ -137,7 +155,11 @@ class _SummaryPageState extends State<SummaryPage> {
                         padding: const EdgeInsets.only(bottom: 12),
                         child: Text(
                           rx.typedInstructions!,
-                          style: const TextStyle(fontSize: 14, height: 1.5, color: ink),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            height: 1.5,
+                            color: ink,
+                          ),
                         ),
                       ),
                     if (rx.signedUrl != null)
@@ -204,7 +226,9 @@ class _SummaryPageState extends State<SummaryPage> {
                         action.label,
                         style: TextStyle(
                           fontSize: 14,
-                          fontWeight: action.isCompleted ? FontWeight.w400 : FontWeight.w600,
+                          fontWeight: action.isCompleted
+                              ? FontWeight.w400
+                              : FontWeight.w600,
                           color: action.isCompleted ? muted : ink,
                           decoration: action.isCompleted
                               ? TextDecoration.lineThrough
@@ -260,7 +284,9 @@ class _SummaryPageState extends State<SummaryPage> {
         return RefreshIndicator(
           onRefresh: () async {
             if (controller.selectedAppointmentId != null) {
-              await controller.selectAppointment(controller.selectedAppointmentId!);
+              await controller.selectAppointment(
+                controller.selectedAppointmentId!,
+              );
             }
           },
           color: primary,
@@ -288,7 +314,8 @@ class _SummaryPageState extends State<SummaryPage> {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: widget.completedAppointments.map((appt) {
-                    final isSelected = controller.selectedAppointmentId == appt.id;
+                    final isSelected =
+                        controller.selectedAppointmentId == appt.id;
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: FilterChip(
@@ -312,11 +339,14 @@ class _SummaryPageState extends State<SummaryPage> {
                           _formatDate(appt.scheduledAt),
                           style: TextStyle(
                             fontSize: 13,
-                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                            fontWeight: isSelected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
                             color: isSelected ? primary : ink,
                           ),
                         ),
-                        onSelected: (_) => controller.selectAppointment(appt.id),
+                        onSelected: (_) =>
+                            controller.selectAppointment(appt.id),
                       ),
                     );
                   }).toList(),
@@ -347,7 +377,10 @@ class _SummaryPageState extends State<SummaryPage> {
                       Expanded(
                         child: Text(
                           controller.errorMessage!,
-                          style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13),
+                          style: const TextStyle(
+                            color: Color(0xFFDC2626),
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     ],
@@ -357,7 +390,10 @@ class _SummaryPageState extends State<SummaryPage> {
                 const Center(
                   child: Padding(
                     padding: EdgeInsets.all(32),
-                    child: Text('Select an appointment to view summary.', style: TextStyle(color: muted)),
+                    child: Text(
+                      'Select an appointment to view summary.',
+                      style: TextStyle(color: muted),
+                    ),
                   ),
                 )
               else
@@ -399,28 +435,31 @@ class _CardContainer extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: iconColor, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: ink,
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: iconColor, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: ink,
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          child,
-        ],
+              ],
+            ),
+            const SizedBox(height: 14),
+            child,
+          ],
+        ),
       ),
     );
   }

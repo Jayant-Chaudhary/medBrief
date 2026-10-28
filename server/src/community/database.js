@@ -7,6 +7,8 @@ const functions = new Set([
   'community_private.message_screened', 'community_private.worker_tick',
   'community_private.finish_push', 'community_private.read_alerts',
   'community_private.notice_api', 'community_private.manage_tags', 'community_private.own_posts',
+  'community_private.choose_username',
+  'community_private.username_status',
 ]);
 
 class CommunityError extends Error {
@@ -58,7 +60,7 @@ function createDatabase(databaseUrl, executable = 'psql') {
       child.on('close', code => {
         clearTimeout(timer);
         if (code !== 0 || stopped) {
-          const status = /42501/.test(stderr) ? 403 : /P0002/.test(stderr) ? 404 : /22023|22P02|23505|23503/.test(stderr) ? 400 : 503;
+          const status = /42501/.test(stderr) ? 403 : /P0002/.test(stderr) ? 404 : /23505/.test(stderr) ? 409 : /22023|22P02|23503/.test(stderr) ? 400 : 503;
           // Never return or log PostgreSQL errors, statements or submitted values.
           return reject(new CommunityError(status, status === 403 ? 'community_access_denied' : 'community_request_failed'));
         }

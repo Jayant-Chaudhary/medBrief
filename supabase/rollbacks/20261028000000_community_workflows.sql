@@ -1,6 +1,11 @@
 -- DESTRUCTIVE development-only rollback of the community workflow bundle.
 -- Requires later objects/login role memberships to be removed first; no CASCADE.
 begin;
+drop trigger if exists username_choice_policy on community_private.username_history;
+drop function if exists community_private.apply_username_choice_policy();
+drop function if exists community_private.username_status(text);
+drop function if exists community_private.choose_username(text,jsonb);
+alter table community.members drop column if exists username_choice_available;
 drop trigger immutable_parent on community.comments;
 drop function community_private.own_posts(text);
 drop function community_private.manage_tags(text,jsonb);

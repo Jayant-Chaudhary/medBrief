@@ -16,19 +16,19 @@ import '../reports/report_repository.dart';
 import '../reports/reports_page.dart';
 import '../summary/summary_controller.dart';
 import '../summary/summary_page.dart';
-import '../summary/summary_repository.dart';
 import 'appointment_repository.dart';
 import 'appointments_tab.dart';
 import 'home_controller.dart';
 
 /// The authenticated shell of the patient app.
 ///
-/// Hosts all five core patient tabs:
+/// Hosts all six patient tabs:
 ///   0: Home / Appointments Dashboard
 ///   1: Pre-Visit Check-in
 ///   2: Lab Reports Library & OCR
 ///   3: Post-Visit Summary & Next Steps
-///   4: Profile & Emergency Contacts
+///   4: Community & private Care inbox
+///   5: Profile & Emergency Contacts
 class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
@@ -61,15 +61,14 @@ class _HomePageState extends State<HomePage> {
   late final SummaryController _summaryController;
   late final ProfileController _profileController;
   int _tabIndex = 0;
+  bool _communityInboxRequested = false;
+  final _communityNavigator = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
     super.initState();
     final repo = widget.repository ?? AppointmentRepository(api: widget.api);
-    _homeController = HomeController(
-      repo: repo,
-      profile: widget.auth.profile!,
-    );
+    _homeController = HomeController(repo: repo, profile: widget.auth.profile!);
     _homeController.load();
 
     _reportController = ReportController(
@@ -89,23 +88,16 @@ class _HomePageState extends State<HomePage> {
 
   void _handleInboxRequest() {
     if (mounted && widget.api != null) {
-      _openCommunity();
+      _openCommunity(inbox: true);
     }
   }
 
-  void _openCommunity() {
+  void _openCommunity({bool inbox = false}) {
     if (widget.api == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => Scaffold(
-          appBar: AppBar(title: const Text('Community')),
-          body: CommunityPage(
-            repository: CommunityRepository(widget.api!),
-            push: widget.push,
-          ),
-        ),
-      ),
-    );
+    setState(() {
+      _tabIndex = 4;
+      _communityInboxRequested = inbox;
+    });
   }
 
   @override
@@ -126,7 +118,7 @@ class _HomePageState extends State<HomePage> {
     } else if (route == '/summary') {
       setState(() => _tabIndex = 3);
     } else if (route == '/profile') {
-      setState(() => _tabIndex = 4);
+      setState(() => _tabIndex = 5);
     } else if (route == '/community') {
       _openCommunity();
     } else {
@@ -144,7 +136,7 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFFBF8F5),
-      appBar: _buildAppBar(),
+      appBar: _tabIndex == 4 ? null : _buildAppBar(),
       body: ListenableBuilder(
         listenable: _homeController,
         builder: (context, _) => _buildTab(),
@@ -171,7 +163,10 @@ class _HomePageState extends State<HomePage> {
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: line),
             ),
-            child: Image.asset('assets/logo-mark.png', excludeFromSemantics: true),
+            child: Image.asset(
+              'assets/logo-mark.png',
+              excludeFromSemantics: true,
+            ),
           ),
           const SizedBox(width: 10),
           const Text(
@@ -284,7 +279,8 @@ class _HomePageState extends State<HomePage> {
       case 1:
         return CheckinPage(
           appointment: _homeController.activeAppointment,
-          repository: widget.checkinRepository ?? CheckinRepository(api: widget.api),
+          repository:
+              widget.checkinRepository ?? CheckinRepository(api: widget.api),
           onFinished: () {
             _homeController.refresh();
             setState(() => _tabIndex = 0);
@@ -295,7 +291,8 @@ class _HomePageState extends State<HomePage> {
           controller: _reportController,
           appointments: _homeController.appointments.upcoming,
           activeAppointment: _homeController.activeAppointment,
-          onSelectAppointment: (appt) => _homeController.selectAppointment(appt.id),
+          onSelectAppointment: (appt) =>
+              _homeController.selectAppointment(appt.id),
         );
       case 3:
         return SummaryPage(
@@ -303,21 +300,51 @@ class _HomePageState extends State<HomePage> {
           completedAppointments: _homeController.appointments.past,
         );
       case 4:
+        if (widget.api == null) {
+          return const Center(
+            child: Text('Connect to the clinic to open Community.'),
+          );
+        }
+        // Keep community dialogs inside this subtree so account changes dispose them.
+        return NavigatorPopHandler<void>(
+          onPopWithResult: (_) => _communityNavigator.currentState?.maybePop(),
+          child: Navigator(
+            key: _communityNavigator,
+            onGenerateRoute: (_) => MaterialPageRoute<void>(
+              builder: (_) => CommunityPage(
+                repository: CommunityRepository(widget.api!),
+                push: widget.push,
+                initialInbox: _communityInboxRequested,
+                onExit: () => setState(() => _tabIndex = 0),
+              ),
+            ),
+          ),
+        );
+      case 5:
         return ProfilePage(
           controller: _profileController,
           onSignOut: widget.auth.signOut,
         );
       default:
-        return Center(
-          child: Text('Tab $_tabIndex'),
-        );
+        return Center(child: Text('Tab $_tabIndex'));
     }
   }
 
   Widget _buildBottomNav() {
     return NavigationBar(
       selectedIndex: _tabIndex,
-      onDestinationSelected: (i) => setState(() => _tabIndex = i),
+      onDestinationSelected: (i) => setState(() {
+        _tabIndex = i;
+        _communityInboxRequested = false;
+      }),
+      labelTextStyle: WidgetStateProperty.resolveWith(
+        (states) => TextStyle(
+          fontSize: 10,
+          fontWeight: states.contains(WidgetState.selected)
+              ? FontWeight.w700
+              : FontWeight.w500,
+        ),
+      ),
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.white,
       shadowColor: line.withValues(alpha: 0.4),
@@ -344,6 +371,11 @@ class _HomePageState extends State<HomePage> {
           label: 'Summary',
         ),
         NavigationDestination(
+          icon: Icon(Icons.forum_outlined),
+          selectedIcon: Icon(Icons.forum_rounded),
+          label: 'Community',
+        ),
+        NavigationDestination(
           icon: Icon(Icons.person_outline_rounded),
           selectedIcon: Icon(Icons.person_rounded),
           label: 'Profile',
@@ -352,4 +384,3 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
-

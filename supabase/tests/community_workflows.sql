@@ -14,8 +14,19 @@ update community_private.settings set value='["40000000-0000-0000-0000-000000000
 select identity_private.issue_capability('10000000-0000-0000-0000-000000000001','test-v1') as mother \gset
 select identity_private.issue_capability('10000000-0000-0000-0000-000000000002','test-v1') as stranger \gset
 select identity_private.issue_capability('10000000-0000-0000-0000-000000000003','test-v1') as doctor \gset
+update community.members set username='unpicked_meadow' where community_id=community_private.actor(:'stranger');
 
 update community_private.settings set value=to_jsonb(array[community_private.actor(:'doctor')::text]) where key='on_call';
+select set_config('test.mother',:'mother',true) \gset
+set local role medbrief_community_runtime;
+select community_private.choose_username(:'mother','{"username":"calm_garden","requestKey":"30000000-0000-0000-0000-000000000090"}');
+-- Retrying the same write is harmless, but a second distinct name is denied.
+select community_private.choose_username(:'mother','{"username":"calm_garden","requestKey":"30000000-0000-0000-0000-000000000090"}');
+do $$ begin
+ if (community_private.username_status(current_setting('test.mother'))->>'canChooseUsername')::boolean then raise exception 'First choice not locked'; end if;
+ begin perform community_private.choose_username(current_setting('test.mother'),jsonb_build_object('username','second_garden','requestKey',gen_random_uuid())); raise exception 'Second choice accepted'; exception when insufficient_privilege then null; end;
+end $$;
+reset role;
 set local role medbrief_community_worker;
 select community_private.submit_screened(:'mother','create_post','{"title":"Synthetic title","body":"Synthetic body","tags":[],"state":"normal","tier":"normal","requestKey":"30000000-0000-0000-0000-000000000001"}') ->> 'id' as post \gset
 select community_private.worker_tick();
@@ -63,6 +74,11 @@ do $$ begin
 end $$;
 reset role;
 -- A report/help case without professional assessment cannot trigger a reveal request.
+set local role medbrief_community_runtime;
+do $$ begin
+ if (community_private.username_status(current_setting('test.mother'))->>'canChooseUsername')::boolean then raise exception 'Flag/outreach unlocked name'; end if;
+end $$;
+reset role;
 update community_private.cases set response_due=now()-interval '1 second' where id=:'case_id';
 update community_private.jobs set due_at=now()-interval '1 second' where kind='deadline';
 set local role medbrief_community_worker;
@@ -75,6 +91,17 @@ select community_private.action_api(:'mother','respond',jsonb_build_object('id',
 reset role;
 select id as reveal_id from community_private.reveal_requests where case_id=:'case_id' \gset
 select set_config('test.reveal',:'reveal_id',true) \gset
+-- Denial and pending requests do not open another username choice.
+savepoint test_denied_reveal;
+set local role medbrief_reveal_service;
+select identity_private.reveal_api(:'doctor','decide',jsonb_build_object('id',:'reveal_id','decision','deny','reason','Synthetic denied request','reassessed',true));
+reset role;
+set local role medbrief_community_runtime;
+do $$ begin
+ if (community_private.username_status(current_setting('test.mother'))->>'canChooseUsername')::boolean then raise exception 'Denied reveal unlocked name'; end if;
+end $$;
+reset role;
+rollback to savepoint test_denied_reveal;
 set local role medbrief_reveal_service;
 do $$ begin
  begin perform identity_private.reveal_api(current_setting('test.doctor'),'decide',jsonb_build_object('id',current_setting('test.reveal'),'decision','approve','reason','Synthetic reason','reassessed',false)); raise exception 'Late response ignored'; exception when invalid_parameter_value then null; end;
@@ -88,7 +115,7 @@ select identity_private.reveal_api(:'doctor','contact',jsonb_build_object('id',:
 reset role;
 do $$ begin
  if (select status from community_private.cases where id=current_setting('test.case')::uuid)='closed' then raise exception 'Response closed flag'; end if;
- if (select count(*) from community_private.username_history)<>1 then raise exception 'Rotation missing'; end if;
+ if (select count(*) from community_private.username_history)<>2 then raise exception 'Rotation missing'; end if;
  if (select count(*) from identity_private.reveal_audit)<>2 then raise exception 'Audit missing'; end if;
  if exists(select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname in ('community','community_private','identity_private') and c.relkind='r' and (not c.relrowsecurity or not c.relforcerowsecurity)) then raise exception 'RLS missing'; end if;
 end $$;
@@ -96,6 +123,37 @@ update identity_private.reveal_grants set expires_at=now()-interval '1 second';
 set local role medbrief_reveal_service;
 do $$ begin
  begin perform identity_private.reveal_api(current_setting('test.doctor'),'contact',jsonb_build_object('id',current_setting('test.reveal'))); raise exception 'Expired contact access'; exception when insufficient_privilege then null; end;
+end $$;
+reset role;
+
+-- Approved reveal opens exactly one fresh choice; earlier names stay reserved.
+set local role medbrief_community_runtime;
+do $$ begin
+ if not (community_private.username_status(current_setting('test.mother'))->>'canChooseUsername')::boolean then raise exception 'Approved rotation did not unlock choice'; end if;
+end $$;
+select community_private.choose_username(:'mother','{"username":"gentle_garden","requestKey":"30000000-0000-0000-0000-000000000091"}');
+select community_private.choose_username(:'mother','{"username":"gentle_garden","requestKey":"30000000-0000-0000-0000-000000000091"}');
+do $$ begin
+ if (community_private.username_status(current_setting('test.mother'))->>'canChooseUsername')::boolean then raise exception 'Post-reveal choice not locked'; end if;
+ if community_private.read_api(current_setting('test.mother'),'me')->>'username'<>'gentle_garden' then raise exception 'Username not changed'; end if;
+ if community_private.read_api(current_setting('test.stranger'),'post',jsonb_build_object('id',current_setting('test.post')))->0->>'username'<>'gentle_garden' then raise exception 'Historical post not renamed'; end if;
+ begin perform community_private.choose_username(current_setting('test.mother'),jsonb_build_object('username','third_garden','requestKey',gen_random_uuid())); raise exception 'Post-reveal second choice accepted'; exception when insufficient_privilege then null; end;
+ begin perform community_private.choose_username(current_setting('test.stranger'),jsonb_build_object('username','calm_garden','requestKey',gen_random_uuid())); raise exception 'Duplicate username accepted'; exception when unique_violation then null; end;
+ begin perform community_private.choose_username(current_setting('test.stranger'),jsonb_build_object('username','doctor_fake','requestKey',gen_random_uuid())); raise exception 'Role impersonation accepted'; exception when invalid_parameter_value then null; end;
+ begin perform community_private.choose_username('forged',jsonb_build_object('username','fake_member','requestKey',gen_random_uuid())); raise exception 'Forged rename accepted'; exception when insufficient_privilege then null; end;
+end $$;
+do $$ begin
+ begin perform community_private.choose_username(current_setting('test.stranger'),jsonb_build_object('username','calm_garden','requestKey',gen_random_uuid())); raise exception 'Retired username reused'; exception when unique_violation then null; end;
+end $$;
+select community_private.choose_username(:'stranger','{"username":"unpicked_meadow","requestKey":"30000000-0000-0000-0000-000000000092"}');
+do $$ begin
+ if (community_private.username_status(current_setting('test.stranger'))->>'canChooseUsername')::boolean then raise exception 'Confirming the existing name did not lock it'; end if;
+ begin perform community_private.choose_username(current_setting('test.stranger'),jsonb_build_object('username','another_meadow','requestKey',gen_random_uuid())); raise exception 'Change after confirmation accepted'; exception when insufficient_privilege then null; end;
+end $$;
+reset role;
+set local role medbrief_community_worker;
+do $$ begin
+ begin perform community_private.choose_username(current_setting('test.mother'),jsonb_build_object('username','worker_change','requestKey',gen_random_uuid())); raise exception 'Worker changed username'; exception when insufficient_privilege then null; end;
 end $$;
 reset role;
 

@@ -45,7 +45,28 @@ function createScreening({ modelCall, rules, version }) {
   };
 }
 function localScreening(env = process.env) {
+  const bypass = env.COMMUNITY_LLM_BYPASS === 'true';
+  if (env.COMMUNITY_LLM_BYPASS && !['true', 'false'].includes(env.COMMUNITY_LLM_BYPASS)) {
+    throw new Error('COMMUNITY_LLM_BYPASS must be true or false');
+  }
+  if (bypass && !['development', 'test'].includes(env.NODE_ENV)) {
+    throw new Error('Community LLM bypass requires NODE_ENV=development or test');
+  }
   const rules = JSON.parse(fs.readFileSync(env.COMMUNITY_RULES_FILE, 'utf8'));
+  if (bypass) {
+    // Synthetic testing only: keep deterministic stripping and the rules safety floor.
+    // No model, Ollama URL or model version is needed in this mode.
+    const screen = createScreening({
+      rules,
+      version: 'development-llm-bypass-v1',
+      modelCall: async task => task === 'redact' ? { identifiers: [] } : { tier: 'normal' },
+    });
+    return async input => {
+      const result = await screen(input);
+      result.screening.model.bypassed = true;
+      return result;
+    };
+  }
   const url = new URL(env.OLLAMA_URL || 'http://127.0.0.1:11434');
   if (!['localhost','127.0.0.1','[::1]'].includes(url.hostname)) throw new Error('Local model endpoint required');
   if (!env.COMMUNITY_MODEL || !env.COMMUNITY_MODEL_VERSION) throw new Error('Model configuration required');

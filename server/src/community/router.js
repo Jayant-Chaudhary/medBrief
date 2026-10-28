@@ -20,6 +20,15 @@ function createCommunityRouter({db,identity,safety}) {
  const read=(path,op,map=()=>({}))=>router.get(path,wrap(async(req,res)=>res.json(await db('community_private.read_api',[req.communityProof,op,map(req)]))));
  const optional=value=>value===undefined?undefined:id.parse(value);
  read('/me','me'); read('/tags','tags');
+ router.get('/username/status',wrap(async(req,res)=>res.json(await db('community_private.username_status',[req.communityProof]))));
+ router.post('/username',wrap(async(req,res)=>{
+  const args=schemas.username.parse(req.body);
+  // Require the lock capability before calling a potentially pre-upgrade chooser.
+  // The SQL function enforces the lock, including races, while allowing retries.
+  const status=await db('community_private.username_status',[req.communityProof]);
+  if(typeof status?.canChooseUsername!=='boolean') throw new CommunityError(503,'community_unavailable');
+  res.json(await db('community_private.choose_username',[req.communityProof,args]));
+ }));
  router.get('/moderator/tags',wrap(async(req,res)=>res.json(await db('community_private.manage_tags',[req.communityProof,{}]))));
  router.post('/moderator/tags',wrap(async(req,res)=>{
   const args=require('zod').z.object({slug:require('zod').z.string().regex(/^[a-z0-9-]{1,60}$/),name:require('zod').z.string().min(1).max(80),active:require('zod').z.boolean()}).strict().parse(req.body);

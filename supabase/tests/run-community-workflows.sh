@@ -28,6 +28,8 @@ for migration in "$repo_root"/supabase/migrations/20261028*.sql; do
   psql "${psql_args[@]}" -f "$migration" >/dev/null
 done
 psql "${psql_args[@]}" -f "$repo_root/supabase/tests/community_workflows.sql"
+psql "${psql_args[@]}" -f "$repo_root/supabase/rollbacks/20261028000012_community_username_lock.sql" >/dev/null
+psql "${psql_args[@]}" -f "$repo_root/supabase/tests/community_username_lock_upgrade.sql"
 # Exercise the actual Node adapter with a restricted synthetic login, including
 # its fail-closed logging check. No hosted credentials or patient data are used.
 psql "${psql_args[@]}" >/dev/null <<'SQL'
@@ -60,7 +62,7 @@ JS
 psql "${psql_args[@]}" -c 'drop role community_adapter_test' >/dev/null
 # Validate the manual synthetic demo seed, including a safe repeated application.
 psql "${psql_args[@]}" -c "insert into auth.users values ('10000000-0000-4000-8000-000000000099')" >/dev/null
-sed 's/REPLACE_WITH_TEST_DOCTOR_USER_UUID/10000000-0000-4000-8000-000000000099/g' \
+sed -E "s/(test_doctor_auth_id uuid := )'[^']*'/\1'10000000-0000-4000-8000-000000000099'/" \
   "$repo_root/supabase/seeds/community_demo.sql" > "$test_root/demo.sql"
 psql "${psql_args[@]}" -f "$test_root/demo.sql" >/dev/null
 psql "${psql_args[@]}" -f "$test_root/demo.sql" >/dev/null

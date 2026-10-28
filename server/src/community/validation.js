@@ -3,6 +3,7 @@ const id = z.string().uuid();
 const key = { requestKey: id };
 const target = { id, targetType: z.enum(['post','comment']) };
 const schemas = {
+  username: z.object({...key,username:z.string().trim().toLowerCase().regex(/^[a-z][a-z0-9_]{2,31}$/).refine(value=>!/[0-9]{7}/.test(value)&&!/^(admin|doctor|dr_|therapist|moderator|medbrief)/.test(value))}).strict(),
   create_post: z.object({...key,title:z.string().trim().min(1).max(200),body:z.string().trim().min(1).max(10000),tags:z.array(id).max(10)}).strict(),
   create_comment: z.object({...key,postId:id,parentId:id.nullable().optional(),body:z.string().trim().min(1).max(10000)}).strict(),
   report: z.object({...key,...target,category:z.enum(['worried','abuse'])}).strict(),

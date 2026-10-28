@@ -4,6 +4,13 @@ const { createDatabase, CommunityError } = require('./database');
 const { internalAuth, wrap, safeErrors } = require('./internal');
 const { schemas } = require('./validation');
 
+function validateIdentityEnvironment(env) {
+  const required = ['COMMUNITY_IDENTITY_DATABASE_URL', 'COMMUNITY_IDENTITY_SERVICE_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY'];
+  const missing = required.filter(key => typeof env[key] !== 'string' || !env[key].trim());
+  if (missing.length) throw new Error(`Identity service configuration missing: ${missing.join(', ')}. Start with the dedicated identity.env file.`);
+  if (env.COMMUNITY_IDENTITY_SERVICE_KEY.length < 32) throw new Error('Identity service requires a COMMUNITY_IDENTITY_SERVICE_KEY of at least 32 characters.');
+}
+
 function createIdentityService({db,verifySession,secret}) {
   const app=express(); app.disable('x-powered-by');
   app.use(internalAuth(secret),express.json({limit:'32kb'}));
@@ -25,8 +32,9 @@ function createIdentityService({db,verifySession,secret}) {
   app.use(safeErrors); return app;
 }
 if (require.main===module) {
+  validateIdentityEnvironment(process.env);
   const supabase=createClient(process.env.SUPABASE_URL,process.env.SUPABASE_ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
   const app=createIdentityService({db:createDatabase(process.env.COMMUNITY_IDENTITY_DATABASE_URL),secret:process.env.COMMUNITY_IDENTITY_SERVICE_KEY,verifySession:async token=>{const {data,error}=await supabase.auth.getUser(token); return error?null:data.user?.id;}});
   app.listen(Number(process.env.COMMUNITY_IDENTITY_PORT||4101),'127.0.0.1');
 }
-module.exports={createIdentityService};
+module.exports={createIdentityService,validateIdentityEnvironment};

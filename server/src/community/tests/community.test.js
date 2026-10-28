@@ -2,7 +2,7 @@ const express = require('express');
 const request = require('supertest');
 const {createCommunityRouter}=require('../router');
 const {createSafetyService}=require('../safety-service');
-const {createIdentityService}=require('../identity-service');
+const {createIdentityService,validateIdentityEnvironment}=require('../identity-service');
 const {createScreening}=require('../screening');
 const {CommunityError}=require('../database');
 const {runOnce}=require('../worker');
@@ -10,7 +10,7 @@ const ID='10000000-0000-4000-8000-000000000001';
 const KEY='20000000-0000-4000-8000-000000000001';
 const secret='s'.repeat(40);
 function setup(){const db=jest.fn().mockResolvedValue([]),identity=jest.fn().mockImplementation(async path=>path==='/resolve'?{proof:'internal-only'}:[]),safety=jest.fn().mockResolvedValue({received:true});const app=express();app.use(express.json(),createCommunityRouter({db,identity,safety}));return{app,db,identity,safety};}
-const reads=['/posts/mine','/moderator/tags','/me','/tags','/posts',`/posts/${ID}`,`/posts/${ID}/comments`,'/care/threads',`/care/threads/${ID}/messages`,'/professional/cases','/professional/queue',`/professional/cases/${ID}/revisions`,'/professional/alerts','/professional/reveals'];
+const reads=['/username/status','/posts/mine','/moderator/tags','/me','/tags','/posts',`/posts/${ID}`,`/posts/${ID}/comments`,'/care/threads',`/care/threads/${ID}/messages`,'/professional/cases','/professional/queue',`/professional/cases/${ID}/revisions`,'/professional/alerts','/professional/reveals'];
 const writes=[['/posts',{title:'Synthetic',body:'Synthetic text',tags:[]}],['/posts/edit',{id:ID,title:'Edited',body:'Text',tags:[]}],['/comments',{postId:ID,body:'Reply'}],['/comments/edit',{id:ID,body:'Edit'}],['/reports',{id:ID,targetType:'post',category:'worried'}],['/help',{id:ID,targetType:'post'}],['/care/respond',{id:ID,kind:'okay'}],['/care/messages',{id:ID,body:'Private text'}],['/professional/claim',{id:ID}],['/posts/remove',{id:ID}],['/comments/remove',{id:ID}],['/devices',{token:'synthetic-device'}],['/devices/remove',{token:'synthetic-device'}]];
 describe('community transport boundaries',()=>{
  test.each(reads)('%s requires authentication',async path=>{const {app,db}=setup();expect((await request(app).get(path)).status).toBe(401);expect(db).not.toHaveBeenCalled();});
@@ -24,6 +24,20 @@ describe('community transport boundaries',()=>{
 });
 
 describe('isolated services',()=>{
+ test('identity startup rejects an API-only environment without echoing configured values',()=>{
+  const env={COMMUNITY_DATABASE_URL:'synthetic-runtime-secret',COMMUNITY_IDENTITY_SERVICE_KEY:secret,SUPABASE_URL:'https://synthetic.invalid',SUPABASE_ANON_KEY:'synthetic-anon-secret'};
+  let error; try {validateIdentityEnvironment(env);} catch(e){error=e;}
+  expect(error.message).toContain('COMMUNITY_IDENTITY_DATABASE_URL');
+  expect(error.message).toContain('identity.env');
+  expect(error.message).not.toMatch(/synthetic-runtime-secret|synthetic-anon-secret|https:/);
+ });
+ test('dedicated identity environment passes startup validation',()=>{
+  expect(()=>validateIdentityEnvironment({COMMUNITY_IDENTITY_DATABASE_URL:'postgresql://synthetic.invalid/test',COMMUNITY_IDENTITY_SERVICE_KEY:secret,SUPABASE_URL:'https://synthetic.invalid',SUPABASE_ANON_KEY:'synthetic-key'})).not.toThrow();
+ });
+ test('identity startup rejects missing values and short service keys',()=>{
+  expect(()=>validateIdentityEnvironment({})).toThrow(/configuration missing/);
+  expect(()=>validateIdentityEnvironment({COMMUNITY_IDENTITY_DATABASE_URL:'postgresql://synthetic.invalid/test',COMMUNITY_IDENTITY_SERVICE_KEY:'short',SUPABASE_URL:'https://synthetic.invalid',SUPABASE_ANON_KEY:'synthetic-key'})).toThrow(/at least 32/);
+ });
  test('identity service validates the session instead of trusting account IDs',async()=>{const db=jest.fn().mockResolvedValue('proof'),verifySession=jest.fn().mockResolvedValue(ID);const app=createIdentityService({db,verifySession,secret});expect((await request(app).post('/resolve').send({token:'x',account:ID})).status).toBe(403);const r=await request(app).post('/resolve').set('X-Community-Service-Key',secret).send({token:'session',account:'forged'});expect(r.status).toBe(200);expect(db).toHaveBeenCalledWith('identity_private.issue_capability',[ID,null]);});
  test('invalid session cannot mint capabilities',async()=>{const db=jest.fn();const app=createIdentityService({db,verifySession:async()=>null,secret});expect((await request(app).post('/resolve').set('X-Community-Service-Key',secret).send({token:'invalid'})).status).toBe(401);expect(db).not.toHaveBeenCalled();});
  test('safety service refuses caller-supplied tiers and professional operations',async()=>{const db=jest.fn(),screen=jest.fn();const app=createSafetyService({db,screen,secret});for(const operation of ['assess_case','close_case']){expect((await request(app).post('/process').set('X-Community-Service-Key',secret).send({operation,proof:'p',args:{}})).status).toBe(400);}expect(db).not.toHaveBeenCalled();});
@@ -44,6 +58,46 @@ test('no registered device is not counted as successful delivery',async()=>{cons
 
 
 describe('community management and reveal transport',()=>{
+ test('username lock status returns only the current member status',async()=>{
+  const {app,db}=setup();db.mockResolvedValue({canChooseUsername:false});
+  const r=await request(app).get('/username/status').set('Authorization','Bearer synthetic');
+  expect(r.status).toBe(200);expect(r.body).toEqual({canChooseUsername:false});
+  expect(db).toHaveBeenCalledWith('community_private.username_status',['internal-only']);
+ });
+ test('a locked username returns forbidden through the API',async()=>{
+  const {app,db}=setup();db.mockRejectedValue(new CommunityError(403,'community_access_denied'));
+  const r=await request(app).post('/username').set('Authorization','Bearer synthetic').send({requestKey:KEY,username:'another_garden'});
+  expect(r.status).toBe(403);expect(r.body).toEqual({error:'community_unavailable_or_access_denied'});
+ });
+ test('username changes require authentication and use only the current actor proof',async()=>{
+  const {app,db}=setup();const body={requestKey:KEY,username:'Calm_Garden'};
+  expect((await request(app).post('/username').send(body)).status).toBe(401);
+  db.mockImplementation(async name=>name==='community_private.username_status'?{canChooseUsername:true}:{username:'calm_garden'});
+  const r=await request(app).post('/username').set('Authorization','Bearer synthetic').send(body);
+  expect(r.status).toBe(200);expect(r.body).toEqual({username:'calm_garden'});
+  expect(db).toHaveBeenCalledWith('community_private.choose_username',['internal-only',{requestKey:KEY,username:'calm_garden'}]);
+ });
+ test('missing lock migration prevents calling an old unrestricted chooser',async()=>{
+  const {app,db}=setup();db.mockRejectedValue(new CommunityError(503,'community_request_failed'));
+  const r=await request(app).post('/username').set('Authorization','Bearer synthetic').send({requestKey:KEY,username:'calm_garden'});
+  expect(r.status).toBe(503);expect(db).toHaveBeenCalledTimes(1);
+  expect(db).toHaveBeenCalledWith('community_private.username_status',['internal-only']);
+ });
+ test('invalid lock status fails closed before choosing a name',async()=>{
+  const {app,db}=setup();db.mockResolvedValue({});
+  const r=await request(app).post('/username').set('Authorization','Bearer synthetic').send({requestKey:KEY,username:'calm_garden'});
+  expect(r.status).toBe(503);expect(db).toHaveBeenCalledTimes(1);
+ });
+ test.each(['ab','bad name','doctor_fake','admin_person','garden1234567'])('invalid public username is rejected: %s',async username=>{
+  const {app,db}=setup();expect((await request(app).post('/username').set('Authorization','Bearer synthetic').send({requestKey:KEY,username})).status).toBe(400);expect(db).not.toHaveBeenCalled();
+ });
+ test('username cannot choose another account and conflicts disclose no identity',async()=>{
+  const {app,db}=setup();
+  expect((await request(app).post('/username').set('Authorization','Bearer synthetic').send({requestKey:KEY,username:'calm_garden',communityId:ID})).status).toBe(400);
+  db.mockRejectedValue(new CommunityError(409,'community_request_failed'));
+  const r=await request(app).post('/username').set('Authorization','Bearer synthetic').send({requestKey:KEY,username:'calm_garden'});
+  expect(r.status).toBe(409);expect(JSON.stringify(r.body)).not.toContain(ID);
+ });
  test('notice requires a session and returns only the notice',async()=>{const {app,identity}=setup();expect((await request(app).get('/notice')).status).toBe(401);identity.mockResolvedValue({enabled:false});expect((await request(app).get('/notice').set('Authorization','Bearer synthetic')).body).toEqual({enabled:false});});
  test('moderator tag names are cleaned before database submission',async()=>{const {app,db,safety}=setup();safety.mockResolvedValue({text:'Cleaned tag'});const body={slug:'support',name:'Synthetic tag',active:true};expect((await request(app).post('/moderator/tags').send(body)).status).toBe(401);expect((await request(app).post('/moderator/tags').set('Authorization','Bearer synthetic').send(body)).status).toBe(200);expect(db).toHaveBeenCalledWith('community_private.manage_tags',['internal-only',{...body,name:'Cleaned tag'}]);});
  test.each(['context','contact','decide'])('reveal %s requires authentication and stays in the isolated service',async operation=>{const {app,db,identity,safety}=setup();safety.mockResolvedValue({text:'Cleaned reason'});const body=operation==='decide'?{id:ID,decision:'deny',reason:'Synthetic reason',reassessed:false}:{id:ID};const path='/professional/reveals/'+operation;expect((await request(app).post(path).send(body)).status).toBe(401);expect((await request(app).post(path).set('Authorization','Bearer synthetic').send(body)).status).toBe(200);expect(identity).toHaveBeenCalledWith('/reveal',expect.objectContaining({operation,token:'synthetic'}));expect(db).not.toHaveBeenCalled();});
