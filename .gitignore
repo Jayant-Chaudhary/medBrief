@@ -26,3 +26,8 @@ Thumbs.db
 .idea/
 # Test coverage output
 coverage/
+
+# OCR benchmark: real patient reports, results and the Docling venv
+ocr/bench/reports/
+ocr/bench/out/
+ocr/bench/.venv-docling/

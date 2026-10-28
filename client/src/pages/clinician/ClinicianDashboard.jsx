@@ -14,7 +14,7 @@ import { ActionChecklist } from '../../components/clinician/ActionChecklist.jsx'
 import { PrescriptionUpload } from '../../components/clinician/PrescriptionUpload.jsx';
 import { Spinner } from '../../components/common/Spinner.jsx';
 import { usePatientDashboard } from '../../hooks/usePatientDashboard.js';
-import { Plus, ArrowLeft, Clock, User, CheckCircle, NotebookPen, CircleStop, BadgeCheck, UserCheck } from 'lucide-react';
+import { Plus, ArrowLeft, Clock, User, CheckCircle, NotebookPen, CircleStop, BadgeCheck, UserCheck, Heart } from 'lucide-react';
 import { buildFlowsheet } from '../../utils/flowsheet.js';
 import {
   fetchPatients,
@@ -364,20 +364,31 @@ export function ClinicianDashboard() {
           </button>
           <h1 className="text-xl font-display font-semibold text-ink">Report Analysis</h1>
 
-          <button
-            type="button"
-            onClick={() => setNotesOpen(true)}
-            aria-haspopup="dialog"
-            aria-expanded={notesOpen}
-            className="ml-auto flex items-center gap-2 rounded-xl border border-line bg-surface px-4 py-2 text-label-lg text-cypress
-                       transition-colors hover:border-cypress hover:bg-subcanvas"
-          >
-            <NotebookPen className="h-4 w-4" />
-            Consultation notes
-            {(data.notes.text.trim() || data.actionItems.length > 0 || data.prescriptions.length > 0) && (
-              <span className="h-2 w-2 rounded-full bg-sage" aria-label="has content" />
-            )}
-          </button>
+          <div className="ml-auto flex items-center gap-3">
+            <Link
+              to={`/clinician/maternity?patientId=${data.patient.id}&patientName=${encodeURIComponent(data.patient.name || '')}&phone=${encodeURIComponent(data.patient.phone || '')}`}
+              className="flex items-center gap-2 rounded-xl border border-line bg-surface px-4 py-2 text-label-lg text-cypress transition-colors hover:border-cypress hover:bg-subcanvas"
+              title="Open Antenatal Maternity Record"
+            >
+              <Heart className="h-4 w-4 text-terracotta" />
+              Maternity card
+            </Link>
+
+            <button
+              type="button"
+              onClick={() => setNotesOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={notesOpen}
+              className="flex items-center gap-2 rounded-xl border border-line bg-surface px-4 py-2 text-label-lg text-cypress
+                         transition-colors hover:border-cypress hover:bg-subcanvas"
+            >
+              <NotebookPen className="h-4 w-4" />
+              Consultation notes
+              {(data.notes.text.trim() || data.actionItems.length > 0 || data.prescriptions.length > 0) && (
+                <span className="h-2 w-2 rounded-full bg-sage" aria-label="has content" />
+              )}
+            </button>
+          </div>
 
           {data.appointment?.status === 'completed' ? (
             <span className="flex items-center gap-2 rounded-xl border border-sage-border bg-sage-surface px-4 py-2 text-label-lg text-sage-ink">
@@ -408,7 +419,7 @@ export function ClinicianDashboard() {
           <PatientHeaderCard patient={data.patient} />
           {data.questionnaire.answers.length > 0 && <PreVisitQuestionnairePanel questionnaire={data.questionnaire} />}
           <OcrTriageAlert alerts={data.triageAlerts} onResolve={handleResolveAlert} />
-          <HistoryGrid flowsheet={data.flowsheet} patientId={data.patient.id} />
+          <HistoryGrid flowsheet={data.flowsheet} patientId={data.patient.id} onResolve={handleResolveAlert} />
         </div>
 
         <SlideOver

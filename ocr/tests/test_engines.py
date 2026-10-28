@@ -50,7 +50,11 @@ class TestFieldSplitting(unittest.TestCase):
     def test_a_ruled_row_parses_as_a_test_row(self):
         test = sp.parse_test_row(sp.split_fields(self.ruled_row()))
         self.assertEqual(test, {"name": "Hemoglobin", "value": "11.2",
-                                "unit": "g/dL", "reference": "12.0 - 15.0", "flag": None})
+                                "unit": "g/dL", "reference": "12.0 - 15.0", "flag": None,
+                                # The whole row, and the value cell on its own.
+                                "location": {"page": 0,
+                                             "row": [50.0, 95.0, 360.0, 110.0],
+                                             "value": [170.0, 95.0, 220.0, 110.0]}})
 
     def test_plain_words_still_group_by_gap(self):
         line = sp.Line(y=50, tokens=[

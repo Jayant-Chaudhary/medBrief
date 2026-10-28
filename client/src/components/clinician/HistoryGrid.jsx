@@ -4,6 +4,7 @@ import { EmptyState } from '../common/EmptyState.jsx';
 import { TrendChart } from './TrendChart.jsx';
 import { useMetricTrend } from '../../hooks/useMetricTrend.js';
 import { formatDate } from '../../utils/format.js';
+import { SourcePreview } from './SourcePreview.jsx';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -45,12 +46,14 @@ function formatValue(value) {
  * The table is fixed-width: more report dates than fit are paged, never
  * scrolled sideways.
  */
-export function HistoryGrid({ flowsheet, patientId }) {
+export function HistoryGrid({ flowsheet, patientId, onResolve }) {
   const { columns = [], groups = [], rowCount = 0, changedCount = 0, reviewCount = 0 } = flowsheet ?? {};
   const visible = useVisibleColumnCount();
   const [filter, setFilter] = useState('all');
   const [offset, setOffset] = useState(0);
   const [expandedRow, setExpandedRow] = useState(null);
+  // The value whose printed line is being shown (see SourcePreview).
+  const [preview, setPreview] = useState(null);
 
   // Quiet panels (nothing changed, nothing to review) start folded.
   const [openGroups, setOpenGroups] = useState(() => new Set());
@@ -238,6 +241,7 @@ export function HistoryGrid({ flowsheet, patientId }) {
                         patientId={patientId}
                         expanded={expandedRow === row.key}
                         onToggle={() => setExpandedRow((current) => (current === row.key ? null : row.key))}
+                        onShowSource={(cell) => setPreview({ ...cell, name: row.name, standardKey: row.standardKey, rowKey: row.key })}
                         colSpan={colSpan}
                       />
                     ))}
@@ -254,11 +258,25 @@ export function HistoryGrid({ flowsheet, patientId }) {
           </tbody>
         </table>
       )}
+
+      <SourcePreview
+        item={preview}
+        onClose={() => setPreview(null)}
+        onResolve={
+          onResolve && preview?.needsReview
+            ? (value) =>
+                onResolve(
+                  { id: preview.metricId, metricId: preview.metricId, standardKey: preview.standardKey ?? '', metricKey: preview.rowKey },
+                  value
+                )
+            : undefined
+        }
+      />
     </section>
   );
 }
 
-function HistoryRow({ row, columns, start, patientId, expanded, onToggle, colSpan }) {
+function HistoryRow({ row, columns, start, patientId, expanded, onToggle, onShowSource, colSpan }) {
   const { series, loading } = useMetricTrend({
     standardKey: row.standardKey,
     patientId,
@@ -316,20 +334,25 @@ function HistoryRow({ row, columns, start, patientId, expanded, onToggle, colSpa
             );
           }
 
+          // Every value opens the line of the report it was read from.
+          const openSource = (event) => {
+            event.stopPropagation();
+            onShowSource(cell);
+          };
+
           if (cell.needsReview) {
             return (
               <td key={column.key} className={`${pad} py-2.5 text-right`}>
-                <a
-                  href={cell.scanUrl ?? undefined}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={(event) => event.stopPropagation()}
-                  title={`${cell.reason}${cell.scanUrl ? ' Click to open the scan.' : ''}`}
+                <button
+                  type="button"
+                  onClick={openSource}
+                  aria-haspopup="dialog"
+                  title={`${cell.reason} Click to see it on the report.`}
                   className="inline-flex max-w-full items-center gap-1 truncate rounded-md border border-terracotta-border bg-terracotta-surface px-1.5 py-0.5 text-body-sm tabular text-terracotta hover:border-terracotta"
                 >
                   <span className="truncate">{formatValue(cell.value)}</span>
                   <span className="font-semibold">?</span>
-                </a>
+                </button>
               </td>
             );
           }
@@ -337,9 +360,14 @@ function HistoryRow({ row, columns, start, patientId, expanded, onToggle, colSpa
           const isNewest = index === newestIndex;
           return (
             <td key={column.key} className={`${pad} py-2.5 text-right`}>
-              <span
-                className={`tabular ${isNewest ? 'font-display text-label-lg text-ink' : 'text-body-sm text-ink-2'}`}
-                title={isNewest && changeLabel ? changeLabel : undefined}
+              <button
+                type="button"
+                onClick={openSource}
+                aria-haspopup="dialog"
+                className={`tabular rounded px-1 underline-offset-4 hover:bg-subcanvas hover:underline ${
+                  isNewest ? 'font-display text-label-lg text-ink' : 'text-body-sm text-ink-2'
+                }`}
+                title={`${isNewest && changeLabel ? `${changeLabel}. ` : ''}Click to see it on the report.`}
               >
                 {formatValue(cell.value)}
                 {isNewest && direction !== 'flat' && (
@@ -350,7 +378,7 @@ function HistoryRow({ row, columns, start, patientId, expanded, onToggle, colSpa
                     {direction === 'up' ? '▲' : '▼'}
                   </span>
                 )}
-              </span>
+              </button>
             </td>
           );
         })}

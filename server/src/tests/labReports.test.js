@@ -433,3 +433,65 @@ describe('GET /lab-reports/history', () => {
     expect((await get('')).status).toBe(400);
   });
 });
+
+describe('value source locations', () => {
+  const patient = { id: 'patient-123', email: 'patient@example.com' };
+  const post = (body) => {
+    supabaseAdmin.auth.getUser.mockResolvedValue({ data: { user: patient }, error: null });
+    return request(app).post('/api/lab-reports').set('Authorization', 'Bearer t').send(body);
+  };
+  const tables = () =>
+    mockTables(supabaseAdmin, {
+      profiles: profileRow('patient'),
+      lab_reports: ok({ id: 'report-1', patient_id: patient.id }),
+      lab_report_metrics: ok([]),
+    });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Two standardised rows back, in the same order as the input metrics.
+    standardizeMetrics.mockResolvedValue([
+      { raw_key: 'TSH', standard_key: 'tsh', needs_review: false },
+      { raw_key: 'Hb', standard_key: 'hemoglobin', needs_review: false },
+    ]);
+    maybeFlagReportForTriage.mockResolvedValue();
+  });
+
+  it('stores where each value was printed, matched to its row by position', async () => {
+    const chains = tables();
+    const tshSource = { page: 6, row: [0.058, 0.394, 0.931, 0.405], value: [0.495, 0.394, 0.533, 0.404] };
+
+    const response = await post({
+      storagePath: 'labs/report.pdf',
+      metrics: [
+        { key: 'TSH', value: '0.997', source: tshSource },
+        { key: 'Hb', value: '12.2' }, // no location recorded
+      ],
+    });
+
+    expect(response.status).toBe(201);
+    const inserted = chains.lab_report_metrics[0].insert.mock.calls[0][0];
+    expect(inserted[0]).toMatchObject({ raw_key: 'TSH', source_page: 6, source_box: { row: tshSource.row, value: tshSource.value } });
+    expect(inserted[1]).toMatchObject({ raw_key: 'Hb', source_page: null, source_box: null });
+  });
+
+  it('keeps the row box when the value box is missing', async () => {
+    const chains = tables();
+    await post({
+      storagePath: 'labs/report.pdf',
+      metrics: [{ key: 'TSH', value: '0.997', source: { page: 1, row: [0.1, 0.2, 0.9, 0.25], value: null } }, { key: 'Hb', value: '12' }],
+    });
+    const [tsh] = chains.lab_report_metrics[0].insert.mock.calls[0][0];
+    expect(tsh.source_box).toEqual({ row: [0.1, 0.2, 0.9, 0.25], value: null });
+  });
+
+  it.each([
+    ['outside the page', { page: 1, row: [0.1, 0.2, 1.4, 0.25] }],
+    ['with no area', { page: 1, row: [0.5, 0.2, 0.5, 0.25] }],
+    ['on page 0', { page: 0, row: [0.1, 0.2, 0.9, 0.25] }],
+  ])('rejects a location %s', async (_label, source) => {
+    tables();
+    const response = await post({ storagePath: 'labs/report.pdf', metrics: [{ key: 'TSH', value: '1', source }] });
+    expect(response.status).toBe(400);
+  });
+});

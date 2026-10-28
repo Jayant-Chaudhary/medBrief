@@ -42,7 +42,10 @@ def tests_from_lines(*lines: str, pages: list[list[str]] | None = None) -> tuple
     payload = {"pages": [{"page_number": i + 1, "lines": p} for i, p in enumerate(pages)]}
     tokens, layout = dp._tokens_from_ocr_text(payload)
     doc = structure_document(tokens, **layout)
-    return [t for s in doc["sections"] for t in s["tests"]], doc
+    # Row positions are covered by test_source_location.py; these tests are
+    # about what was read, so the location is left out of the comparison.
+    tests = [{k: v for k, v in t.items() if k != "location"} for s in doc["sections"] for t in s["tests"]]
+    return tests, doc
 
 
 # --------------------------------------------------------------------------

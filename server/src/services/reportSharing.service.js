@@ -32,4 +32,25 @@ async function shareAllReportsWithAppointment(patientId, appointmentId) {
   return rows.length;
 }
 
-module.exports = { shareAllReportsWithAppointment };
+/** Ids of the reports a patient has shared with any of this clinician's appointments. */
+async function reportIdsSharedWithClinician(clinicianId, patientId) {
+  const { data: appointments, error } = await supabaseAdmin
+    .from('appointments')
+    .select('id')
+    .eq('clinician_id', clinicianId)
+    .eq('patient_id', patientId);
+  if (error) throw error;
+
+  const appointmentIds = (appointments || []).map((a) => a.id);
+  if (appointmentIds.length === 0) return [];
+
+  const { data: shares, error: shareError } = await supabaseAdmin
+    .from('appointment_lab_reports')
+    .select('lab_report_id')
+    .in('appointment_id', appointmentIds);
+  if (shareError) throw shareError;
+
+  return [...new Set((shares || []).map((row) => row.lab_report_id))];
+}
+
+module.exports = { shareAllReportsWithAppointment, reportIdsSharedWithClinician };

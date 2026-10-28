@@ -9,12 +9,14 @@ const DEBUG_API =
   (import.meta.env.DEV && import.meta.env.VITE_DEBUG_API !== 'false');
 
 export class ApiError extends Error {
-  constructor(message, status, requestId) {
+  constructor(message, status, requestId, details) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     // Matches the server's log lines for this request.
     this.requestId = requestId;
+    // validateBody's per-field messages, when the body was rejected.
+    this.details = details;
   }
 }
 
@@ -29,7 +31,7 @@ function trace(method, path, response, startedAt) {
 async function toApiError(response, fallback) {
   const payload = await response.json().catch(() => ({}));
   const requestId = payload.requestId || response.headers.get('X-Request-Id') || undefined;
-  return new ApiError(payload.error || `${fallback} (${response.status})`, response.status, requestId);
+  return new ApiError(payload.error || `${fallback} (${response.status})`, response.status, requestId, payload.details);
 }
 
 async function authHeader() {

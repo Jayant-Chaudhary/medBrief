@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { to: '/clinician/appointments/new', label: 'New Visit', icon: 'plus' },
   { to: '/clinician/schedule', label: 'Schedule', icon: 'calendar' },
   { to: '/clinician/patients', label: 'Patients', icon: 'users' },
+  { to: '/clinician/maternity', label: 'Maternity Card', icon: 'heart' },
   { to: '/clinician/checklists', label: 'Checklists', icon: 'check' },
   { to: '/clinician/lab-inbox', label: 'Lab Inbox', icon: 'flask' },
   { to: '/clinician/analytics', label: 'Analytics', icon: 'chart' },

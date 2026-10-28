@@ -1,5 +1,6 @@
 import { request, upload } from './apiClient.js';
 import { buildFlowsheet, reviewReason } from '../utils/flowsheet.js';
+import { fileKindOf } from '../utils/sourceCrop.js';
 
 /** Create an appointment, attach its questionnaire and invite the patient. */
 export async function createAppointment({
@@ -307,6 +308,44 @@ function buildTriageAlerts(reports = []) {
         confidence: metric.confidence_score ?? null,
         reason: reviewReason(metric),
         imageUrl: report.signed_url ?? null,
+        sourcePage: metric.source_page ?? null,
+        sourceBox: metric.source_box ?? null,
+        fileKind: fileKindOf(report.storage_path),
+        printed: [metric.raw_value, metric.unit_raw].filter(Boolean).join(' '),
       }))
   );
+}
+
+// ---------- Maternity card ----------
+// :section is visits | labs | scans | vaccines. Values use the card's own field names.
+
+/** The patient's whole maternity card; empty lists when none was started. */
+export async function fetchMaternityCard(patientId) {
+  return request(`/api/maternity/${patientId}`);
+}
+
+/** Patient details and first-attendance baseline. */
+export async function saveMaternityDetails(patientId, values) {
+  return request(`/api/maternity/${patientId}`, { method: 'PUT', body: values });
+}
+
+export async function saveMaternityDelivery(patientId, values) {
+  return request(`/api/maternity/${patientId}/delivery`, { method: 'PUT', body: values });
+}
+
+export async function addMaternityRow(patientId, section, values) {
+  return request(`/api/maternity/${patientId}/${section}`, { method: 'POST', body: values });
+}
+
+export async function updateMaternityRow(patientId, section, rowId, values) {
+  return request(`/api/maternity/${patientId}/${section}/${rowId}`, { method: 'PATCH', body: values });
+}
+
+export async function deleteMaternityRow(patientId, section, rowId) {
+  return request(`/api/maternity/${patientId}/${section}/${rowId}`, { method: 'DELETE' });
+}
+
+/** Pull confirmed values from newly shared lab reports onto the card; returns the investigations list. */
+export async function importMaternityReports(patientId) {
+  return request(`/api/maternity/${patientId}/import-reports`, { method: 'POST' });
 }
