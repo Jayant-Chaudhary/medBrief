@@ -497,7 +497,7 @@ export function ClinicianDashboard() {
           isOpen={audioConsultOpen}
           onClose={() => setAudioConsultOpen(false)}
           appointment={{
-            appointmentId: selected?.appointmentId,
+            appointmentId: selected?.appointmentId || selected?.id,
             patientFullName: data?.patient?.name || selected?.name,
             scheduledAt: selected?.scheduledAt,
           }}

@@ -54,10 +54,20 @@ export function DoctorConsultationModal({
   const timerRef = useRef(null);
   const originalTitleRef = useRef(document.title);
 
+  // Resilient accessors for session attributes (handles camelCase and snake_case)
+  const getSessionId = () => session?.sessionId || session?.session_id || session?.id;
+  const getDoctorToken = () => session?.doctorToken || session?.doctor_token || session?.token;
+  const getRoomCode = () => session?.roomCode || session?.room_code || '------';
+
   // Initialize or fetch session when modal opens
   useEffect(() => {
-    const targetAppointmentId = appointment?.appointmentId || appointment?.id;
-    if (!isOpen || !targetAppointmentId) return;
+    const targetAppointmentId = appointment?.appointmentId || appointment?.id || appointment?.appointment_id;
+    if (!isOpen) return;
+
+    if (!targetAppointmentId) {
+      setError('No appointment specified for consultation session.');
+      return;
+    }
 
     let mounted = true;
     setLoading(true);
@@ -71,11 +81,12 @@ export function DoctorConsultationModal({
       .then((data) => {
         if (!mounted) return;
         setSession(data);
-        const token = data.doctor_token || data.token;
+        const token = data?.doctorToken || data?.doctor_token || data?.token;
+        const sessId = data?.sessionId || data?.session_id || data?.id;
 
         // Connect real-time push socket
         const socket = connectConsultationSocket({
-          sessionId: data.session_id || data.id,
+          sessionId: sessId,
           token,
           onEvent: (eventName, payload) => {
             if (eventName === 'device_joined' && payload.device === 'patient') {
@@ -113,7 +124,7 @@ export function DoctorConsultationModal({
       }
       document.title = originalTitleRef.current;
     };
-  }, [isOpen, appointment?.appointmentId]);
+  }, [isOpen, appointment?.appointmentId, appointment?.id, appointment?.appointment_id]);
 
   // Tab Title Animation during active recording
   useEffect(() => {
@@ -128,21 +139,27 @@ export function DoctorConsultationModal({
 
   // Copy Room Code Helper
   const copyRoomCode = () => {
-    if (!session?.room_code) return;
-    navigator.clipboard.writeText(session.room_code);
+    const code = getRoomCode();
+    if (!code || code === '------') return;
+    navigator.clipboard.writeText(code);
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
   // Start Mic Level Check & Clock Handshake
   const handleProceedToMicCheck = async () => {
+    const sessionId = getSessionId();
+    const token = getDoctorToken();
+
+    if (!sessionId || !token) {
+      setError('Consultation session is still initializing. Please wait a moment or reopen the dialog.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const token = session.doctor_token || session.token;
-      const sessionId = session.session_id || session.id;
-
       // 1. Initialize WebRecorder for level check
       const recorder = new WebRecorder({
         sessionId,
@@ -187,13 +204,18 @@ export function DoctorConsultationModal({
       return;
     }
 
+    const sessionId = getSessionId();
+    const token = getDoctorToken();
+
+    if (!sessionId || !token) {
+      setError('Consultation session is not ready. Please wait a moment or reopen the dialog.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const token = session.doctor_token || session.token;
-      const sessionId = session.session_id || session.id;
-
       // Record consent
       await recordDoctorConsent({ sessionId, token });
 
@@ -216,13 +238,18 @@ export function DoctorConsultationModal({
 
   // Start Active Consultation Recording
   const handleStartRecording = async () => {
+    const sessionId = getSessionId();
+    const token = getDoctorToken();
+
+    if (!sessionId || !token) {
+      setError('Consultation session is not ready. Please wait a moment or reopen the dialog.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const token = session.doctor_token || session.token;
-      const sessionId = session.session_id || session.id;
-
       // 1. Call backend start
       await startConsultation({ sessionId, token });
 
@@ -257,8 +284,8 @@ export function DoctorConsultationModal({
     setStep('ENDING');
 
     try {
-      const token = session.doctor_token || session.token;
-      const sessionId = session.session_id || session.id;
+      const sessionId = getSessionId();
+      const token = getDoctorToken();
 
       // Stop recorder and flush all remaining chunks
       if (recorderRef.current) {
@@ -266,7 +293,9 @@ export function DoctorConsultationModal({
       }
 
       // Notify backend of end
-      await endConsultation({ sessionId, token });
+      if (sessionId && token) {
+        await endConsultation({ sessionId, token });
+      }
 
       setStep('DONE');
       if (onConsultationFinished) {
@@ -335,7 +364,7 @@ export function DoctorConsultationModal({
               </p>
               <div className="flex items-center justify-center gap-3 mt-2">
                 <span className="font-mono text-3xl font-extrabold tracking-widest text-ink">
-                  {session?.room_code || '------'}
+                  {getRoomCode()}
                 </span>
                 <button
                   type="button"

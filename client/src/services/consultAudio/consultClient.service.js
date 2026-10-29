@@ -25,10 +25,20 @@ export async function createConsultSession(appointmentId) {
   });
 }
 
+function assertValidSession(sessionId, token) {
+  if (!sessionId || sessionId === 'undefined') {
+    throw new Error('Valid sessionId is required for consultation audio actions');
+  }
+  if (!token || token === 'undefined') {
+    throw new Error('Valid session token is required for consultation audio actions');
+  }
+}
+
 /**
  * Records doctor consent for the consultation.
  */
 export async function recordDoctorConsent({ sessionId, token, consentVersion = 'v1.0' }) {
+  assertValidSession(sessionId, token);
   const res = await fetch(`${BASE_URL}/api/consults/${sessionId}/consent`, {
     method: 'POST',
     headers: {
@@ -91,6 +101,7 @@ export async function performClockHandshake(rounds = 5) {
  * Signals doctor device readiness after mic check and clock handshake.
  */
 export async function setDoctorReady({ sessionId, token, offsetMs, rttMs, captureZeroDeviceMs }) {
+  assertValidSession(sessionId, token);
   const res = await fetch(`${BASE_URL}/api/consults/${sessionId}/devices/doctor/ready`, {
     method: 'POST',
     headers: {
@@ -116,6 +127,7 @@ export async function setDoctorReady({ sessionId, token, offsetMs, rttMs, captur
  * Starts recording consultation.
  */
 export async function startConsultation({ sessionId, token }) {
+  assertValidSession(sessionId, token);
   const res = await fetch(`${BASE_URL}/api/consults/${sessionId}/start`, {
     method: 'POST',
     headers: {
@@ -136,6 +148,7 @@ export async function startConsultation({ sessionId, token }) {
  * Requests end of consultation.
  */
 export async function endConsultation({ sessionId, token }) {
+  assertValidSession(sessionId, token);
   const res = await fetch(`${BASE_URL}/api/consults/${sessionId}/end`, {
     method: 'POST',
     headers: {

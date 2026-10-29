@@ -80,10 +80,17 @@ async function createSession({ appointmentId, doctorId, patientRequired = true, 
 
   return {
     sessionId: session.id,
+    session_id: session.id,
+    id: session.id,
     roomCode: session.room_code,
+    room_code: session.room_code,
     roomCodeExpiresAt: session.room_code_expires_at,
+    expires_at: session.room_code_expires_at,
     doctorToken,
+    doctor_token: doctorToken,
+    token: doctorToken,
     patientRequired: session.patient_required,
+    patient_required: session.patient_required,
   };
 }
 
@@ -167,7 +174,11 @@ async function joinSessionByRoomCode({ roomCode, patientUser, clientIp = 'unknow
 
   return {
     sessionId: session.id,
+    session_id: session.id,
+    id: session.id,
     patientToken,
+    patient_token: patientToken,
+    token: patientToken,
   };
 }
 
