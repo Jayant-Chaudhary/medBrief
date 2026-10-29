@@ -6,6 +6,7 @@
  */
 
 const sessionService = require('../services/consultAudio/session.service');
+const chunkIngestService = require('../services/consultAudio/chunkIngest.service');
 const { verifySessionToken } = require('../services/consultAudio/token.service');
 const logger = require('../utils/logger');
 
@@ -174,6 +175,72 @@ async function getSessionState(req, res, next) {
   }
 }
 
+/**
+ * POST /api/consults/:id/chunks
+ * Device streams audio chunk with metadata headers.
+ */
+async function uploadChunk(req, res, next) {
+  try {
+    const sessionId = req.params.id;
+    const deviceHeader = req.headers['x-device'];
+    const tokenDevice = req.sessionToken?.device;
+
+    if (!deviceHeader || deviceHeader !== tokenDevice) {
+      return res.status(403).json({ error: 'x-device header does not match scoped session token' });
+    }
+
+    const seq = req.headers['x-seq'];
+    const startMs = req.headers['x-start-ms'];
+    const durationMs = req.headers['x-duration-ms'];
+    const avgDbfs = req.headers['x-avg-dbfs'];
+    const codec = req.headers['x-codec'] || req.headers['content-type'] || 'audio/wav';
+    const isSilent = req.headers['x-silent'] === 'true';
+
+    const audioBuffer = req.body && Buffer.isBuffer(req.body) ? req.body : null;
+
+    const result = await chunkIngestService.ingestChunk({
+      sessionId,
+      device: tokenDevice,
+      seq,
+      startMs,
+      durationMs,
+      avgDbfs,
+      codec,
+      isSilent,
+      audioBuffer,
+    });
+
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/consults/:id/devices/:device/final
+ * Device reports total chunks uploaded (final marker).
+ */
+async function recordFinalMarker(req, res, next) {
+  try {
+    const { id: sessionId, device } = req.params;
+    const { total_chunks } = req.body;
+
+    if (total_chunks === undefined || total_chunks === null) {
+      return res.status(400).json({ error: 'total_chunks is required' });
+    }
+
+    const result = await chunkIngestService.recordDeviceFinalMarker({
+      sessionId,
+      device,
+      totalChunks: total_chunks,
+    });
+
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createSession,
   joinSession,
@@ -183,4 +250,6 @@ module.exports = {
   startConsultation,
   recordCaptureStarted,
   getSessionState,
+  uploadChunk,
+  recordFinalMarker,
 };

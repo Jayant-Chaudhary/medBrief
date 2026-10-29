@@ -26,3 +26,8 @@ Thumbs.db
 .idea/
 # Test coverage output
 coverage/
+
+whisper-service/venv/
+__pycache__/
+*.pyc
+

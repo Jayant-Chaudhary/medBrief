@@ -70,6 +70,9 @@ app.use((req, res) => res.status(404).json({ error: 'Endpoint not found', reques
 app.use(errorHandler);
 
 if (process.env.NODE_ENV !== 'test') {
+  const { checkFfmpegInstalled } = require('./utils/audioConverter');
+  const transcriptionWorker = require('./services/consultAudio/transcriptionWorker');
+
   process.on('unhandledRejection', (reason) => {
     logger.error('unhandled promise rejection', { err: reason instanceof Error ? reason : new Error(String(reason)) });
   });
@@ -78,12 +81,30 @@ if (process.env.NODE_ENV !== 'test') {
     process.exit(1);
   });
 
-  server.listen(env.port, () => {
+  const gracefulShutdown = () => {
+    logger.info('Shutting down server, stopping background workers...');
+    transcriptionWorker.stopWorker();
+    server.close(() => {
+      logger.info('HTTP server closed');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', gracefulShutdown);
+  process.on('SIGINT', gracefulShutdown);
+
+  server.listen(env.port, async () => {
     logger.info(`MedBrief API listening on port ${env.port}`, {
       env: process.env.NODE_ENV || 'development',
       ocrServiceUrl: env.ocrServiceUrl,
       clientAppUrl: env.clientAppUrl,
     });
+
+    // Check ffmpeg availability
+    await checkFfmpegInstalled();
+
+    // Start background transcription worker
+    transcriptionWorker.startWorker();
   });
 }
 

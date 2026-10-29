@@ -41,6 +41,13 @@ async function flexibleSessionAuth(req, res, next) {
   }
 }
 
+const config = require('../config/consultAudio.config');
+
+const rawAudioParser = express.raw({
+  type: ['audio/*', 'application/octet-stream'],
+  limit: config.chunkMaxBytes,
+});
+
 // Clock handshake endpoint
 timeRouter.get('/', controller.getServerTime);
 
@@ -51,6 +58,8 @@ consultRouter.post('/:id/consent', sessionTokenGuard, controller.recordConsent);
 consultRouter.post('/:id/devices/:device/ready', sessionTokenGuard, controller.markDeviceReady);
 consultRouter.post('/:id/start', authGuard, roleGuard('clinician'), controller.startConsultation);
 consultRouter.post('/:id/devices/:device/capture-started', sessionTokenGuard, controller.recordCaptureStarted);
+consultRouter.post('/:id/chunks', sessionTokenGuard, rawAudioParser, controller.uploadChunk);
+consultRouter.post('/:id/devices/:device/final', sessionTokenGuard, controller.recordFinalMarker);
 consultRouter.get('/:id/state', flexibleSessionAuth, controller.getSessionState);
 
 module.exports = {

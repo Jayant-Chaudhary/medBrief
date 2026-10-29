@@ -35,8 +35,13 @@ module.exports = {
 
   // Speech-to-Text & Transcription
   sttProvider: env.STT_PROVIDER || 'sarvam', // 'sarvam' | 'fake' | 'local'
+  whisperServiceUrl: env.WHISPER_SERVICE_URL || 'http://localhost:8001',
+  sarvamApiKey: env.SARVAM_API_KEY || '',
+  sarvamModel: env.SARVAM_MODEL || 'saarika:v2',
   transcribeConcurrency: Number(env.TRANSCRIBE_CONCURRENCY || 3),
   transcribeMaxAttempts: Number(env.TRANSCRIBE_MAX_ATTEMPTS || 3),
+  transcribeWorkerPollMs: Number(env.TRANSCRIBE_WORKER_POLL_MS || 1000),
+  transcribeJobTimeoutMs: Number(env.TRANSCRIBE_JOB_TIMEOUT_MS || 30000),
 
   // Deduplication & Crosstalk Handling
   dedupeMinOverlap: Number(env.DEDUPE_MIN_OVERLAP || 0.5),
