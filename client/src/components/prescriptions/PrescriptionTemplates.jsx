@@ -5,6 +5,8 @@ import { useAuthContext } from '../../context/AuthContext.jsx';
 import { blankDraft, blankMedication, blankTemplate, templateFromDraft, evaluateTemplate, applyTemplate, storageKeys, readLocal, validDraft, validLibrary, buildPatientContext, rankTemplates, autoTemplateId, capturePrescriptionTemplate } from './templateModel.js';
 import { usePrescriptionFactors, FactorsEditor, FactorRuleEditor } from './FactorsEditor.jsx';
 import { contextWithFactors, usableFactor } from './factorModel.js';
+import { selectGhostSuggestion, acceptGhostItem, emptyMedicationRow, handleGhostKey } from './similarityModel.js';
+import { GhostSuggestion } from './GhostSuggestion.jsx';
 import './prescriptions.css';
 
 function Dialog({ title, subtitle, onClose, children }) {
@@ -33,7 +35,8 @@ function Field({ label, value, onChange, multiline = false, ...props }) {
 }
 const medicationSummary = row => [row.strength, row.dose, row.route, row.frequency, row.duration].filter(Boolean).join(' · ');
 const typeLabel = row => ({ injection: 'Injection', vaccination: 'Vaccination' }[row.kind] || 'Medicine');
-function MedicationEditor({ rows, onChange, selectedIds }) {
+function MedicationEditor({ rows, onChange, selectedIds, ghostSuggestion, onAcceptGhost, onDismissGhost }) {
+  const ghostTarget = rows.find(emptyMedicationRow)?.id;
   function update(id, key, value) { onChange(rows.map(row => row.id === id ? { ...row, [key]: value } : row)); }
   return <div className="rx-stack">
     {rows.map((row, index) => <fieldset className="rx-medication" key={row.id}>
@@ -42,7 +45,9 @@ function MedicationEditor({ rows, onChange, selectedIds }) {
         <span className="rx-muted">{row.source ? `From ${row.source.name} · v${row.source.version}` : 'Prescription item'}</span>
         <button type="button" className="rx-text" onClick={() => onChange(rows.filter(item => item.id !== row.id))} aria-label={`Remove item ${index + 1}`}>Remove</button>
       </div>
-      <Field label="Name" value={row.name} onChange={value => update(row.id, 'name', value)} placeholder="Medicine, injection or vaccine" required={!selectedIds || selectedIds.includes(row.id)}/>
+      <Field label="Name" value={row.name} onChange={value => update(row.id, 'name', value)} placeholder={ghostSuggestion && ghostTarget === row.id ? ghostSuggestion.medication.name + '  [Tab]' : 'Medicine, injection or vaccine'}
+        aria-description={ghostSuggestion && ghostTarget === row.id ? 'Suggested saved medicine. Tab accepts all displayed item details. Escape dismisses.' : undefined}
+        onKeyDown={event => { if (ghostTarget === row.id) handleGhostKey(event, row, ghostSuggestion, onAcceptGhost, onDismissGhost); }} required={!selectedIds || selectedIds.includes(row.id)}/>
       <div className="rx-fields rx-three">
         <Field label="Dose" value={row.dose} onChange={value => update(row.id, 'dose', value)}/>
         <Field label="Frequency" value={row.frequency} onChange={value => update(row.id, 'frequency', value)}/>
@@ -111,22 +116,25 @@ function TemplateEditor({ initial, onSave, onClose, definitions }) {
 }
 function MatchScore({ match }) {
   return <div className={`rx-score ${match.conflicts.length ? 'rx-score-conflict' : ''}`}>
-    <strong>{match.score === null ? '—' : `${match.score}%`}</strong><span>{match.score === null ? 'General' : 'criteria match'}</span>
+    <strong>{match.score === null ? '—' : `${match.score}%`}</strong><span>{match.score === null ? 'No comparison' : match.method === 'gower' ? 'similarity*' : 'rule match'}</span>
   </div>;
 }
 function MatchDetails({ match }) {
+  const statistical = match.method === 'gower';
   return <div className="rx-match">
-    <div className="rx-match-head"><MatchScore match={match}/><p>{match.matched.length} of {match.total} criteria matched<br/>{match.missing.length} unknown · {match.conflicts.length} conflicts</p></div>
-    <p className="rx-muted">Each saved criterion counts equally. Unknowns receive no points. This measures recorded criteria, not safety or treatment suitability.</p>
-    {match.checks.map((check, index) => <div className="rx-check-row" key={index}><span>{check.label}</span><span className={check.status === 'conflict' ? 'rx-error' : check.status === 'unknown' ? 'rx-amber' : ''}>{({ matched: 'Matched', unknown: 'Unknown', conflict: 'Conflict', different: 'Different' })[check.status]}</span></div>)}
-    {!match.total && <p className="rx-muted">This template has no matching rules. No percentage can be calculated.</p>}
+    <div className="rx-match-head"><MatchScore match={match}/><p>{statistical ? `${match.compared}/${match.featureCount} factors compared` : `${match.matched.length}/${match.total} rules matched`}<br/>{match.conflicts.length} rule conflicts</p></div>
+    {statistical ? <>
+      <p className="rx-muted">*Supported similarity = observed Gower similarity ({match.rawSimilarity === null ? 'unknown' : Math.round(match.rawSimilarity * 100) + '%'}) ? data coverage ({Math.round(match.coverage * 100)}%). Numeric ranges come from completed reference cases, not this patient. This is not a safety probability.</p>
+      <details className="rx-details"><summary>Factor-by-factor comparison</summary>{match.similarityDetails.map(detail => <div className="rx-check-row" key={detail.factorId}><span>{detail.label}<small className="rx-comparison-values">Patient: {detail.actual ?? 'unknown'} ? Reference: {detail.expected ?? 'unknown'} {detail.unit}</small>{(detail.patientDate || detail.referenceDate) && <small className="rx-comparison-values">Patient date: {detail.patientDate || 'not supplied'} / Reference date: {detail.referenceDate || 'not supplied'}</small>}{detail.reason && <small className="rx-comparison-values">{detail.reason}</small>}</span><span>{detail.similarity === null ? 'Unknown' : Math.round(detail.similarity * 100) + '%'}</span></div>)}</details>
+    </> : <p className="rx-muted">This template defines rules rather than a recorded numeric/categorical case. Its percentage describes rule compatibility, not statistical similarity.</p>}
+    <details className="rx-details"><summary>Required criteria and exclusions</summary>{match.checks.map((check, index) => <div className="rx-check-row" key={index}><span>{check.label}</span><span className={check.status === 'conflict' ? 'rx-error' : check.status === 'unknown' ? 'rx-amber' : ''}>{({ matched: 'Matched', unknown: 'Unknown', conflict: 'Conflict', different: 'Different' })[check.status]}</span></div>)}</details>
   </div>;
 }
-function TemplatePreview({ template, context, onClose, onApply, patientName }) {
+function TemplatePreview({ template, context, onClose, onApply, patientName, similarityMatch }) {
   const [selected, setSelected] = useState(template.medications.map(row => row.id));
   const [instructions, setInstructions] = useState(Boolean(template.instructions));
   const [followUp, setFollowUp] = useState(Boolean(template.followUp));
-  const result = evaluateTemplate(template, context);
+  const result = similarityMatch || evaluateTemplate(template, context);
   const [applyError, setApplyError] = useState('');
   return <Dialog title={template.name} subtitle={`For ${patientName} · Template version ${template.version}`} onClose={onClose}>
     <div className="rx-stack">
@@ -146,7 +154,7 @@ function TemplatePreview({ template, context, onClose, onApply, patientName }) {
 function TemplateOption({ template, match, onPreview }) {
   return <article className="rx-option">
     <MatchScore match={match}/>
-    <div className="rx-option-content"><h4>{template.name}</h4><p>{template.medications.length} items{template.followUp ? ' · Follow-up' : ''}</p><span className={match.conflicts.length ? 'rx-error' : match.missing.length ? 'rx-amber' : 'rx-muted'}>{match.total ? `${match.matched.length}/${match.total} matched${match.missing.length ? ` · ${match.missing.length} unknown` : ''}${match.conflicts.length ? ' · Conflict' : ''}` : 'No matching rules'}</span></div>
+    <div className="rx-option-content"><h4>{template.name}</h4><p>{template.medications.length} items{template.followUp ? ' · Follow-up' : ''}</p><span className={match.conflicts.length ? 'rx-error' : match.missing.length ? 'rx-amber' : 'rx-muted'}>{match.method === 'gower' ? `${match.compared}/${match.featureCount} compared / ${Math.round(match.coverage * 100)}% coverage${match.conflicts.length ? ' / Conflict' : ''}` : (match.total ? `${match.matched.length}/${match.total} rules matched` : 'No matching rules')}</span></div>
     <button type="button" className="rx-button rx-review" onClick={() => onPreview(template)}>Review <ChevronRight size={14}/></button>
   </article>;
 }
@@ -182,6 +190,7 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports }) {
   const populatedFactors = activeFactors.filter(definition => usableFactor(definition, factors.records[definition.id]));
   const [dialog, setDialog] = useState(null);
   const [message, setMessage] = useState('');
+  const [dismissedGhostKey, setDismissedGhostKey] = useState('');
   const [error, setError] = useState(libraryRead.error || draftRead.error);
   const [libraryBlocked, setLibraryBlocked] = useState(Boolean(libraryRead.error));
   const [draftBlocked, setDraftBlocked] = useState(Boolean(draftRead.error));
@@ -258,7 +267,17 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports }) {
     const next = templates.map(row => row.id === template.id ? { ...row, archived: !row.archived, updatedAt: new Date().toISOString() } : row);
     if (write(keys.library, next, libraryBlocked)) setTemplates(next);
   }
-  const ranked = rankTemplates(templates, context);
+  const ranked = useMemo(() => rankTemplates(templates, context, factors.definitions, { excludeTemplateIds: [autoTemplateId(appointmentId)] }), [templates, context, factors.definitions, appointmentId]);
+  const ghostChoice = selectGhostSuggestion(ranked, draft);
+  const ghostReady = !libraryBlocked && !draftBlocked && !factors.error && !factors.maternity.loading && !factors.maternity.error;
+  const ghostSuggestion = ghostReady && ghostChoice.suggestion?.key !== dismissedGhostKey ? ghostChoice.suggestion : null;
+  const dismissGhost = () => setDismissedGhostKey(ghostSuggestion?.key || '');
+  const acceptGhost = () => {
+    if (!ghostReady || !ghostSuggestion) return;
+    const latest = selectGhostSuggestion(ranked, draft).suggestion;
+    if (!latest || latest.key !== ghostSuggestion.key) return;
+    if (saveDraft(acceptGhostItem(draft, latest), false)) setMessage('Saved item added from the best recorded match. Review its dose and duration.');
+  };
   const suggestions = ranked.filter(({ match, template }) => !template.archived && template.id !== autoTemplateId(appointmentId) && match.candidate).slice(0, 3);
   const activeCount = templates.filter(template => !template.archived).length;
   const reusableCount = templates.filter(template => !template.archived && template.id !== autoTemplateId(appointmentId) && (!template.autoCapture || template.autoCapture.stage === 'visit-completed')).length;
@@ -278,7 +297,8 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports }) {
     {message && <p className="rx-success" role="status">{message}</p>}
     <div className="rx-draft-summary rx-direct-editor">
       <div className="rx-section-label"><h3>Medicines & duration</h3><span className="rx-chip">Local draft</span></div>
-      <MedicationEditor rows={draft.medications} onChange={medications => saveDraft({ ...draft, medications }, false)}/>
+      <GhostSuggestion suggestion={ghostSuggestion} hasEmptyRow={draft.medications.some(emptyMedicationRow)} onAccept={acceptGhost} onDismiss={dismissGhost} onReview={() => showPreview(ghostSuggestion.template)}/>
+      <MedicationEditor rows={draft.medications} onChange={medications => saveDraft({ ...draft, medications }, false)} ghostSuggestion={ghostSuggestion} onAcceptGhost={acceptGhost} onDismissGhost={dismissGhost}/>
       <details className="rx-details" open={Boolean(draft.instructions || draft.followUp)}>
         <summary>Patient instructions & follow-up</summary>
         <div className="rx-stack">
@@ -290,13 +310,14 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports }) {
     </div>
     <div className="rx-section-label"><h3>Options for this patient</h3>{suggestions.length > 1 && <span className="rx-muted">Compare {suggestions.length} options</span>}</div>
     {suggestions.length > 0 ? <div className="rx-options">{suggestions.map(({ template, match }) => <TemplateOption key={template.id} template={template} match={match} onPreview={showPreview}/>)}</div> : <div className="rx-quiet-empty"><FileText size={22}/><div><strong>{reusableCount ? 'More patient information needed' : 'No previous treatment options yet'}</strong><p>{reusableCount ? 'No recorded criteria match. You can still browse your templates.' : 'Prescriptions save automatically and become options for other visits after the visit ends.'}</p></div></div>}
-    <p className="rx-score-caption">Criteria match shows recorded similarity, not treatment safety. Unknown details lower the score.</p>
+    <p className="rx-score-caption">Similarity* accounts for both closeness and available data. It is not treatment safety or a calibrated probability.</p>
+    {suggestions.length > 0 && !ghostSuggestion && ghostChoice.reason && <p className="rx-score-caption">{ghostChoice.reason}</p>}
     {activeCount > 0 && <button type="button" className="rx-text rx-view-all" onClick={() => setDialog({ type: 'browse' })}>View all {activeCount} templates <ArrowRight size={13}/></button>}
     <p className="rx-local">Local to this browser. Not sent to the patient or included when ending the visit.</p>
     {dialog?.type === 'factors' && <Dialog title="Factors" subtitle="Review report values, fill missing details, or add your own reusable fields." onClose={close}><FactorsEditor factors={factors}/></Dialog>}
     {dialog?.type === 'browse' && <BrowseTemplates ranked={ranked} onClose={close} onPreview={showPreview} onEdit={value => setDialog({ type: 'template', value })} onArchive={archive} onCreate={() => setDialog({ type: 'template', value: blankTemplate() })}/>}
     {dialog?.type === 'template' && <TemplateEditor definitions={factors.definitions} key={dialog.value.id} initial={dialog.value} onClose={close} onSave={storeTemplate}/>}
-    {dialog?.type === 'preview' && <TemplatePreview template={dialog.value} context={context} patientName={patient.name} onClose={close} onApply={(template, ids, instructions, followUp) => {
+    {dialog?.type === 'preview' && <TemplatePreview template={dialog.value} similarityMatch={ranked.find(item => item.template.id === dialog.value.id)?.match} context={context} patientName={patient.name} onClose={close} onApply={(template, ids, instructions, followUp) => {
       const result = applyTemplate(draft, template, ids, instructions, followUp);
       if (!saveDraft(result.draft)) return false;
       setMessage(`Selected items added to your draft.${result.skipped ? ` ${result.skipped} duplicate item(s) skipped; review existing entries.` : ''}`);

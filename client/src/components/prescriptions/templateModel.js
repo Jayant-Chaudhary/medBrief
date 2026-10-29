@@ -70,7 +70,12 @@ export function evaluateTemplate(template, context) {
 
 export function rankTemplates(templates, context, definitions = [], options = {}) {
   const model = fitSimilarityModel(templates, definitions, options);
-  return rankSimilarityModel(model, context, evaluateTemplate);
+  const ranked = rankSimilarityModel(model, context, evaluateTemplate);
+  const included = new Set(ranked.map(item => item.template.id));
+  // Preserve archive/in-progress management without using those records to fit or suggest.
+  return [...ranked, ...templates.filter(template => !included.has(template.id)).map(template => ({
+    template, match: { ...evaluateTemplate(template, context), candidate: false, suggested: false, method: 'rules' },
+  }))];
 }
 /** Adapt the agreed template JSON without requiring changes to the data pipeline. */
 export function templatesFromDataset(payload) {

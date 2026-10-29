@@ -7,6 +7,8 @@ export const SIMILARITY_MODEL_VERSION = 'gower-coverage-v1';
 export const GHOST_POLICY = Object.freeze({ minCompared: 3, minCoverage: 0.6, minScore: 70, minMargin: 5 });
 const norm = value => String(value ?? '').normalize('NFKC').trim().toLowerCase();
 export const normalizeSimilarityUnit = value => norm(value).replaceAll('μ','u').replaceAll('µ','u').replaceAll(' ','').replace(/^miu\/l$/, 'uiu/ml');
+const UNKNOWN_LABELS = new Set(['unknown','not tested','not assessed','not recorded','not available']);
+const safeFactorId = id => /^[a-zA-Z0-9_.:-]+$/.test(id) && !['__proto__','constructor','prototype'].includes(id);
 const hasValue = record => record && record.value !== null && record.value !== undefined && String(record.value).trim() !== '' && record.needsReview !== true && record.confirmed !== false && record.stale !== true;
 function observation(record, definition) {
   if (!hasValue(record) || definition?.enabled === false || definition?.autoReuse === false || record.autoReuse === false) return null;
@@ -17,6 +19,7 @@ function observation(record, definition) {
     return { type, value, unit: record.unit ?? definition?.unit ?? '', label: definition?.label || record.label || '', recordedAt: record.recordedAt || '' };
   }
   if (type === 'select' || type === 'categorical') {
+    if (UNKNOWN_LABELS.has(norm(record.value))) return null;
     if (definition?.options && !definition.options.includes(String(record.value))) return null;
     return { type: 'select', value: String(record.value), unit: '', label: definition?.label || record.label || '', recordedAt: record.recordedAt || '' };
   }
@@ -27,6 +30,7 @@ export function referenceFeatures(template, definitions = []) {
   const features = {};
   if (template.factorSnapshot && typeof template.factorSnapshot === 'object') {
     for (const [id, record] of Object.entries(template.factorSnapshot)) {
+      if (!safeFactorId(id)) continue;
       const value = observation(record, schema.get(id));
       if (value) features[id] = value;
     }
@@ -34,6 +38,7 @@ export function referenceFeatures(template, definitions = []) {
     // Compatibility with automatically captured cases from before snapshots.
     for (const rule of template.factorRules || []) {
       if (rule.operator !== 'equals' || rule.required !== false) continue;
+      if (!safeFactorId(rule.factorId)) continue;
       const value = observation({ value: rule.value, unit: rule.unit, type: rule.valueType, label: rule.label }, schema.get(rule.factorId));
       if (value) features[rule.factorId] = value;
     }
@@ -85,20 +90,20 @@ export function scoreSimilarity(model, reference, context, ruleMatch) {
       if (!range) reason = 'No observed numeric spread; exact comparison only';
     } else similarity = Number(norm(actual.value) === norm(expected.value));
     if (similarity !== null) { compared++; comparedWeight += weight; contribution += weight * similarity; }
-    details.push({ factorId: id, label: schema.get(id)?.label || expected?.label || actual?.label || id, expected: expected?.value ?? null, actual: actual?.value ?? null, unit: expected?.unit || actual?.unit || '', similarity, reason, range });
+    details.push({ factorId: id, label: schema.get(id)?.label || expected?.label || actual?.label || id, expected: expected?.value ?? null, actual: actual?.value ?? null, unit: expected?.unit || actual?.unit || '', patientDate: actual?.recordedAt || '', referenceDate: expected?.recordedAt || '', similarity, reason, range });
   }
   const rawSimilarity = comparedWeight ? contribution / comparedWeight : null;
   const coverage = totalWeight ? comparedWeight / totalWeight : 0;
   const supported = rawSimilarity === null ? null : rawSimilarity * coverage;
   const mandatoryUnknown = ruleMatch.checks.some(check => check.required && check.status === 'unknown');
   const candidate = !ruleMatch.conflicts.length && compared > 0 && rawSimilarity > 0;
-  return { ...ruleMatch, method: 'gower', score: supported === null ? null : Math.round(100 * supported), rawSimilarity, coverage, compared, featureCount: model.featureIds.length, similarityDetails: details, modelVersion: model.version, candidate, suggested: candidate && !mandatoryUnknown };
+  return { ...ruleMatch, supportedSimilarity: supported, method: 'gower', score: supported === null ? null : Math.round(100 * supported), rawSimilarity, coverage, compared, featureCount: model.featureIds.length, similarityDetails: details, modelVersion: model.version, candidate, suggested: candidate && !mandatoryUnknown };
 }
 export function rankSimilarityModel(model, context, evaluateRules) {
   return model.references.map(reference => ({ template: reference.template, match: scoreSimilarity(model, reference, context, evaluateRules(reference.template, context)) }))
     .sort((a,b) => Number(a.match.conflicts.length > 0) - Number(b.match.conflicts.length > 0) ||
       Number(b.match.method === 'gower') - Number(a.match.method === 'gower') ||
-      (b.match.score ?? -1) - (a.match.score ?? -1) || b.match.compared - a.match.compared ||
+      (b.match.supportedSimilarity ?? (b.match.score ?? -1) / 100) - (a.match.supportedSimilarity ?? (a.match.score ?? -1) / 100) || b.match.compared - a.match.compared ||
       String(a.template.id).localeCompare(String(b.template.id)));
 }
 const itemIdentity = row => norm(row.name);
@@ -108,9 +113,9 @@ export function selectGhostSuggestion(ranked, draft, policy = GHOST_POLICY) {
   const best = candidates[0];
   if (!best || best.match.method !== 'gower') return { suggestion: null, reason: 'Comparable recorded cases are needed for a ghost suggestion.' };
   const match = best.match;
-  if (!match.suggested || match.compared < policy.minCompared || match.coverage < policy.minCoverage || match.score < policy.minScore) return { suggestion: null, reason: 'More comparable factors or a stronger match are needed for a ghost suggestion.' };
-  const alternative = candidates.slice(1).find(item => regimen(item.template) !== regimen(best.template));
-  if (alternative && best.match.score - alternative.match.score < policy.minMargin) return { suggestion: null, reason: 'Top prescriptions are similarly ranked. Review the options before choosing.' };
+  if (!match.suggested || match.compared < policy.minCompared || match.coverage < policy.minCoverage || match.supportedSimilarity * 100 < policy.minScore) return { suggestion: null, reason: 'More comparable factors or a stronger match are needed for a ghost suggestion.' };
+  const alternative = candidates.slice(1).find(item => item.match.method === 'gower' && regimen(item.template) !== regimen(best.template));
+  if (alternative && (best.match.supportedSimilarity - alternative.match.supportedSimilarity) * 100 < policy.minMargin) return { suggestion: null, reason: 'Top prescriptions are similarly ranked. Review the options before choosing.' };
   const existing = new Set(draft.medications.map(itemIdentity).filter(Boolean));
   const medication = best.template.medications.find(row => row.name?.trim() && !existing.has(itemIdentity(row)));
   if (!medication) return { suggestion: null, reason: 'The best match has no additional medicine items.' };
@@ -130,10 +135,24 @@ export function validateSimilarityDataset(payload) {
   for (const template of payload.templates) {
     if (!template || typeof template.id !== 'string' || ids.has(template.id) || template.status !== 'completed' || !template.factorSnapshot || Array.isArray(template.factorSnapshot) || typeof template.factorSnapshot !== 'object' || !Array.isArray(template.medications)) return { ok: false, error: 'Templates require unique IDs, completed status, a factorSnapshot and medication items.' };
     ids.add(template.id);
-    for (const record of Object.values(template.factorSnapshot)) {
+    if (template.name !== undefined && typeof template.name !== 'string') return { ok: false, error: 'Template names must be strings.' };
+    for (const [id,record] of Object.entries(template.factorSnapshot)) {
+      if (!safeFactorId(id)) return { ok: false, error: 'Invalid factor identifier.' };
       if (!record || !['number','select'].includes(record.type) || typeof record.unit !== 'string' || typeof record.confirmed !== 'boolean' || (record.value !== null && !['number','string'].includes(typeof record.value)) || (record.type === 'number' && record.value !== null && (String(record.value).trim() === '' || !Number.isFinite(Number(record.value))))) return { ok: false, error: 'Factor records need a valid type, value, unit and explicit confirmed flag; null means unknown.' };
     }
-    for (const item of template.medications) if (!item || typeof item.name !== 'string' || !item.name.trim() || ['strength','dose','route','frequency','duration'].some(key => typeof item[key] !== 'string')) return { ok: false, error: 'Medication items need a name and explicit structured fields.' };
+    for (const item of template.medications) if (!item || typeof item.name !== 'string' || !item.name.trim() || ['strength','dose','route','frequency','duration'].some(key => typeof item[key] !== 'string') || (item.instructions !== undefined && typeof item.instructions !== 'string') || (item.kind !== undefined && !['medicine','injection','vaccination'].includes(item.kind))) return { ok: false, error: 'Medication items need a name and explicit structured fields.' };
   }
   return { ok: true, error: '' };
+}
+export const emptyMedicationRow = row => ['name','strength','dose','route','frequency','duration','instructions'].every(key => !String(row[key] || '').trim());
+/** Tab accepts only in a completely empty item; Shift+Tab and composition keep native behavior. */
+export function handleGhostKey(event, row, suggestion, accept, dismiss) {
+  if (!suggestion || !emptyMedicationRow(row) || event.isComposing || event.defaultPrevented) return false;
+  if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+    event.preventDefault(); accept(); return true;
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault(); event.stopPropagation(); dismiss(); return true;
+  }
+  return false;
 }
