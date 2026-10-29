@@ -470,9 +470,34 @@ async function getSessionTranscript(sessionId, doctorUserId = null) {
     throw new Error(`Failed to fetch segments: ${segErr.message}`);
   }
 
+  // Query audio chunks to provide live progress stats
+  let totalChunks = 0;
+  let transcribedChunks = 0;
+  let isProcessing = ['recording', 'ending', 'processing'].includes(session.status);
+
+  try {
+    const { data: chunks } = await supabaseAdmin
+      .from('audio_chunks')
+      .select('id, status, is_silent, seq, device')
+      .eq('session_id', sessionId);
+
+    const chunkList = chunks || [];
+    totalChunks = chunkList.length;
+    transcribedChunks = chunkList.filter((c) => c.status === 'transcribed' || c.is_silent).length;
+    if (totalChunks > 0 && transcribedChunks < totalChunks) {
+      isProcessing = true;
+    }
+  } catch (_chunkErr) {
+    totalChunks = segments?.length || 0;
+    transcribedChunks = segments?.length || 0;
+  }
+
   return {
     sessionId,
     status: session.status,
+    totalChunks,
+    transcribedChunks,
+    isProcessing,
     segments: (segments || []).map((s) => ({
       id: s.id,
       device: s.device,
@@ -491,6 +516,54 @@ async function getSessionTranscript(sessionId, doctorUserId = null) {
   };
 }
 
+/**
+ * Fetches the latest consultation session for an appointment.
+ */
+async function getLatestSessionByAppointment(appointmentId, doctorUserId = null) {
+  const { data: session, error } = await supabaseAdmin
+    .from('consult_sessions')
+    .select('*')
+    .eq('appointment_id', appointmentId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error || !session) {
+    return null;
+  }
+
+  if (doctorUserId && session.doctor_id !== doctorUserId) {
+    const err = new Error('Not authorized to access this session');
+    err.status = 403;
+    throw err;
+  }
+
+  const { data: chunks } = await supabaseAdmin
+    .from('audio_chunks')
+    .select('id, status, is_silent')
+    .eq('session_id', session.id);
+
+  const chunkList = chunks || [];
+  const totalChunks = chunkList.length;
+  const transcribedChunks = chunkList.filter((c) => c.status === 'transcribed' || c.is_silent).length;
+
+  return {
+    sessionId: session.id,
+    session_id: session.id,
+    id: session.id,
+    status: session.status,
+    roomCode: session.room_code,
+    room_code: session.room_code,
+    patientRequired: session.patient_required,
+    patient_required: session.patient_required,
+    startedAt: session.started_at,
+    endedAt: session.ended_at,
+    totalChunks,
+    transcribedChunks,
+    createdAt: session.created_at,
+  };
+}
+
 module.exports = {
   createSession,
   joinSessionByRoomCode,
@@ -501,4 +574,5 @@ module.exports = {
   recordCaptureStarted,
   getSessionState,
   getSessionTranscript,
+  getLatestSessionByAppointment,
 };

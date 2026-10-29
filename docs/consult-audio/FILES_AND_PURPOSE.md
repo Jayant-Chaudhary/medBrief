@@ -177,8 +177,12 @@ This document maintains an up-to-date catalog of every file created for the cons
 - **Why it exists:** Handles creating consultation sessions, doctor consent, a 5-round clock synchronization handshake (`/api/time`), signaling device readiness, and real-time Socket.IO push messaging for control room events (`device_joined`, `device_ready`, `session_started`, `end_requested`).
 
 ### `client/src/components/consultAudio/DoctorConsultationModal.jsx`
-- **What it is:** The main user interface modal for doctor consultation recording.
-- **Why it exists:** Guides the doctor through the 5-step visit workflow: displaying the 6-character patient room code, live mic placement check and consent confirmation, active recording with blinking indicator and dynamic tab title (`🔴 Recording [04:12] - MedBrief`), and ending the visit with a final chunk flush. Adheres strictly to clinical privacy rules by keeping live transcripts hidden during the active consultation.
+- **What it is:** The main user interface modal for doctor consultation recording and transcript review.
+- **Why it exists:** Guides the doctor through the 5-step visit workflow: displaying the 6-character patient room code, live mic placement check and consent confirmation, active recording with blinking indicator and dynamic tab title (`🔴 Recording [04:12] - MedBrief`), and ending the visit with a final chunk flush. In addition, it features an interactive **Transcript & Processing Logs** tab displaying live speech-to-text chunk progress (transcribed vs. total chunks), speaker-segmented cards with timestamps (`[mm:ss - mm:ss]`), confidence percentages, language tags, "Copy Transcript", and "Download (.txt)" capabilities.
+
+### `client/src/pages/clinician/ClinicianDashboard.jsx`
+- **What it is:** The clinician dashboard and Report Analysis view.
+- **Why it exists:** Provides entry points for the doctor to initiate "Record consultation" or click "Transcript Logs" for any patient visit to inspect processed transcripts and background worker status directly from the patient chart.
 
 ### `client/src/tests/audioChunker.test.js`
 - **What it is:** Vitest unit tests for the audio chunker.

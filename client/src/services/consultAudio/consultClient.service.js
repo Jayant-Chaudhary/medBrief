@@ -218,18 +218,34 @@ export async function getConsultationState({ sessionId, token }) {
 /**
  * Fetches merged consultation transcript segments.
  */
-export async function getConsultationTranscript({ sessionId, token }) {
-  assertValidSession(sessionId, token);
-  const res = await fetch(`${BASE_URL}/api/consults/${sessionId}/transcript`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Failed to fetch transcript (${res.status})`);
+export async function getConsultationTranscript({ sessionId, token } = {}) {
+  if (!sessionId) {
+    throw new Error('Valid sessionId is required to fetch transcript');
   }
 
-  return res.json();
+  if (token) {
+    const res = await fetch(`${BASE_URL}/api/consults/${sessionId}/transcript`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to fetch transcript (${res.status})`);
+    }
+
+    return res.json();
+  }
+
+  // Fall back to authenticated clinician request
+  return request(`/api/consults/${sessionId}/transcript`);
+}
+
+/**
+ * Fetches latest consultation session for an appointment.
+ */
+export async function getSessionByAppointment(appointmentId) {
+  if (!appointmentId) return null;
+  return request(`/api/consults/by-appointment/${appointmentId}`);
 }

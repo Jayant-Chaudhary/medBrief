@@ -286,6 +286,21 @@ async function recordFinalMarker(req, res, next) {
   }
 }
 
+/**
+ * GET /api/consults/by-appointment/:appointmentId
+ * Returns latest consultation session for an appointment.
+ */
+async function getSessionByAppointment(req, res, next) {
+  try {
+    const { appointmentId } = req.params;
+    const doctorUserId = req.user?.id || req.sessionToken?.userId;
+    const result = await sessionService.getLatestSessionByAppointment(appointmentId, doctorUserId);
+    res.status(200).json({ ok: true, session: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createSession,
   joinSession,
@@ -297,6 +312,7 @@ module.exports = {
   recordCaptureStarted,
   getSessionState,
   getTranscript,
+  getSessionByAppointment,
   uploadChunk,
   recordFinalMarker,
 };

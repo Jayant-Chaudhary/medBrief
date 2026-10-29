@@ -15,7 +15,7 @@ import { PrescriptionTemplates } from '../../components/prescriptions/Prescripti
 import { PrescriptionUpload } from '../../components/clinician/PrescriptionUpload.jsx';
 import { Spinner } from '../../components/common/Spinner.jsx';
 import { usePatientDashboard } from '../../hooks/usePatientDashboard.js';
-import { Plus, ArrowLeft, Clock, User, CheckCircle, NotebookPen, CircleStop, BadgeCheck, UserCheck, Mic } from 'lucide-react';
+import { Plus, ArrowLeft, Clock, User, CheckCircle, NotebookPen, CircleStop, BadgeCheck, UserCheck, Mic, FileAudio } from 'lucide-react';
 import { DoctorConsultationModal } from '../../components/consultAudio/DoctorConsultationModal.jsx';
 import { buildFlowsheet } from '../../utils/flowsheet.js';
 import {
@@ -64,6 +64,7 @@ export function ClinicianDashboard() {
   const [notesOpen, setNotesOpen] = useState(false);
   const closeNotes = useCallback(() => setNotesOpen(false), []);
   const [audioConsultOpen, setAudioConsultOpen] = useState(false);
+  const [audioConsultTab, setAudioConsultTab] = useState('RECORD');
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [ending, setEnding] = useState(false);
   const [endError, setEndError] = useState(null);
@@ -369,11 +370,27 @@ export function ClinicianDashboard() {
 
           <button
             type="button"
-            onClick={() => setAudioConsultOpen(true)}
+            onClick={() => {
+              setAudioConsultTab('RECORD');
+              setAudioConsultOpen(true);
+            }}
             className="ml-auto flex items-center gap-2 rounded-xl border border-primary/20 bg-primary-light px-4 py-2 text-label-lg text-primary-dark transition-colors hover:bg-primary-light/80 shadow-sm"
           >
             <Mic className="h-4 w-4 text-primary" />
             Record consultation
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setAudioConsultTab('TRANSCRIPT');
+              setAudioConsultOpen(true);
+            }}
+            className="flex items-center gap-2 rounded-xl border border-line bg-surface px-4 py-2 text-label-lg text-ink-2 transition-colors hover:border-ink-soft hover:bg-subcanvas shadow-sm"
+            title="View consultation audio transcript and speech-to-text processing logs"
+          >
+            <FileAudio className="h-4 w-4 text-primary" />
+            Transcript Logs
           </button>
 
           <button
@@ -495,6 +512,7 @@ export function ClinicianDashboard() {
 
         <DoctorConsultationModal
           isOpen={audioConsultOpen}
+          initialTab={audioConsultTab}
           onClose={() => setAudioConsultOpen(false)}
           appointment={{
             appointmentId: selected?.appointmentId || selected?.id,

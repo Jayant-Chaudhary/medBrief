@@ -177,6 +177,14 @@ npm test
    - **Active Recording:** Click Start Consultation and speak; verify the blinking red badge, live timer, and the browser tab title updating to `🔴 Recording [00:15] - MedBrief`.
    - **End Visit:** Click End Consultation to flush the final chunk and transmit the expected chunk count marker.
 
+### 3. Inspecting Live Transcripts & Processing Logs
+1. Once recording finishes or whenever you click **Transcript Logs** on the appointment view in `ClinicianDashboard.jsx`:
+   - An interactive modal opens directly on the **Transcript & Processing Logs** tab.
+   - **Live Progress Bar:** Shows the percentage of audio chunks transcribed vs total chunks uploaded.
+   - **Worker State:** If the background Whisper worker is currently transcribing, a pulsating amber banner announces `Transcribing Audio (Whisper GPU)...` and auto-polls every 2.5 seconds.
+   - **Segment Feed:** Each recognized speech slice renders with speaker pill (`Doctor` in emerald / `Patient` in purple), millisecond time range (`[mm:ss - mm:ss]`), confidence score (e.g. `98% conf`), and detected language tag.
+   - **Export Options:** Click **Copy** to copy formatted conversation dialogue to clipboard, or **Download** to save `consultation-transcript-<id>.txt`.
+
 ---
 
 ## Troubleshooting & Tips
