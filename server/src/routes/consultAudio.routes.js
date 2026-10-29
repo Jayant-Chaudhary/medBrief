@@ -96,6 +96,7 @@ consultRouter.post('/:id/devices/:device/capture-started', sessionTokenGuard, co
 consultRouter.post('/:id/chunks', sessionTokenGuard, rawAudioParser, controller.uploadChunk);
 consultRouter.post('/:id/devices/:device/final', sessionTokenGuard, controller.recordFinalMarker);
 consultRouter.get('/:id/state', flexibleSessionAuth, controller.getSessionState);
+consultRouter.get('/:id/transcript', doctorSessionOrAuthGuard, controller.getTranscript);
 
 module.exports = {
   consultRouter,

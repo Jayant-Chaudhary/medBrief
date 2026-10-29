@@ -77,7 +77,7 @@ export async function performClockHandshake(rounds = 5) {
 
       if (res.ok) {
         const data = await res.json();
-        const serverTime = Number(data.server_time_ms);
+        const serverTime = Number(data.server_time_ms || data.serverTimeMs);
         const estimatedLocalTime = t0 + Math.round(rtt / 2);
         const offset = serverTime - estimatedLocalTime;
 
@@ -194,4 +194,42 @@ export function connectConsultationSocket({ sessionId, token, onEvent }) {
   forward('status');
 
   return socket;
+}
+
+/**
+ * Fetches current consultation session state, device statuses, and consents.
+ */
+export async function getConsultationState({ sessionId, token }) {
+  assertValidSession(sessionId, token);
+  const res = await fetch(`${BASE_URL}/api/consults/${sessionId}/state`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to fetch session state (${res.status})`);
+  }
+
+  return res.json();
+}
+
+/**
+ * Fetches merged consultation transcript segments.
+ */
+export async function getConsultationTranscript({ sessionId, token }) {
+  assertValidSession(sessionId, token);
+  const res = await fetch(`${BASE_URL}/api/consults/${sessionId}/transcript`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to fetch transcript (${res.status})`);
+  }
+
+  return res.json();
 }

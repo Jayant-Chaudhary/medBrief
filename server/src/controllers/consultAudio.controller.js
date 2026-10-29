@@ -46,7 +46,7 @@ async function createSession(req, res, next) {
  */
 async function joinSession(req, res, next) {
   try {
-    const { roomCode } = req.body;
+    const roomCode = req.body.roomCode || req.body.room_code;
     if (!roomCode) {
       return res.status(400).json({ error: 'roomCode is required' });
     }
@@ -73,7 +73,7 @@ async function joinSession(req, res, next) {
 async function recordConsent(req, res, next) {
   try {
     const sessionId = req.params.id;
-    const { consentTextVersion } = req.body;
+    const consentTextVersion = req.body.consentTextVersion || req.body.consent_text_version;
     const { role, userId } = req.sessionToken;
 
     const consent = await sessionService.recordSessionConsent({
@@ -94,8 +94,10 @@ async function recordConsent(req, res, next) {
  * Clock handshake for device clock offset estimation.
  */
 function getServerTime(req, res) {
+  const now = Date.now();
   res.status(200).json({
-    serverTimeMs: Date.now(),
+    serverTimeMs: now,
+    server_time_ms: now,
   });
 }
 
@@ -106,13 +108,14 @@ function getServerTime(req, res) {
 async function markDeviceReady(req, res, next) {
   try {
     const { id: sessionId, device } = req.params;
-    const { offset_ms = 0, rtt_ms = 0 } = req.body;
+    const offset = req.body.offset_ms !== undefined ? req.body.offset_ms : req.body.offsetMs;
+    const rtt = req.body.rtt_ms !== undefined ? req.body.rtt_ms : req.body.rttMs;
 
     const updatedDevice = await sessionService.markDeviceReady({
       sessionId,
       device,
-      offsetMs: Number(offset_ms) || 0,
-      rttMs: Number(rtt_ms) || 0,
+      offsetMs: Number(offset) || 0,
+      rttMs: Number(rtt) || 0,
     });
 
     res.status(200).json({ ok: true, device: updatedDevice });
@@ -168,16 +171,18 @@ async function endConsultation(req, res, next) {
 async function recordCaptureStarted(req, res, next) {
   try {
     const { id: sessionId, device } = req.params;
-    const { capture_zero_device_ms } = req.body;
+    const captureZero = req.body.capture_zero_device_ms !== undefined
+      ? req.body.capture_zero_device_ms
+      : req.body.captureZeroDeviceMs;
 
-    if (capture_zero_device_ms === undefined || capture_zero_device_ms === null) {
+    if (captureZero === undefined || captureZero === null) {
       return res.status(400).json({ error: 'capture_zero_device_ms is required' });
     }
 
     const updatedDevice = await sessionService.recordCaptureStarted({
       sessionId,
       device,
-      captureZeroDeviceMs: Number(capture_zero_device_ms),
+      captureZeroDeviceMs: Number(captureZero),
     });
 
     res.status(200).json({ ok: true, device: updatedDevice });
@@ -201,25 +206,40 @@ async function getSessionState(req, res, next) {
 }
 
 /**
+ * GET /api/consults/:id/transcript
+ * Returns ordered transcript segments for a consultation.
+ */
+async function getTranscript(req, res, next) {
+  try {
+    const sessionId = req.params.id;
+    const doctorUserId = req.user?.id || req.sessionToken?.userId;
+    const result = await sessionService.getSessionTranscript(sessionId, doctorUserId);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
  * POST /api/consults/:id/chunks
- * Device streams audio chunk with metadata headers.
+ * Device streams audio chunk with metadata headers (or query fallbacks).
  */
 async function uploadChunk(req, res, next) {
   try {
     const sessionId = req.params.id;
-    const deviceHeader = req.headers['x-device'];
     const tokenDevice = req.sessionToken?.device;
+    const deviceHeader = req.headers['x-device'] || req.query.device || tokenDevice;
 
     if (!deviceHeader || deviceHeader !== tokenDevice) {
       return res.status(403).json({ error: 'x-device header does not match scoped session token' });
     }
 
-    const seq = req.headers['x-seq'];
-    const startMs = req.headers['x-start-ms'];
-    const durationMs = req.headers['x-duration-ms'];
-    const avgDbfs = req.headers['x-avg-dbfs'];
-    const codec = req.headers['x-codec'] || req.headers['content-type'] || 'audio/wav';
-    const isSilent = req.headers['x-silent'] === 'true';
+    const seq = req.headers['x-seq'] !== undefined ? req.headers['x-seq'] : req.query.seq;
+    const startMs = req.headers['x-start-ms'] !== undefined ? req.headers['x-start-ms'] : (req.query.start_ms || req.query.startMs);
+    const durationMs = req.headers['x-duration-ms'] !== undefined ? req.headers['x-duration-ms'] : (req.query.duration_ms || req.query.durationMs);
+    const avgDbfs = req.headers['x-avg-dbfs'] !== undefined ? req.headers['x-avg-dbfs'] : (req.query.avg_dbfs || req.query.avgDbfs);
+    const codec = req.headers['x-codec'] || req.query.codec || req.headers['content-type'] || 'audio/wav';
+    const isSilent = req.headers['x-silent'] !== undefined ? (req.headers['x-silent'] === 'true') : (req.query.is_silent === 'true' || req.query.isSilent === 'true');
 
     const audioBuffer = req.body && Buffer.isBuffer(req.body) ? req.body : null;
 
@@ -248,16 +268,16 @@ async function uploadChunk(req, res, next) {
 async function recordFinalMarker(req, res, next) {
   try {
     const { id: sessionId, device } = req.params;
-    const { total_chunks } = req.body;
+    const totalChunks = req.body.total_chunks !== undefined ? req.body.total_chunks : req.body.totalChunks;
 
-    if (total_chunks === undefined || total_chunks === null) {
+    if (totalChunks === undefined || totalChunks === null) {
       return res.status(400).json({ error: 'total_chunks is required' });
     }
 
     const result = await chunkIngestService.recordDeviceFinalMarker({
       sessionId,
       device,
-      totalChunks: total_chunks,
+      totalChunks: Number(totalChunks),
     });
 
     res.status(200).json(result);
@@ -276,6 +296,7 @@ module.exports = {
   endConsultation,
   recordCaptureStarted,
   getSessionState,
+  getTranscript,
   uploadChunk,
   recordFinalMarker,
 };

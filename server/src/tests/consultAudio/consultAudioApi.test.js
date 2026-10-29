@@ -354,4 +354,155 @@ describe('Consult Audio HTTP Endpoints', () => {
       expect(res.body.consents).toHaveLength(1);
     });
   });
+
+  describe('POST /api/consults/:id/start (with Scoped Doctor Token)', () => {
+    test('doctor starts consultation using scoped doctor token', async () => {
+      const doctorToken = signSessionToken({
+        sessionId: 'sess-100',
+        device: 'doctor',
+        role: 'doctor',
+        userId: doctorUser.id,
+      });
+
+      const readySession = {
+        id: 'sess-100',
+        doctor_id: doctorUser.id,
+        status: 'ready',
+        patient_required: false,
+      };
+
+      const consents = [{ role: 'doctor' }];
+      const devices = [{ device: 'doctor', status: 'ready' }];
+      const recordingSession = {
+        ...readySession,
+        status: 'recording',
+        started_at: new Date().toISOString(),
+      };
+
+      mockTables(supabaseAdmin, {
+        consult_sessions: [ok(readySession), ok(readySession), ok(recordingSession)],
+        session_consents: ok(consents),
+        session_devices: ok(devices),
+      });
+
+      const res = await request(app)
+        .post('/api/consults/sess-100/start')
+        .set('Authorization', `Bearer ${doctorToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.session.status).toBe('recording');
+    });
+  });
+
+  describe('POST /api/consults/:id/devices/:device/capture-started', () => {
+    test('records capture zero monotonic device timestamp', async () => {
+      const doctorToken = signSessionToken({
+        sessionId: 'sess-100',
+        device: 'doctor',
+        role: 'doctor',
+        userId: doctorUser.id,
+      });
+
+      mockTables(supabaseAdmin, {
+        session_devices: ok({
+          session_id: 'sess-100',
+          device: 'doctor',
+          capture_zero_device_ms: 1793300000000,
+        }),
+      });
+
+      const res = await request(app)
+        .post('/api/consults/sess-100/devices/doctor/capture-started')
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send({ capture_zero_device_ms: 1793300000000 });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.device.capture_zero_device_ms).toBe(1793300000000);
+    });
+  });
+
+  describe('POST /api/consults/:id/end (End Consultation)', () => {
+    test('doctor ends consultation and transitions to ending', async () => {
+      const doctorToken = signSessionToken({
+        sessionId: 'sess-100',
+        device: 'doctor',
+        role: 'doctor',
+        userId: doctorUser.id,
+      });
+
+      const recordingSession = {
+        id: 'sess-100',
+        doctor_id: doctorUser.id,
+        status: 'recording',
+      };
+
+      const endingSession = {
+        ...recordingSession,
+        status: 'ending',
+        end_deadline_at: new Date(Date.now() + 15000).toISOString(),
+      };
+
+      mockTables(supabaseAdmin, {
+        consult_sessions: [ok(recordingSession), ok(recordingSession), ok(endingSession)],
+        session_consents: ok([]),
+        session_devices: ok([]),
+      });
+
+      const res = await request(app)
+        .post('/api/consults/sess-100/end')
+        .set('Authorization', `Bearer ${doctorToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.session.status).toBe('ending');
+    });
+  });
+
+  describe('GET /api/consults/:id/transcript (Fetch Segments)', () => {
+    test('returns ordered transcript segments for session', async () => {
+      const doctorToken = signSessionToken({
+        sessionId: 'sess-100',
+        device: 'doctor',
+        role: 'doctor',
+        userId: doctorUser.id,
+      });
+
+      const mockSession = {
+        id: 'sess-100',
+        doctor_id: doctorUser.id,
+        status: 'draft_ready',
+      };
+
+      const mockSegments = [
+        {
+          id: 'seg-1',
+          session_id: 'sess-100',
+          device: 'doctor',
+          speaker: 'doctor',
+          start_ms: 500,
+          end_ms: 2500,
+          text: 'Good morning.',
+          provider: 'local',
+          confidence: 0.95,
+          flags: [],
+        },
+      ];
+
+      mockTables(supabaseAdmin, {
+        consult_sessions: ok(mockSession),
+        segments: ok(mockSegments),
+      });
+
+      const res = await request(app)
+        .get('/api/consults/sess-100/transcript')
+        .set('Authorization', `Bearer ${doctorToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.sessionId).toBe('sess-100');
+      expect(res.body.segments).toHaveLength(1);
+      expect(res.body.segments[0].text).toBe('Good morning.');
+    });
+  });
 });

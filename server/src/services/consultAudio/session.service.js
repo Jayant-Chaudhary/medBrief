@@ -412,20 +412,82 @@ async function getSessionState(sessionId) {
   return {
     session: {
       id: session.id,
+      sessionId: session.id,
+      session_id: session.id,
       status: session.status,
       patientRequired: session.patient_required,
+      patient_required: session.patient_required,
       languageCode: session.language_code,
+      language_code: session.language_code,
       startedAt: session.started_at,
+      started_at: session.started_at,
       endedAt: session.ended_at,
+      ended_at: session.ended_at,
       endDeadlineAt: session.end_deadline_at,
+      end_deadline_at: session.end_deadline_at,
     },
     devices: (devices || []).map((d) => ({
       device: d.device,
       status: d.status,
       offsetMs: d.offset_ms,
+      offset_ms: d.offset_ms,
       rttMs: d.rtt_ms,
+      rtt_ms: d.rtt_ms,
     })),
     consents: consents || [],
+  };
+}
+
+/**
+ * Fetches ordered transcript segments for a session.
+ */
+async function getSessionTranscript(sessionId, doctorUserId = null) {
+  const { data: session, error: sErr } = await supabaseAdmin
+    .from('consult_sessions')
+    .select('id, doctor_id, status')
+    .eq('id', sessionId)
+    .single();
+
+  if (sErr || !session) {
+    const err = new Error('Session not found');
+    err.status = 404;
+    throw err;
+  }
+
+  if (doctorUserId && session.doctor_id !== doctorUserId) {
+    const err = new Error('Not authorized to access transcript for this session');
+    err.status = 403;
+    throw err;
+  }
+
+  const { data: segments, error: segErr } = await supabaseAdmin
+    .from('segments')
+    .select('*')
+    .eq('session_id', sessionId)
+    .order('start_ms', { ascending: true });
+
+  if (segErr) {
+    throw new Error(`Failed to fetch segments: ${segErr.message}`);
+  }
+
+  return {
+    sessionId,
+    status: session.status,
+    segments: (segments || []).map((s) => ({
+      id: s.id,
+      device: s.device,
+      speaker: s.speaker,
+      startMs: Number(s.start_ms),
+      start_ms: Number(s.start_ms),
+      endMs: Number(s.end_ms),
+      end_ms: Number(s.end_ms),
+      text: s.text,
+      provider: s.provider,
+      language: s.language,
+      confidence: s.confidence,
+      flags: s.flags || [],
+      createdAt: s.created_at,
+    })),
   };
 }
 
@@ -438,4 +500,5 @@ module.exports = {
   endConsultation,
   recordCaptureStarted,
   getSessionState,
+  getSessionTranscript,
 };

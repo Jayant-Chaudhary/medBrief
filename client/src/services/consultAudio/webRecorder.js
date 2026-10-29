@@ -145,6 +145,21 @@ export class WebRecorder {
     this.startLevelMeter();
     this.startFreshChunkRecorder();
 
+    // Report capture zero device clock timestamp to backend
+    fetch(`${this.apiBaseUrl}/api/consults/${this.sessionId}/devices/${this.device}/capture-started`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.sessionToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        capture_zero_device_ms: this.sessionStartWallMs,
+        captureZeroDeviceMs: this.sessionStartWallMs,
+      }),
+    }).catch((err) => {
+      console.warn('capture-started notification warning:', err.message);
+    });
+
     return true;
   }
 
@@ -279,6 +294,13 @@ export class WebRecorder {
         const headers = {
           Authorization: `Bearer ${this.sessionToken}`,
           'Content-Type': chunk.codec || 'audio/webm',
+          'x-device': this.device,
+          'x-seq': String(chunk.seq),
+          'x-start-ms': String(chunk.startMs),
+          'x-duration-ms': String(chunk.durationMs),
+          'x-codec': chunk.codec,
+          'x-silent': String(chunk.isSilent),
+          'x-avg-dbfs': chunk.avgDbfs !== null ? String(chunk.avgDbfs.toFixed(1)) : '0',
         };
 
         const res = await fetch(url.toString(), {
@@ -355,14 +377,17 @@ export class WebRecorder {
    */
   async sendFinalMarker(totalChunks) {
     try {
-      const url = `${this.apiBaseUrl}/api/consults/${this.sessionId}/devices/doctor/final`;
+      const url = `${this.apiBaseUrl}/api/consults/${this.sessionId}/devices/${this.device}/final`;
       await fetch(url, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.sessionToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ total_chunks: totalChunks }),
+        body: JSON.stringify({
+          total_chunks: totalChunks,
+          totalChunks,
+        }),
       });
     } catch (err) {
       this.onError(new Error(`Failed to record final marker: ${err.message}`));
