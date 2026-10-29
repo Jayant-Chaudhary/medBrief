@@ -31,7 +31,7 @@ describe('Consult Audio State Machine', () => {
     });
 
     test('rejects skipping states or backward transitions', () => {
-      expect(isValidTransition(STATES.CREATED, STATES.READY)).toBe(false);
+      expect(isValidTransition(STATES.CREATED, STATES.READY)).toBe(true); // Allowed for solo doctor readiness
       expect(isValidTransition(STATES.CREATED, STATES.RECORDING)).toBe(false);
       expect(isValidTransition(STATES.WAITING, STATES.RECORDING)).toBe(false);
       expect(isValidTransition(STATES.RECORDING, STATES.DRAFT_READY)).toBe(false);
