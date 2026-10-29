@@ -164,6 +164,7 @@ export function DoctorConsultationModal({
       const recorder = new WebRecorder({
         sessionId,
         sessionToken: token,
+        device: 'doctor',
         apiBaseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000',
         onLoudness: (dbfs) => {
           setMicLevelDbfs(dbfs);

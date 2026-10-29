@@ -33,6 +33,7 @@ export class WebRecorder {
   constructor(options = {}) {
     this.sessionId = options.sessionId;
     this.sessionToken = options.sessionToken;
+    this.device = options.device || 'doctor';
     this.apiBaseUrl = (options.apiBaseUrl || '').replace(/\/+$/, '');
     this.onLoudness = options.onLoudness || (() => {});
     this.onChunkReady = options.onChunkReady || (() => {});
