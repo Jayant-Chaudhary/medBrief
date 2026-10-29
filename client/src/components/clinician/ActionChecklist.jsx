@@ -17,15 +17,16 @@ export function ActionChecklist({ templates = [], items = [], onAdd, onRemove })
     <SectionCard
       icon="check"
       title="Action Checklist"
-      subtitle="Becomes the patient's post-visit next steps"
+      compact
       action={
-        <span className="shrink-0 rounded-full bg-sage-surface px-3 py-1 text-label-sm uppercase tabular text-sage-ink">
+        <span className="shrink-0 rounded-full bg-sage-surface px-2 py-0.5 text-label-sm uppercase tabular text-sage-ink">
           {items.length} assigned
         </span>
       }
-      bodyClassName="p-4"
+      bodyClassName="p-3"
     >
       <ChecklistPicker
+        compact
         templates={templates}
         selected={selected}
         onAdd={onAdd}

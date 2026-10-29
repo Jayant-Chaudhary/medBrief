@@ -11,6 +11,7 @@ import { Modal } from '../../components/ui/Modal.jsx';
 import { useToast } from '../../context/ToastContext';
 import { ConsultancyNotes } from '../../components/clinician/ConsultancyNotes.jsx';
 import { ActionChecklist } from '../../components/clinician/ActionChecklist.jsx';
+import { PrescriptionTemplates } from '../../components/prescriptions/PrescriptionTemplates.jsx';
 import { PrescriptionUpload } from '../../components/clinician/PrescriptionUpload.jsx';
 import { Spinner } from '../../components/common/Spinner.jsx';
 import { usePatientDashboard } from '../../hooks/usePatientDashboard.js';
@@ -428,6 +429,9 @@ export function ClinicianDashboard() {
           title="Consultation"
           subtitle={`Notes, actions and prescription for ${data.patient.name ?? 'this visit'}`}
         >
+          <PrescriptionUpload prescriptions={data.prescriptions} onUpload={handleUploadPrescription}>
+            <PrescriptionTemplates patient={data.patient} appointment={data.appointment} appointmentId={selectedAppointmentId} reports={data.historyReports} />
+          </PrescriptionUpload>
           <ConsultancyNotes
             notes={data.notes}
             onSave={handleSaveNotes}
@@ -443,7 +447,6 @@ export function ClinicianDashboard() {
             onAdd={handleAddAction}
             onRemove={handleRemoveAction}
           />
-          <PrescriptionUpload prescriptions={data.prescriptions} onUpload={handleUploadPrescription} />
         </SlideOver>
 
         <Modal isOpen={confirmEnd} onClose={() => !ending && setConfirmEnd(false)} title="End this visit?">

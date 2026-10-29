@@ -9,7 +9,7 @@ import { formatDate } from '../../utils/format.js';
  * clinician saves it, together with any typed instructions; saved ones are
  * listed with a link, and the patient sees them in their visit summary.
  */
-export function PrescriptionUpload({ prescriptions = [], onUpload }) {
+export function PrescriptionUpload({ prescriptions = [], onUpload, children }) {
   const inputRef = useRef(null);
   const [file, setFile] = useState(null);
   const [instructions, setInstructions] = useState('');
@@ -33,8 +33,8 @@ export function PrescriptionUpload({ prescriptions = [], onUpload }) {
     }
   }
 
-  return (
-    <SectionCard icon="upload" title="Prescription" subtitle="Shared with the patient after the visit" bodyClassName="p-4">
+  const attachments = (
+    <>
       {prescriptions.length > 0 && (
         <ul className="mb-3 space-y-2">
           {prescriptions.map((prescription) => (
@@ -120,6 +120,23 @@ export function PrescriptionUpload({ prescriptions = [], onUpload }) {
       )}
 
       {error && <p className="mt-2 text-body-sm text-terracotta">{error}</p>}
+    </>
+  );
+
+  return (
+    <SectionCard icon="upload" title="Prescription" subtitle={children ? "Prepare the prescription during this consultation" : "Shared with the patient after the visit"} bodyClassName="p-4">
+      {children}
+      {children ? (
+        <details className="mt-5 border-t border-line pt-3">
+          <summary className="cursor-pointer text-body-sm text-ink-2">
+            Prescription files {prescriptions.length > 0 ? `(${prescriptions.length} saved)` : '(optional)'}
+          </summary>
+          <div className="mt-3">
+            <p className="mb-3 text-body-sm text-ink-3">Upload a finalized image or PDF to share with the patient.</p>
+            {attachments}
+          </div>
+        </details>
+      ) : attachments}
     </SectionCard>
   );
 }

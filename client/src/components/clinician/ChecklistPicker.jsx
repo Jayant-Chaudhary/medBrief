@@ -10,7 +10,7 @@ import { Icon } from '../common/Icon.jsx';
  * label exists. Custom entries (not among the templates) are listed after the
  * defaults. Ticking calls `onAdd(label)`, unticking `onRemove(entry)`.
  */
-export function ChecklistPicker({ templates = [], selected = [], onAdd, onRemove, placeholder, emptyHint }) {
+export function ChecklistPicker({ templates = [], selected = [], onAdd, onRemove, placeholder, emptyHint, compact = false }) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(null);
 
@@ -53,13 +53,13 @@ export function ChecklistPicker({ templates = [], selected = [], onAdd, onRemove
       {rows.length === 0 ? (
         emptyHint && <p className="pb-2 text-body-sm text-ink-3">{emptyHint}</p>
       ) : (
-        <ul className="space-y-2">
+        <ul className={compact ? "max-h-40 space-y-1.5 overflow-y-auto pr-1" : "space-y-2"}>
           {rows.map((row) => {
             const checked = Boolean(row.entry);
             return (
               <li key={row.label}>
                 <label
-                  className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors
+                  className={`flex cursor-pointer items-start rounded-xl border transition-colors ${compact ? 'gap-2 p-2' : 'gap-3 p-3'}
                               ${busy === row.label ? 'opacity-60' : ''}
                               ${checked ? 'border-sage-border bg-sage-surface' : 'border-line bg-subcanvas hover:border-line-strong'}`}
                 >
@@ -78,7 +78,7 @@ export function ChecklistPicker({ templates = [], selected = [], onAdd, onRemove
                     {checked && <Icon name="check" size={12} strokeWidth={2.5} />}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className={`block text-body-md ${checked ? 'text-sage-ink' : 'text-ink'}`}>{row.label}</span>
+                    <span className={`block ${compact ? 'text-body-sm' : 'text-body-md'} ${checked ? 'text-sage-ink' : 'text-ink'}`}>{row.label}</span>
                     {row.entry?.note && <span className="block text-body-sm text-ink-3">{row.entry.note}</span>}
                   </span>
                 </label>
@@ -88,7 +88,7 @@ export function ChecklistPicker({ templates = [], selected = [], onAdd, onRemove
         </ul>
       )}
 
-      <form onSubmit={submit} className="mt-3 flex items-center gap-2">
+      <form onSubmit={submit} className={`${compact ? 'mt-2' : 'mt-3'} flex items-center gap-2`}>
         <input
           value={draft}
           onChange={(event) => setDraft(event.target.value)}

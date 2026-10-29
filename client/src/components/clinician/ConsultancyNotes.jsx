@@ -52,7 +52,7 @@ export function ConsultancyNotes({
     <SectionCard
       icon="notes"
       title="Consultancy Notes"
-      subtitle="Active consultation"
+      compact
       action={
         savedLabel && (
           <span
@@ -69,11 +69,12 @@ export function ConsultancyNotes({
           </span>
         )
       }
-      bodyClassName="p-4"
+      bodyClassName="p-3"
     >
-      <div className="mb-4">
-        <h3 className="mb-2 text-label-sm uppercase text-ink-3">Consultation checklist</h3>
+      <details className="mb-3">
+        <summary className="mb-2 cursor-pointer text-label-sm text-ink-3">Consultation checklist ({checkedItems.length} selected)</summary>
         <ChecklistPicker
+          compact
           templates={templates}
           selected={checkedItems}
           onAdd={onCheckItem}
@@ -81,7 +82,7 @@ export function ConsultancyNotes({
           placeholder="Add an item for this consultation…"
           emptyHint="Save your standard consultation items under Checklists to tick them here."
         />
-      </div>
+      </details>
 
       <h3 className="mb-2 text-label-sm uppercase text-ink-3">Notes</h3>
       <label className="sr-only" htmlFor="consultancy-notes">
@@ -91,9 +92,9 @@ export function ConsultancyNotes({
         id="consultancy-notes"
         value={text}
         onChange={onChange}
-        rows={10}
+        rows={3}
         placeholder="Subjective, objective, assessment, plan…"
-        className="field min-h-[200px] w-full resize-y py-3 leading-relaxed"
+        className="field min-h-[84px] w-full resize-y py-2 text-body-sm leading-relaxed"
       />
     </SectionCard>
   );
