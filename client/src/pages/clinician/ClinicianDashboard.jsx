@@ -15,7 +15,8 @@ import { PrescriptionTemplates } from '../../components/prescriptions/Prescripti
 import { PrescriptionUpload } from '../../components/clinician/PrescriptionUpload.jsx';
 import { Spinner } from '../../components/common/Spinner.jsx';
 import { usePatientDashboard } from '../../hooks/usePatientDashboard.js';
-import { Plus, ArrowLeft, Clock, User, CheckCircle, NotebookPen, CircleStop, BadgeCheck, UserCheck, Heart } from 'lucide-react';
+import { Plus, ArrowLeft, Clock, User, CheckCircle, NotebookPen, CircleStop, BadgeCheck, UserCheck, Mic } from 'lucide-react';
+import { DoctorConsultationModal } from '../../components/consultAudio/DoctorConsultationModal.jsx';
 import { buildFlowsheet } from '../../utils/flowsheet.js';
 import {
   fetchPatients,
@@ -62,6 +63,7 @@ export function ClinicianDashboard() {
   const [collapsed, setCollapsed] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const closeNotes = useCallback(() => setNotesOpen(false), []);
+  const [audioConsultOpen, setAudioConsultOpen] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [ending, setEnding] = useState(false);
   const [endError, setEndError] = useState(null);
@@ -365,31 +367,29 @@ export function ClinicianDashboard() {
           </button>
           <h1 className="text-xl font-display font-semibold text-ink">Report Analysis</h1>
 
-          <div className="ml-auto flex items-center gap-3">
-            <Link
-              to={`/clinician/maternity?patientId=${data.patient.id}&patientName=${encodeURIComponent(data.patient.name || '')}&phone=${encodeURIComponent(data.patient.phone || '')}`}
-              className="flex items-center gap-2 rounded-xl border border-line bg-surface px-4 py-2 text-label-lg text-cypress transition-colors hover:border-cypress hover:bg-subcanvas"
-              title="Open Antenatal Maternity Record"
-            >
-              <Heart className="h-4 w-4 text-terracotta" />
-              Maternity card
-            </Link>
+          <button
+            type="button"
+            onClick={() => setAudioConsultOpen(true)}
+            className="ml-auto flex items-center gap-2 rounded-xl border border-primary/20 bg-primary-light px-4 py-2 text-label-lg text-primary-dark transition-colors hover:bg-primary-light/80 shadow-sm"
+          >
+            <Mic className="h-4 w-4 text-primary" />
+            Record consultation
+          </button>
 
-            <button
-              type="button"
-              onClick={() => setNotesOpen(true)}
-              aria-haspopup="dialog"
-              aria-expanded={notesOpen}
-              className="flex items-center gap-2 rounded-xl border border-line bg-surface px-4 py-2 text-label-lg text-cypress
-                         transition-colors hover:border-cypress hover:bg-subcanvas"
-            >
-              <NotebookPen className="h-4 w-4" />
-              Consultation notes
-              {(data.notes.text.trim() || data.actionItems.length > 0 || data.prescriptions.length > 0) && (
-                <span className="h-2 w-2 rounded-full bg-sage" aria-label="has content" />
-              )}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setNotesOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={notesOpen}
+            className="flex items-center gap-2 rounded-xl border border-line bg-surface px-4 py-2 text-label-lg text-cypress
+                       transition-colors hover:border-cypress hover:bg-subcanvas"
+          >
+            <NotebookPen className="h-4 w-4" />
+            Consultation notes
+            {(data.notes.text.trim() || data.actionItems.length > 0 || data.prescriptions.length > 0) && (
+              <span className="h-2 w-2 rounded-full bg-sage" aria-label="has content" />
+            )}
+          </button>
 
           {data.appointment?.status === 'completed' ? (
             <span className="flex items-center gap-2 rounded-xl border border-sage-border bg-sage-surface px-4 py-2 text-label-lg text-sage-ink">
@@ -492,6 +492,19 @@ export function ClinicianDashboard() {
             </button>
           </div>
         </Modal>
+
+        <DoctorConsultationModal
+          isOpen={audioConsultOpen}
+          onClose={() => setAudioConsultOpen(false)}
+          appointment={{
+            appointmentId: selected?.appointmentId,
+            patientFullName: data?.patient?.name || selected?.name,
+            scheduledAt: selected?.scheduledAt,
+          }}
+          onConsultationFinished={() => {
+            showToast('Consultation audio recorded and queued for transcription.', 'success');
+          }}
+        />
       </div>
     );
   };
