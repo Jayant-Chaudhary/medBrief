@@ -56,7 +56,8 @@ export function DoctorConsultationModal({
 
   // Initialize or fetch session when modal opens
   useEffect(() => {
-    if (!isOpen || !appointment?.appointmentId) return;
+    const targetAppointmentId = appointment?.appointmentId || appointment?.id;
+    if (!isOpen || !targetAppointmentId) return;
 
     let mounted = true;
     setLoading(true);
@@ -66,7 +67,7 @@ export function DoctorConsultationModal({
     setChunksUploaded(0);
     setRemainingQueue(0);
 
-    createConsultSession(appointment.appointmentId)
+    createConsultSession(targetAppointmentId)
       .then((data) => {
         if (!mounted) return;
         setSession(data);

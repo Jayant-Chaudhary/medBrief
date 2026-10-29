@@ -16,9 +16,12 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
  * Creates a consultation audio session for an appointment.
  */
 export async function createConsultSession(appointmentId) {
-  return request('/api/consults/create', {
+  return request('/api/consults', {
     method: 'POST',
-    body: { appointment_id: appointmentId },
+    body: {
+      appointmentId,
+      appointment_id: appointmentId,
+    },
   });
 }
 

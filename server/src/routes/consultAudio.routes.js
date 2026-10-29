@@ -53,6 +53,7 @@ timeRouter.get('/', controller.getServerTime);
 
 // Consultation session endpoints
 consultRouter.post('/', authGuard, roleGuard('clinician'), controller.createSession);
+consultRouter.post('/create', authGuard, roleGuard('clinician'), controller.createSession);
 consultRouter.post('/join', authGuard, roleGuard('patient'), controller.joinSession);
 consultRouter.post('/:id/consent', sessionTokenGuard, controller.recordConsent);
 consultRouter.post('/:id/devices/:device/ready', sessionTokenGuard, controller.markDeviceReady);

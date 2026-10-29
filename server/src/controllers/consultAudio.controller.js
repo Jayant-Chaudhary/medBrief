@@ -16,7 +16,12 @@ const logger = require('../utils/logger');
  */
 async function createSession(req, res, next) {
   try {
-    const { appointmentId, patientRequired = true, languageCode = null } = req.body;
+    const appointmentId = req.body.appointmentId || req.body.appointment_id;
+    const patientRequired = req.body.patientRequired !== undefined
+      ? req.body.patientRequired
+      : (req.body.patient_required !== undefined ? req.body.patient_required : true);
+    const languageCode = req.body.languageCode || req.body.language_code || null;
+
     if (!appointmentId) {
       return res.status(400).json({ error: 'appointmentId is required' });
     }
