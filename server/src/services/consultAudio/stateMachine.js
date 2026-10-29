@@ -79,7 +79,8 @@ function assertCanTransition({ session, consents = [], devices = [], toState }) 
       return { valid: false, error: 'Doctor device must be ready' };
     }
 
-    if (session.patient_required) {
+    const patientDeviceJoined = deviceList.some((d) => d.device === 'patient');
+    if (session.patient_required && patientDeviceJoined) {
       const patientConsent = consentList.find((c) => c.role === 'patient');
       if (!patientConsent) {
         return { valid: false, error: 'Patient consent required before session is ready' };
@@ -103,7 +104,8 @@ function assertCanTransition({ session, consents = [], devices = [], toState }) 
       return { valid: false, error: 'Cannot record without doctor consent' };
     }
 
-    if (session.patient_required) {
+    const patientDeviceJoined = deviceList.some((d) => d.device === 'patient');
+    if (session.patient_required && patientDeviceJoined) {
       const patientConsent = consentList.find((c) => c.role === 'patient');
       if (!patientConsent) {
         return { valid: false, error: 'Cannot record without patient consent' };

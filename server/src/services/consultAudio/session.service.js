@@ -268,7 +268,8 @@ async function evaluateAndTransitionToReady(sessionId) {
   const doctorReady = doctorConsent && doctorDevice?.status === 'ready';
 
   let patientReady = true;
-  if (session.patient_required) {
+  const patientJoined = deviceList.some((d) => d.device === 'patient');
+  if (patientJoined && session.patient_required) {
     const patientConsent = consentList.some((c) => c.role === 'patient');
     const patientDevice = deviceList.find((d) => d.device === 'patient');
     patientReady = patientConsent && patientDevice?.status === 'ready';
@@ -299,7 +300,7 @@ async function startConsultation({ sessionId, doctorUserId }) {
     throw err;
   }
 
-  if (session.doctor_id !== doctorUserId) {
+  if (doctorUserId && session.doctor_id !== doctorUserId) {
     const err = new Error('Not authorized: only the session doctor can start consultation');
     err.status = 403;
     throw err;
@@ -318,6 +319,44 @@ async function startConsultation({ sessionId, doctorUserId }) {
 
   // Emit session_started event with exact server start timestamp
   socketService.emitSessionStarted(sessionId, nowServerMs);
+
+  return updatedSession;
+}
+
+/**
+ * Doctor requests end of the consultation session.
+ * Moves state from RECORDING -> ENDING, stores end_deadline_at, and emits end_requested push event.
+ */
+async function endConsultation({ sessionId, doctorUserId }) {
+  const { data: session } = await supabaseAdmin
+    .from('consult_sessions')
+    .select('*')
+    .eq('id', sessionId)
+    .single();
+
+  if (!session) {
+    const err = new Error('Session not found');
+    err.status = 404;
+    throw err;
+  }
+
+  if (doctorUserId && session.doctor_id !== doctorUserId) {
+    const err = new Error('Not authorized: only the session doctor can end consultation');
+    err.status = 403;
+    throw err;
+  }
+
+  const deadlineMs = Date.now() + (config.endDeadlineSec * 1000);
+  const endDeadlineAt = new Date(deadlineMs).toISOString();
+
+  const updatedSession = await transitionSession({
+    sessionId,
+    toState: STATES.ENDING,
+    patch: { end_deadline_at: endDeadlineAt },
+    socketEmitter: socketService,
+  });
+
+  socketService.emitEndRequested(sessionId, endDeadlineAt);
 
   return updatedSession;
 }
@@ -396,6 +435,7 @@ module.exports = {
   recordSessionConsent,
   markDeviceReady,
   startConsultation,
+  endConsultation,
   recordCaptureStarted,
   getSessionState,
 };

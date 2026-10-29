@@ -128,9 +128,29 @@ async function markDeviceReady(req, res, next) {
 async function startConsultation(req, res, next) {
   try {
     const sessionId = req.params.id;
-    const doctorUserId = req.user.id;
+    const doctorUserId = req.user?.id || req.sessionToken?.userId;
 
     const session = await sessionService.startConsultation({
+      sessionId,
+      doctorUserId,
+    });
+
+    res.status(200).json({ ok: true, session });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/consults/:id/end
+ * Doctor signals end of consultation, transitioning to ENDING.
+ */
+async function endConsultation(req, res, next) {
+  try {
+    const sessionId = req.params.id;
+    const doctorUserId = req.user?.id || req.sessionToken?.userId;
+
+    const session = await sessionService.endConsultation({
       sessionId,
       doctorUserId,
     });
@@ -253,6 +273,7 @@ module.exports = {
   getServerTime,
   markDeviceReady,
   startConsultation,
+  endConsultation,
   recordCaptureStarted,
   getSessionState,
   uploadChunk,

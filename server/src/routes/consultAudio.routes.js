@@ -41,6 +41,39 @@ async function flexibleSessionAuth(req, res, next) {
   }
 }
 
+/**
+ * Guard for doctor consultation actions (start, end):
+ * Accepts either valid scoped doctor session token OR clinician authenticated user token.
+ */
+async function doctorSessionOrAuthGuard(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing Authorization header' });
+  }
+
+  const token = authHeader.split(' ')[1];
+
+  // 1. Try scoped session token first
+  try {
+    const claims = verifySessionToken(token);
+    if (req.params.id && req.params.id !== claims.sessionId) {
+      return res.status(403).json({ error: 'Token is not authorized for this session' });
+    }
+    if (claims.role !== 'doctor') {
+      return res.status(403).json({ error: 'Only doctor device is authorized for this action' });
+    }
+    req.sessionToken = claims;
+    req.user = { id: claims.userId, role: 'clinician' };
+    return next();
+  } catch (scopedErr) {
+    // 2. Fall back to standard Supabase user auth
+    return authGuard(req, res, (err) => {
+      if (err) return next(err);
+      return roleGuard('clinician')(req, res, next);
+    });
+  }
+}
+
 const config = require('../config/consultAudio.config');
 
 const rawAudioParser = express.raw({
@@ -57,7 +90,8 @@ consultRouter.post('/create', authGuard, roleGuard('clinician'), controller.crea
 consultRouter.post('/join', authGuard, roleGuard('patient'), controller.joinSession);
 consultRouter.post('/:id/consent', sessionTokenGuard, controller.recordConsent);
 consultRouter.post('/:id/devices/:device/ready', sessionTokenGuard, controller.markDeviceReady);
-consultRouter.post('/:id/start', authGuard, roleGuard('clinician'), controller.startConsultation);
+consultRouter.post('/:id/start', doctorSessionOrAuthGuard, controller.startConsultation);
+consultRouter.post('/:id/end', doctorSessionOrAuthGuard, controller.endConsultation);
 consultRouter.post('/:id/devices/:device/capture-started', sessionTokenGuard, controller.recordCaptureStarted);
 consultRouter.post('/:id/chunks', sessionTokenGuard, rawAudioParser, controller.uploadChunk);
 consultRouter.post('/:id/devices/:device/final', sessionTokenGuard, controller.recordFinalMarker);
