@@ -1,3 +1,4 @@
+const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
@@ -5,6 +6,7 @@ const env = require('./config/env');
 const errorHandler = require('./middleware/errorHandler');
 const requestLogger = require('./middleware/requestLogger');
 const logger = require('./utils/logger');
+const { initSocketServer } = require('./services/consultAudio/socket.service');
 
 const authRoutes = require('./routes/auth.routes');
 const appointmentsRoutes = require('./routes/appointments.routes');
@@ -17,8 +19,18 @@ const profileRoutes = require('./routes/profile.routes');
 const ocrRoutes = require('./routes/ocr.routes');
 const patientsRoutes = require('./routes/patients.routes');
 const templatesRoutes = require('./routes/templates.routes');
+const { consultRouter, timeRouter } = require('./routes/consultAudio.routes');
 
 const app = express();
+const server = http.createServer(app);
+const corsOriginList = [env.clientAppUrl, 'http://localhost:5173', 'http://localhost:3000'];
+
+// Initialize Socket.IO control channel
+initSocketServer(server, {
+  origin: corsOriginList,
+  credentials: true,
+});
+app.server = server;
 
 // Community must terminate before the identified care logger and error handler.
 app.use('/api/community', cors({
@@ -51,6 +63,8 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/ocr', ocrRoutes);
 app.use('/api/patients', patientsRoutes);
 app.use('/api/templates', templatesRoutes);
+app.use('/api/time', timeRouter);
+app.use('/api/consults', consultRouter);
 
 app.use((req, res) => res.status(404).json({ error: 'Endpoint not found', requestId: req.id }));
 app.use(errorHandler);
@@ -64,7 +78,7 @@ if (process.env.NODE_ENV !== 'test') {
     process.exit(1);
   });
 
-  app.listen(env.port, () => {
+  server.listen(env.port, () => {
     logger.info(`MedBrief API listening on port ${env.port}`, {
       env: process.env.NODE_ENV || 'development',
       ocrServiceUrl: env.ocrServiceUrl,
