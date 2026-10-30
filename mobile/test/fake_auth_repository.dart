@@ -5,6 +5,7 @@ import 'package:health_on_patient/features/auth/auth_repository.dart';
 class FakeAuthRepository implements AuthRepository {
   bool session = false;
   int signInCalls = 0;
+  int signUpCalls = 0;
   int acceptCalls = 0;
   String? signedInEmail;
   String? signedInPassword;
@@ -71,5 +72,23 @@ class FakeAuthRepository implements AuthRepository {
   @override
   Future<void> acceptInvite(String token, String password) async {
     acceptCalls++;
+  }
+
+  @override
+  Future<void> signUp({
+    required String email,
+    required String password,
+    String? fullName,
+    String? phone,
+  }) async {
+    signUpCalls++;
+    if (fullName != null && fullName.trim().isNotEmpty) {
+      profile = PatientProfile(
+        id: profile.id,
+        role: profile.role,
+        fullName: fullName.trim(),
+        phone: phone?.trim(),
+      );
+    }
   }
 }

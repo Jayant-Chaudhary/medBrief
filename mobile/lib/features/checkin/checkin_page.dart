@@ -10,11 +10,13 @@ class CheckinPage extends StatefulWidget {
     required this.appointment,
     required this.repository,
     required this.onFinished,
+    this.onCancel,
   });
 
   final Appointment? appointment;
   final CheckinRepository repository;
   final VoidCallback onFinished;
+  final VoidCallback? onCancel;
 
   @override
   State<CheckinPage> createState() => _CheckinPageState();
@@ -120,8 +122,14 @@ class _CheckinPageState extends State<CheckinPage> {
         }
 
         return switch (controller.step) {
-          CheckinStep.symptoms => _SymptomsStepView(controller: controller),
-          CheckinStep.checklist => _ChecklistStepView(controller: controller),
+          CheckinStep.symptoms => _SymptomsStepView(
+              controller: controller,
+              onCancel: widget.onCancel,
+            ),
+          CheckinStep.checklist => _ChecklistStepView(
+              controller: controller,
+              onCancel: widget.onCancel,
+            ),
           CheckinStep.done => _CheckinDoneView(onFinished: widget.onFinished),
         };
       },
@@ -134,8 +142,9 @@ class _CheckinPageState extends State<CheckinPage> {
 // ---------------------------------------------------------------------------
 
 class _SymptomsStepView extends StatelessWidget {
-  const _SymptomsStepView({required this.controller});
+  const _SymptomsStepView({required this.controller, this.onCancel});
   final CheckinController controller;
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -148,7 +157,7 @@ class _SymptomsStepView extends StatelessWidget {
       body: SafeArea(
         child: Column(
           children: [
-            const _StepIndicator(currentStep: 1),
+            _StepIndicator(currentStep: 1, onClose: onCancel),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
@@ -421,8 +430,9 @@ class _OptionChip extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _ChecklistStepView extends StatelessWidget {
-  const _ChecklistStepView({required this.controller});
+  const _ChecklistStepView({required this.controller, this.onCancel});
   final CheckinController controller;
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -434,7 +444,7 @@ class _ChecklistStepView extends StatelessWidget {
       body: SafeArea(
         child: Column(
           children: [
-            const _StepIndicator(currentStep: 2),
+            _StepIndicator(currentStep: 2, onClose: onCancel),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
@@ -739,24 +749,41 @@ class _CheckinDoneView extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _StepIndicator extends StatelessWidget {
-  const _StepIndicator({required this.currentStep});
+  const _StepIndicator({required this.currentStep, this.onClose});
   final int currentStep; // 1 or 2
+  final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: line.withValues(alpha: 0.6))),
       ),
       child: Row(
         children: [
-          _StepPill(number: 1, title: 'Symptoms', active: currentStep >= 1),
-          const Expanded(
-            child: Divider(color: line, thickness: 1.5, indent: 8, endIndent: 8),
+          if (onClose != null) ...[
+            IconButton(
+              icon: const Icon(Icons.close_rounded, color: ink, size: 22),
+              onPressed: onClose,
+              tooltip: 'Close',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+            const SizedBox(width: 12),
+          ],
+          Expanded(
+            child: Row(
+              children: [
+                _StepPill(number: 1, title: 'Symptoms', active: currentStep >= 1),
+                const Expanded(
+                  child: Divider(color: line, thickness: 1.5, indent: 8, endIndent: 8),
+                ),
+                _StepPill(number: 2, title: 'Checklist', active: currentStep >= 2),
+              ],
+            ),
           ),
-          _StepPill(number: 2, title: 'Checklist', active: currentStep >= 2),
         ],
       ),
     );

@@ -227,6 +227,21 @@ class CommunityPostCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (tags.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'r/${tags.first['name'] ?? 'health'}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: communityGreen,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                  ),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -237,16 +252,20 @@ class CommunityPostCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            username,
+                            'u/$username',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
                               color: communityInk,
                             ),
                           ),
-                          const SizedBox(height: 3),
+                          const SizedBox(height: 2),
                           Text(
                             publicationLabel(post['publishedAt']),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: communityMuted,
                               fontSize: 11,
@@ -332,39 +351,92 @@ class CommunityPostCard extends StatelessWidget {
                   ),
                   Row(
                     children: [
-                      const Icon(
-                        Icons.chat_bubble_outline_rounded,
-                        size: 16,
-                        color: communityGreen,
+                      // Reddit-style Upvote pill
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0F4F2),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.arrow_upward_rounded,
+                              size: 15,
+                              color: communityGreen,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${((post['id']?.toString().hashCode ?? 1).abs() % 9) + 1}',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: communityInk,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(width: 7),
+                      const SizedBox(width: 8),
+                      // Reddit-style Comments pill
                       Expanded(
-                        child: Text(
-                          showState
-                              ? 'Open your post'
-                              : '${post['replyCount'] ?? 0} replies',
-                          style: const TextStyle(
-                            color: communityMuted,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0F4F2),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.chat_bubble_outline_rounded,
+                                size: 14,
+                                color: communityGreen,
+                              ),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  showState
+                                      ? 'Open post'
+                                      : '${post['replyCount'] ?? 0} replies',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: communityMuted,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  discussionOpen ? 'Hide discussion' : 'Read discussion',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: communityGreen,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                      Text(
-                        discussionOpen ? 'Hide discussion' : 'Read discussion',
-                        style: const TextStyle(
-                          color: communityGreen,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFF0F4F2),
+                          shape: BoxShape.circle,
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        discussionOpen
-                            ? Icons.expand_less_rounded
-                            : Icons.expand_more_rounded,
-                        size: 15,
-                        color: communityGreen,
+                        child: const Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          size: 11,
+                          color: communityGreen,
+                        ),
                       ),
                     ],
                   ),

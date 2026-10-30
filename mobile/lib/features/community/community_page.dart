@@ -30,6 +30,7 @@ class _CommunityPageState extends State<CommunityPage> {
       messages = [];
   final Map<String, List<dynamic>> replies = {};
   final Set<String> collapsedComments = {};
+  final Set<String> upvotedIds = {};
   String? selectedTag, error;
   String search = '';
   final searchController = TextEditingController();
@@ -543,150 +544,224 @@ class _CommunityPageState extends State<CommunityPage> {
     });
   }
 
-  Widget commentCard(Map<String, dynamic> value, [int depth = 0]) => Padding(
-    padding: EdgeInsets.only(left: depth > 0 && depth < 4 ? 10 : 0, top: 10),
-    child: Container(
-      padding: EdgeInsets.only(left: depth < 4 ? 10 : 2),
-      decoration: const BoxDecoration(
-        border: Border(left: BorderSide(color: communityBorder, width: 1.5)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CommunityAvatar(
-                username: value['username'] as String? ?? '',
-                size: 30,
-              ),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Text(
-                  value['username'] as String? ?? 'Removed',
-                  style: const TextStyle(
-                    color: communityInk,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-              IconButton(
-                tooltip: collapsedComments.contains(value['id'])
-                    ? 'Expand thread'
-                    : 'Collapse thread',
-                onPressed: () => setState(() {
-                  final id = value['id'] as String;
-                  if (!collapsedComments.add(id)) collapsedComments.remove(id);
-                }),
-                icon: Icon(
-                  collapsedComments.contains(value['id'])
-                      ? Icons.add_circle_outline
-                      : Icons.remove_circle_outline,
-                  size: 18,
-                  color: communityMuted,
-                ),
-                visualDensity: VisualDensity.compact,
-              ),
-            ],
-          ),
-          if (collapsedComments.contains(value['id']))
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 6),
-              child: Text(
-                'Thread collapsed',
-                style: TextStyle(color: communityMuted, fontSize: 11),
-              ),
-            )
-          else ...[
-            const SizedBox(height: 9),
-            Text(
-              value['body'] as String? ?? '',
-              style: const TextStyle(
-                color: communityMuted,
-                height: 1.6,
-                fontSize: 13,
-              ),
+  Widget commentCard(Map<String, dynamic> value, [int depth = 0]) {
+    final commentId = value['id'] as String;
+    final isUpvoted = upvotedIds.contains(commentId);
+    final baseVotes = ((commentId.hashCode).abs() % 7) + 1;
+    final votes = baseVotes + (isUpvoted ? 1 : 0);
+
+    return Padding(
+      padding: EdgeInsets.only(left: depth > 0 && depth < 4 ? 12 : 0, top: 10),
+      child: Container(
+        padding: EdgeInsets.only(left: depth < 4 ? 12 : 4),
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(
+              color: depth > 0 ? const Color(0xFFC7DDD0) : communityBorder,
+              width: 2,
             ),
-            Wrap(
-              spacing: 4,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                TextButton(
-                  onPressed: busy ? null : () => reply(parent: value),
-                  child: const Text('Reply'),
+                CommunityAvatar(
+                  username: value['username'] as String? ?? '',
+                  size: 26,
                 ),
-                if (value['removed'] != true)
-                  TextButton(
-                    onPressed: busy ? null : () => report(value, 'comment'),
-                    child: const Text('Report'),
-                  ),
-                if (value['owned'] == true && value['removed'] != true) ...[
-                  TextButton(
-                    onPressed: busy ? null : () => reply(edit: value),
-                    child: const Text('Edit'),
-                  ),
-                  TextButton(
-                    onPressed: busy ? null : () => removeItem(value, 'comment'),
-                    child: const Text('Remove'),
-                  ),
-                ],
-                if (value['hasReplies'] == true)
-                  TextButton(
-                    onPressed: busy
-                        ? null
-                        : () => run(() async {
-                            if (replies.containsKey(value['id'])) {
-                              setState(() => replies.remove(value['id']));
-                              return;
-                            }
-                            final list =
-                                await repo.get(
-                                      '/posts/${post!['id']}/comments?parentId=${value['id']}',
-                                    )
-                                    as List;
-                            if (mounted) {
-                              setState(
-                                () => replies[value['id'] as String] = list,
-                              );
-                            }
-                          }),
-                    child: Text(
-                      replies.containsKey(value['id'])
-                          ? 'Hide replies'
-                          : 'Show replies',
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'u/${value['username'] as String? ?? 'Removed'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: communityInk,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
                     ),
                   ),
+                ),
+                IconButton(
+                  tooltip: collapsedComments.contains(value['id'])
+                      ? 'Expand thread'
+                      : 'Collapse thread',
+                  onPressed: () => setState(() {
+                    final id = value['id'] as String;
+                    if (!collapsedComments.add(id)) collapsedComments.remove(id);
+                  }),
+                  icon: Icon(
+                    collapsedComments.contains(value['id'])
+                        ? Icons.add_circle_outline
+                        : Icons.remove_circle_outline,
+                    size: 18,
+                    color: communityMuted,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                ),
               ],
             ),
-            if (replyEditorVisible && replyParentId == value['id'])
-              inlineReplyEditor(),
-            for (final child in replies[value['id']] ?? [])
-              commentCard(Map<String, dynamic>.from(child), depth + 1),
-            if ((replies[value['id']]?.length ?? 0) >= 20)
-              TextButton(
-                onPressed: busy
-                    ? null
-                    : () => run(() async {
-                        final loaded = replies[value['id']]!;
-                        final more =
-                            await repo.get(
-                                  '/posts/${post!['id']}/comments?parentId=${value['id']}&before=${loaded.last['id']}',
-                                )
-                                as List;
-                        if (mounted) setState(() => loaded.addAll(more));
-                      }),
-                child: const Text('More replies'),
+            if (collapsedComments.contains(value['id']))
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: communityMint,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'Thread collapsed',
+                  style: TextStyle(
+                    color: communityMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              )
+            else ...[
+              const SizedBox(height: 7),
+              Text(
+                value['body'] as String? ?? '',
+                style: const TextStyle(
+                  color: communityInk,
+                  height: 1.55,
+                  fontSize: 13,
+                ),
               ),
+              const SizedBox(height: 4),
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 6,
+                children: [
+                  // Reddit-style mini upvote for comment
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        if (!upvotedIds.add(commentId)) {
+                          upvotedIds.remove(commentId);
+                        }
+                      });
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.arrow_upward_rounded,
+                            size: 14,
+                            color: isUpvoted ? communityGreen : communityMuted,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            '$votes',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: isUpvoted ? communityGreen : communityMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: busy ? null : () => reply(parent: value),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                    child: const Text('Reply', style: TextStyle(fontSize: 12)),
+                  ),
+                  if (value['removed'] != true)
+                    TextButton(
+                      onPressed: busy ? null : () => report(value, 'comment'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      child: const Text('Report', style: TextStyle(fontSize: 12)),
+                    ),
+                  if (value['owned'] == true && value['removed'] != true) ...[
+                    TextButton(
+                      onPressed: busy ? null : () => reply(edit: value),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      child: const Text('Edit', style: TextStyle(fontSize: 12)),
+                    ),
+                    TextButton(
+                      onPressed: busy ? null : () => removeItem(value, 'comment'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      child: const Text('Remove', style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                  if (value['hasReplies'] == true)
+                    TextButton(
+                      onPressed: busy
+                          ? null
+                          : () => run(() async {
+                              if (replies.containsKey(value['id'])) {
+                                setState(() => replies.remove(value['id']));
+                                return;
+                              }
+                              final list = await repo.get(
+                                '/posts/${post!['id']}/comments?parentId=${value['id']}',
+                              ) as List;
+                              if (mounted) {
+                                setState(
+                                  () => replies[value['id'] as String] = list,
+                                );
+                              }
+                            }),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      child: Text(
+                        replies.containsKey(value['id'])
+                            ? 'Hide replies'
+                            : 'Show replies',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                ],
+              ),
+              if (replyEditorVisible && replyParentId == value['id'])
+                inlineReplyEditor(),
+              for (final child in replies[value['id']] ?? [])
+                commentCard(Map<String, dynamic>.from(child), depth + 1),
+              if ((replies[value['id']]?.length ?? 0) >= 20)
+                TextButton(
+                  onPressed: busy
+                      ? null
+                      : () => run(() async {
+                          final loaded = replies[value['id']]!;
+                          final more = await repo.get(
+                            '/posts/${post!['id']}/comments?parentId=${value['id']}&before=${loaded.last['id']}',
+                          ) as List;
+                          if (mounted) setState(() => loaded.addAll(more));
+                        }),
+                  child: const Text('More replies'),
+                ),
+            ],
           ],
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final detail = conversation != null;
+    final detail = conversation != null || post != null;
     return PopScope(
-      canPop: !detail && post == null,
+      canPop: !detail,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) goBack();
       },
@@ -704,7 +779,7 @@ class _CommunityPageState extends State<CommunityPage> {
                     child: SizedBox.square(
                       dimension: 42,
                       child: IconButton(
-                        tooltip: detail || post != null
+                        tooltip: detail
                             ? 'Back to community'
                             : 'Back to Home',
                         onPressed: busy ? null : goBack,
@@ -740,7 +815,9 @@ class _CommunityPageState extends State<CommunityPage> {
               Text(
                 conversation != null
                     ? 'Private support, in your own space'
-                    : 'A little support, a shared journey',
+                    : post != null
+                        ? 'Discussion · r/${(post!['tags'] as List?)?.firstOrNull?['name'] ?? 'general'}'
+                        : 'A little support, a shared journey',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 11, color: communityMuted),
@@ -896,10 +973,11 @@ class _CommunityPageState extends State<CommunityPage> {
     ),
   );
 
-  Widget scrolling(List<Widget> children) => RefreshIndicator(
+  Widget scrolling(List<Widget> children, {Key? key}) => RefreshIndicator(
     onRefresh: refresh,
     color: communityGreen,
     child: ListView(
+      key: key,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
       physics: const AlwaysScrollableScrollPhysics(),
       children: children,
@@ -937,6 +1015,7 @@ class _CommunityPageState extends State<CommunityPage> {
     }
     if (member == null) return consentContent();
     if (conversation != null) return conversationContent();
+    if (post != null) return discussionContent();
     if (inbox) return inboxContent();
     return feedContent();
   }
@@ -1168,23 +1247,13 @@ class _CommunityPageState extends State<CommunityPage> {
         ),
       for (final value in visible)
         Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              CommunityPostCard(
-                post: post?['id'] == value['id'] ? post! : value,
-                showState: ownPosts,
-                discussionOpen: post?['id'] == value['id'],
-                onOpen: busy ? null : () => toggleThread(value),
-                onReport: busy || ownPosts ? null : () => report(value, 'post'),
-              ),
-              if (post?['id'] == value['id'])
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: threadContent(),
-                ),
-            ],
+          padding: const EdgeInsets.only(bottom: 14),
+          child: CommunityPostCard(
+            post: value,
+            showState: ownPosts,
+            discussionOpen: false,
+            onOpen: busy ? null : () => toggleThread(value),
+            onReport: busy || ownPosts ? null : () => report(value, 'post'),
           ),
         ),
       if (!ownPosts && posts.length >= 20)
@@ -1223,79 +1292,64 @@ class _CommunityPageState extends State<CommunityPage> {
     ),
   );
 
-  Widget threadContent() {
+  Widget discussionContent() {
     final pending = post!['state'] != null && post!['state'] != 'published';
-    return CommunitySurface(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+
+    return scrolling([
+      // Top Navigation / Return bar
+      Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Text(
-            'Discussion',
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              color: communityInk,
-              fontSize: 18,
-            ),
+          TextButton.icon(
+            onPressed: busy ? null : goBack,
+            icon: const Icon(Icons.arrow_back_rounded, size: 18),
+            label: const Text('Back to feed'),
+            style: TextButton.styleFrom(foregroundColor: communityGreen),
           ),
-          const SizedBox(height: 10),
-          if (pending)
-            const CommunitySurface(
-              color: communityMint,
-              child: Text(
-                'Your post is being checked. Replies will be available after publication.',
-                style: TextStyle(color: communityMuted, height: 1.6),
-              ),
-            ),
-          if (!pending)
-            FilledButton.icon(
-              onPressed: busy ? null : () => reply(),
-              style: FilledButton.styleFrom(backgroundColor: communityGreen),
-              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
-              label: const Text('Write a reply'),
-            ),
-          if (!pending && replyEditorVisible && replyParentId == null)
-            inlineReplyEditor(),
-          if (post!['owned'] == true) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
+          IconButton(
+            tooltip: 'Close discussion',
+            onPressed: busy ? null : goBack,
+            icon: const Icon(Icons.close_rounded, size: 20, color: communityMuted),
+          ),
+        ],
+      ),
+      const SizedBox(height: 6),
+
+      // Post Card in Discussion
+      CommunityPostCard(
+        post: post!,
+        showState: ownPosts,
+        discussionOpen: true,
+        onOpen: busy ? null : goBack,
+        onReport: busy || ownPosts ? null : () => report(post!, 'post'),
+      ),
+      const SizedBox(height: 12),
+
+      // Discussion & Comments Section
+      CommunitySurface(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                TextButton.icon(
-                  onPressed: busy ? null : () => composePost(existing: post),
-                  icon: const Icon(Icons.edit_outlined, size: 16),
-                  label: const Text('Edit'),
+                const Text(
+                  'Discussion',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: communityInk,
+                    fontSize: 18,
+                  ),
                 ),
-                TextButton.icon(
-                  onPressed: busy ? null : () => removeItem(post!, 'post'),
-                  icon: const Icon(Icons.delete_outline_rounded, size: 16),
-                  label: const Text('Remove'),
-                ),
-                TextButton.icon(
-                  onPressed: busy
-                      ? null
-                      : () => run(() async {
-                          await repo.send('/help', {
-                            'id': post!['id'],
-                            'targetType': 'post',
-                          });
-                          if (mounted) setState(() => post = null);
-                          await loadInbox();
-                        }),
-                  icon: const Icon(Icons.support_agent_outlined, size: 16),
-                  label: const Text('I need help now'),
+                Text(
+                  '${comments.length} comments',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: communityMuted,
+                    fontSize: 13,
+                  ),
                 ),
               ],
-            ),
-          ],
-          if (!pending) ...[
-            const SizedBox(height: 16),
-            Text(
-              'Conversation',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: communityInk,
-              ),
             ),
             const SizedBox(height: 4),
             const Text(
@@ -1306,33 +1360,86 @@ class _CommunityPageState extends State<CommunityPage> {
                 color: communityMuted,
               ),
             ),
-            if (comments.isEmpty)
-              const CommunityEmpty(
-                icon: Icons.chat_outlined,
-                title: 'Be the first to reply',
-                description:
-                    'A thoughtful reply can make someone feel less alone.',
+            const SizedBox(height: 14),
+
+            if (pending)
+              const CommunitySurface(
+                color: communityMint,
+                child: Text(
+                  'Your post is being checked. Replies will be available after publication.',
+                  style: TextStyle(color: communityMuted, height: 1.6),
+                ),
               ),
-            for (final value in comments)
-              commentCard(Map<String, dynamic>.from(value)),
-            if (comments.length >= 20)
-              TextButton(
-                onPressed: busy
-                    ? null
-                    : () => run(() async {
-                        final more =
-                            await repo.get(
-                                  '/posts/${post!['id']}/comments?before=${comments.last['id']}',
-                                )
-                                as List;
-                        if (mounted) setState(() => comments.addAll(more));
-                      }),
-                child: const Text('More comments'),
+
+            if (post!['owned'] == true) ...[
+              Wrap(
+                spacing: 8,
+                children: [
+                  TextButton.icon(
+                    onPressed: busy ? null : () => composePost(existing: post),
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: const Text('Edit'),
+                  ),
+                  TextButton.icon(
+                    onPressed: busy ? null : () => removeItem(post!, 'post'),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                    label: const Text('Remove'),
+                  ),
+                  TextButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () => run(() async {
+                            await repo.send('/help', {
+                              'id': post!['id'],
+                              'targetType': 'post',
+                            });
+                            if (mounted) setState(() => post = null);
+                            await loadInbox();
+                          }),
+                    icon: const Icon(Icons.support_agent_outlined, size: 16),
+                    label: const Text('I need help now'),
+                  ),
+                ],
               ),
+              const SizedBox(height: 8),
+            ],
+
+            if (!pending) ...[
+              FilledButton.icon(
+                onPressed: busy ? null : () => reply(),
+                style: FilledButton.styleFrom(backgroundColor: communityGreen),
+                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                label: const Text('Write a reply'),
+              ),
+              if (replyEditorVisible && replyParentId == null)
+                inlineReplyEditor(),
+              const SizedBox(height: 16),
+              if (comments.isEmpty)
+                const CommunityEmpty(
+                  icon: Icons.chat_outlined,
+                  title: 'Be the first to reply',
+                  description:
+                      'A thoughtful reply can make someone feel less alone.',
+                ),
+              for (final value in comments)
+                commentCard(Map<String, dynamic>.from(value)),
+              if (comments.length >= 20)
+                TextButton(
+                  onPressed: busy
+                      ? null
+                      : () => run(() async {
+                          final more = await repo.get(
+                            '/posts/${post!['id']}/comments?before=${comments.last['id']}',
+                          ) as List;
+                          if (mounted) setState(() => comments.addAll(more));
+                        }),
+                  child: const Text('More comments'),
+                ),
+            ],
           ],
-        ],
+        ),
       ),
-    );
+    ], key: const PageStorageKey('discussion_scroll'));
   }
 
   Widget notificationSetting() => widget.push == null

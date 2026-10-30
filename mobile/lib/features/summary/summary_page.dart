@@ -8,10 +8,12 @@ class SummaryPage extends StatefulWidget {
     super.key,
     required this.controller,
     required this.completedAppointments,
+    this.initialAppointmentId,
   });
 
   final SummaryController controller;
   final List<Appointment> completedAppointments;
+  final String? initialAppointmentId;
 
   @override
   State<SummaryPage> createState() => _SummaryPageState();
@@ -34,6 +36,15 @@ class _SummaryPageState extends State<SummaryPage> {
   }
 
   void _initSelection() {
+    if (widget.initialAppointmentId != null) {
+      final exists = widget.completedAppointments.any(
+        (a) => a.id == widget.initialAppointmentId,
+      );
+      if (exists) {
+        widget.controller.selectAppointment(widget.initialAppointmentId!);
+        return;
+      }
+    }
     if (widget.completedAppointments.isNotEmpty) {
       final selected = widget.controller.selectedAppointmentId;
       final exists = widget.completedAppointments.any((a) => a.id == selected);
@@ -227,8 +238,8 @@ class _SummaryPageState extends State<SummaryPage> {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: action.isCompleted
-                              ? FontWeight.w400
-                              : FontWeight.w600,
+                            ? FontWeight.w400
+                            : FontWeight.w600,
                           color: action.isCompleted ? muted : ink,
                           decoration: action.isCompleted
                               ? TextDecoration.lineThrough

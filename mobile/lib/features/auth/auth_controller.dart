@@ -55,6 +55,22 @@ class AuthController extends ChangeNotifier {
     await _loadProfile();
   });
 
+  Future<void> signUp({
+    required String email,
+    required String password,
+    String? fullName,
+    String? phone,
+  }) => _run(() async {
+    await repository.signUp(
+      email: email.trim(),
+      password: password,
+      fullName: fullName?.trim(),
+      phone: phone?.trim(),
+    );
+    await repository.signIn(email.trim(), password);
+    await _loadProfile();
+  });
+
   Future<void> _loadProfile() async {
     final generation = _generation;
     final loaded = await repository.getProfile();

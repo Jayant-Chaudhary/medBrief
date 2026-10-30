@@ -82,6 +82,12 @@ abstract class AuthRepository {
   Future<PatientProfile> completeProfile(String name, String phone);
   Future<AppointmentInvite> getInvite(String token);
   Future<void> acceptInvite(String token, String password);
+  Future<void> signUp({
+    required String email,
+    required String password,
+    String? fullName,
+    String? phone,
+  });
 }
 
 class SupabaseAuthRepository implements AuthRepository {
@@ -149,6 +155,47 @@ class SupabaseAuthRepository implements AuthRepository {
       authenticated: false,
       body: {'token': token, 'password': password},
     );
+  }
+
+  @override
+  Future<void> signUp({
+    required String email,
+    required String password,
+    String? fullName,
+    String? phone,
+  }) async {
+    try {
+      await api.request(
+        '/api/auth/signup',
+        method: 'POST',
+        authenticated: false,
+        body: {
+          'email': email.trim(),
+          'password': password,
+          if (fullName != null && fullName.trim().isNotEmpty)
+            'fullName': fullName.trim(),
+          if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
+          'role': 'patient',
+        },
+      );
+    } catch (e) {
+      if (e is AppException && e.status != null && e.status! >= 400 && e.status! < 500) {
+        rethrow;
+      }
+      try {
+        await supabase.auth.signUp(
+          email: email.trim(),
+          password: password,
+          data: {
+            'full_name': fullName?.trim(),
+            'role': 'patient',
+            'phone': phone?.trim(),
+          },
+        );
+      } catch (_) {
+        throw e;
+      }
+    }
   }
 }
 

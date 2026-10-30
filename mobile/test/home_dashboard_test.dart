@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:health_on_patient/features/auth/auth_repository.dart';
 import 'package:health_on_patient/features/home/appointment_repository.dart';
-import 'package:health_on_patient/features/home/home_controller.dart';
 import 'package:health_on_patient/features/home/appointments_tab.dart';
+import 'package:health_on_patient/features/home/home_controller.dart';
+import 'package:health_on_patient/features/home/home_tab.dart';
 
 class FakeAppointmentRepository extends AppointmentRepository {
   FakeAppointmentRepository({
@@ -133,7 +134,7 @@ void main() {
     expect(repo.loggedVitals[2]['metricKey'], 'blood_pressure_diastolic');
   });
 
-  testWidgets('AppointmentsTab renders dashboard elements accurately', (tester) async {
+  testWidgets('HomeTab renders dashboard elements accurately', (tester) async {
     tester.view.physicalSize = const Size(430, 1600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -146,7 +147,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: AppointmentsTab(
+          body: HomeTab(
             controller: controller,
             onNavigate: (_) {},
           ),
@@ -160,14 +161,57 @@ void main() {
     // Action Banner
     expect(find.text('Start pre-visit check-in'), findsOneWidget);
     expect(find.text('Share lab reports'), findsOneWidget);
-    // Vitals
-    expect(find.text('Quick Vitals Update'), findsOneWidget);
-    expect(find.text('Weight (kg)'), findsOneWidget);
+    // Vitals moved to profile section
+    expect(find.text('Quick Vitals Update'), findsNothing);
+    expect(find.text('Weight (kg)'), findsNothing);
     // Appointments list (shown once in banner, once in upcoming, once in past)
     expect(find.text('Upcoming appointments'), findsOneWidget);
     expect(find.text('Past visits'), findsOneWidget);
     expect(find.text('Dr. Jane Smith'), findsNWidgets(3));
     expect(find.text('Scheduled'), findsOneWidget);
     expect(find.text('Completed'), findsOneWidget);
+  });
+
+  testWidgets('AppointmentsTab displays visits with Check in and View summary actions', (tester) async {
+    tester.view.physicalSize = const Size(430, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final repo = FakeAppointmentRepository();
+    final controller = HomeController(repo: repo, profile: testProfile);
+    await controller.load();
+
+    Appointment? checkedInAppt;
+    Appointment? summarizedAppt;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppointmentsTab(
+            controller: controller,
+            onNavigate: (_) {},
+            onCheckin: (a) => checkedInAppt = a,
+            onViewSummary: (a) => summarizedAppt = a,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Appointments'), findsOneWidget);
+    expect(find.text('All (2)'), findsOneWidget);
+    expect(find.text('Upcoming (1)'), findsOneWidget);
+    expect(find.text('Past visits (1)'), findsOneWidget);
+    expect(find.text('Check in'), findsOneWidget);
+    expect(find.text('View summary'), findsOneWidget);
+
+    await tester.tap(find.text('Check in'));
+    await tester.pumpAndSettle();
+    expect(checkedInAppt?.id, 'appt-1');
+
+    await tester.tap(find.text('View summary'));
+    await tester.pumpAndSettle();
+    expect(summarizedAppt?.id, 'appt-2');
   });
 }

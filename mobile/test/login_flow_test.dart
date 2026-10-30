@@ -176,4 +176,33 @@ void main() {
     await tester.ensureVisible(find.text('I have a clinic invitation'));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+      'direct patient sign up from login page creates account and signs in',
+      (tester) async {
+    await launch(tester);
+    await tester.ensureVisible(find.text('Sign up for an account'));
+    await tester.tap(find.text('Sign up for an account'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Create your account'), findsOneWidget);
+
+    // Fill form
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Jane Doe'), 'Jane Doe');
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'you@example.com'),
+        'patient@example.com');
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Password'), 'password123');
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Confirm password'), 'password123');
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+    await tester.pumpAndSettle();
+
+    expect(repository.signUpCalls, 1);
+    expect(repository.signInCalls, 1);
+    expect(find.text('Welcome, Jane'), findsOneWidget);
+  });
 }

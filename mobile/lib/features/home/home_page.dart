@@ -19,16 +19,17 @@ import '../summary/summary_page.dart';
 import 'appointment_repository.dart';
 import 'appointments_tab.dart';
 import 'home_controller.dart';
+import 'home_tab.dart';
 
 /// The authenticated shell of the patient app.
 ///
-/// Hosts all six patient tabs:
-///   0: Home / Appointments Dashboard
-///   1: Pre-Visit Check-in
-///   2: Lab Reports Library & OCR
-///   3: Post-Visit Summary & Next Steps
-///   4: Community & private Care inbox
-///   5: Profile & Emergency Contacts
+/// Hosts the 4 primary patient destinations:
+///   0: Home (Dashboard & quick vitals)
+///   1: Appointments (Visits list with card-level Check-in & View Summary)
+///   2: Reports (Lab reports library & OCR)
+///   3: Community (Peer discussion forum & private care inbox)
+///
+/// Profile is directly accessible from the top-right avatar menu.
 class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
@@ -95,9 +96,92 @@ class _HomePageState extends State<HomePage> {
   void _openCommunity({bool inbox = false}) {
     if (widget.api == null) return;
     setState(() {
-      _tabIndex = 4;
+      _tabIndex = 3;
       _communityInboxRequested = inbox;
     });
+  }
+
+  void _openCheckin(Appointment appointment) {
+    _homeController.selectAppointment(appointment.id);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CheckinPage(
+          appointment: appointment,
+          repository:
+              widget.checkinRepository ?? CheckinRepository(api: widget.api),
+          onFinished: () {
+            Navigator.of(context).pop();
+            _homeController.refresh();
+          },
+          onCancel: () => Navigator.of(context).pop(),
+        ),
+      ),
+    );
+  }
+
+  void _openSummary({Appointment? appointment}) {
+    final targetId = appointment?.id ??
+        _homeController.appointments.past.firstOrNull?.id;
+    if (targetId != null) {
+      _summaryController.selectAppointment(targetId);
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          backgroundColor: const Color(0xFFFBF8F5),
+          appBar: AppBar(
+            backgroundColor: const Color(0xFFFBF8F5),
+            elevation: 0,
+            scrolledUnderElevation: 1,
+            leading: const BackButton(color: ink),
+            title: const Text(
+              'Visit Summary',
+              style: TextStyle(
+                color: ink,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          body: SummaryPage(
+            controller: _summaryController,
+            completedAppointments: _homeController.appointments.past,
+            initialAppointmentId: targetId,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openProfile() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          backgroundColor: const Color(0xFFFBF8F5),
+          appBar: AppBar(
+            backgroundColor: const Color(0xFFFBF8F5),
+            elevation: 0,
+            scrolledUnderElevation: 1,
+            leading: const BackButton(color: ink),
+            title: const Text(
+              'Profile & Contacts',
+              style: TextStyle(
+                color: ink,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          body: ProfilePage(
+            controller: _profileController,
+            homeController: _homeController,
+            appointmentRepository:
+                widget.repository ?? AppointmentRepository(api: widget.api),
+            onSignOut: widget.auth.signOut,
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -111,16 +195,25 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _handleNavigate(String route) {
-    if (route == '/checkin') {
+    if (route == '/appointments') {
       setState(() => _tabIndex = 1);
     } else if (route == '/reports') {
       setState(() => _tabIndex = 2);
-    } else if (route == '/summary') {
-      setState(() => _tabIndex = 3);
-    } else if (route == '/profile') {
-      setState(() => _tabIndex = 5);
     } else if (route == '/community') {
       _openCommunity();
+    } else if (route == '/checkin') {
+      final appt = _homeController.activeAppointment ??
+          _homeController.appointments.upcoming.firstOrNull;
+      if (appt != null) {
+        _openCheckin(appt);
+      } else {
+        setState(() => _tabIndex = 1);
+      }
+    } else if (route == '/summary') {
+      final past = _homeController.appointments.past.firstOrNull;
+      _openSummary(appointment: past);
+    } else if (route == '/profile') {
+      _openProfile();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -136,7 +229,7 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFFBF8F5),
-      appBar: _tabIndex == 4 ? null : _buildAppBar(),
+      appBar: _tabIndex == 3 ? null : _buildAppBar(),
       body: ListenableBuilder(
         listenable: _homeController,
         builder: (context, _) => _buildTab(),
@@ -256,7 +349,7 @@ class _HomePageState extends State<HomePage> {
               if (value == 'signout') {
                 widget.auth.signOut();
               } else if (value == 'profile') {
-                _handleNavigate('/profile');
+                _openProfile();
               } else if (value == 'community') {
                 _openCommunity();
               }
@@ -271,20 +364,20 @@ class _HomePageState extends State<HomePage> {
   Widget _buildTab() {
     switch (_tabIndex) {
       case 0:
-        return AppointmentsTab(
+        return HomeTab(
           controller: _homeController,
           onNavigate: _handleNavigate,
+          onCheckin: _openCheckin,
+          onViewSummary: (appt) => _openSummary(appointment: appt),
           onSignOut: widget.auth.signOut,
         );
       case 1:
-        return CheckinPage(
-          appointment: _homeController.activeAppointment,
-          repository:
-              widget.checkinRepository ?? CheckinRepository(api: widget.api),
-          onFinished: () {
-            _homeController.refresh();
-            setState(() => _tabIndex = 0);
-          },
+        return AppointmentsTab(
+          controller: _homeController,
+          onNavigate: _handleNavigate,
+          onCheckin: _openCheckin,
+          onViewSummary: (appt) => _openSummary(appointment: appt),
+          onSignOut: widget.auth.signOut,
         );
       case 2:
         return ReportsPage(
@@ -295,11 +388,6 @@ class _HomePageState extends State<HomePage> {
               _homeController.selectAppointment(appt.id),
         );
       case 3:
-        return SummaryPage(
-          controller: _summaryController,
-          completedAppointments: _homeController.appointments.past,
-        );
-      case 4:
         if (widget.api == null) {
           return const Center(
             child: Text('Connect to the clinic to open Community.'),
@@ -320,11 +408,6 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
         );
-      case 5:
-        return ProfilePage(
-          controller: _profileController,
-          onSignOut: widget.auth.signOut,
-        );
       default:
         return Center(child: Text('Tab $_tabIndex'));
     }
@@ -339,7 +422,7 @@ class _HomePageState extends State<HomePage> {
       }),
       labelTextStyle: WidgetStateProperty.resolveWith(
         (states) => TextStyle(
-          fontSize: 10,
+          fontSize: 11,
           fontWeight: states.contains(WidgetState.selected)
               ? FontWeight.w700
               : FontWeight.w500,
@@ -356,9 +439,9 @@ class _HomePageState extends State<HomePage> {
           label: 'Home',
         ),
         NavigationDestination(
-          icon: Icon(Icons.checklist_outlined),
-          selectedIcon: Icon(Icons.checklist_rounded),
-          label: 'Check-in',
+          icon: Icon(Icons.calendar_month_outlined),
+          selectedIcon: Icon(Icons.calendar_month_rounded),
+          label: 'Appointments',
         ),
         NavigationDestination(
           icon: Icon(Icons.description_outlined),
@@ -366,19 +449,9 @@ class _HomePageState extends State<HomePage> {
           label: 'Reports',
         ),
         NavigationDestination(
-          icon: Icon(Icons.summarize_outlined),
-          selectedIcon: Icon(Icons.summarize_rounded),
-          label: 'Summary',
-        ),
-        NavigationDestination(
           icon: Icon(Icons.forum_outlined),
           selectedIcon: Icon(Icons.forum_rounded),
           label: 'Community',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.person_outline_rounded),
-          selectedIcon: Icon(Icons.person_rounded),
-          label: 'Profile',
         ),
       ],
     );

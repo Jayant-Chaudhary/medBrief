@@ -6,8 +6,14 @@ class AppConfig {
   });
 
   const AppConfig.fromEnvironment()
-    : supabaseUrl = const String.fromEnvironment('SUPABASE_URL'),
-      supabaseKey = const String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY'),
+    : supabaseUrl = const String.fromEnvironment(
+        'SUPABASE_URL',
+        defaultValue: 'https://bgvnqpjxhflsjuebqvdr.supabase.co',
+      ),
+      supabaseKey = const String.fromEnvironment(
+        'SUPABASE_PUBLISHABLE_KEY',
+        defaultValue: 'sb_publishable_QTXvGbJOaEivta3Tv99v5A_aRnPno7f',
+      ),
       apiBaseUrl = const String.fromEnvironment(
         'API_BASE_URL',
         defaultValue: 'http://10.0.2.2:4000',

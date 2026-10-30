@@ -1,8 +1,49 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:health_on_patient/features/home/appointment_repository.dart';
 import 'package:health_on_patient/features/profile/profile_controller.dart';
 import 'package:health_on_patient/features/profile/profile_page.dart';
 import 'package:health_on_patient/features/profile/profile_repository.dart';
+
+class FakeAppointmentRepo extends AppointmentRepository {
+  double? lastLoggedWeight;
+  double? lastLoggedSystolic;
+  double? lastLoggedDiastolic;
+
+  @override
+  Future<LatestVitals> getLatestVitals() async => LatestVitals(
+        weight: VitalReading(
+          metricKey: 'weight',
+          value: 70.0,
+          unit: 'kg',
+          recordedAt: DateTime(2026, 1, 1),
+        ),
+        bpSystolic: VitalReading(
+          metricKey: 'blood_pressure_systolic',
+          value: 120.0,
+          unit: 'mmHg',
+          recordedAt: DateTime(2026, 1, 1),
+        ),
+        bpDiastolic: VitalReading(
+          metricKey: 'blood_pressure_diastolic',
+          value: 80.0,
+          unit: 'mmHg',
+          recordedAt: DateTime(2026, 1, 1),
+        ),
+      );
+
+  @override
+  Future<void> logVital({
+    required String metricKey,
+    required double value,
+    required String unit,
+    String? appointmentId,
+  }) async {
+    if (metricKey == 'weight') lastLoggedWeight = value;
+    if (metricKey == 'blood_pressure_systolic') lastLoggedSystolic = value;
+    if (metricKey == 'blood_pressure_diastolic') lastLoggedDiastolic = value;
+  }
+}
 
 class FakeProfileRepository extends ProfileRepository {
   FakeProfileRepository({this.profile});
@@ -52,7 +93,7 @@ void main() {
   });
 
   testWidgets('ProfilePage displays form fields, validates input, and saves updates', (tester) async {
-    tester.view.physicalSize = const Size(430, 1400);
+    tester.view.physicalSize = const Size(430, 2200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -85,12 +126,14 @@ void main() {
     await tester.pumpAndSettle();
 
     // Tap Save Changes
+    await tester.ensureVisible(find.text('Save Changes'));
     await tester.tap(find.text('Save Changes'));
     await tester.pumpAndSettle();
 
     expect(repo.lastUpdated?['fullName'], 'Jane Roe');
 
     // Tap Sign Out button
+    await tester.ensureVisible(find.text('Sign Out'));
     await tester.tap(find.text('Sign Out'));
     await tester.pumpAndSettle();
 
@@ -100,6 +143,96 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(signedOut, isTrue);
+  });
+
+  testWidgets(
+      'ProfilePage supports 0.5 step adjustment, manual weight typing, and logging',
+      (tester) async {
+    tester.view.physicalSize = const Size(430, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profileRepo = FakeProfileRepository();
+    final profileCtrl = ProfileController(repo: profileRepo);
+    final apptRepo = FakeAppointmentRepo();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ProfilePage(
+            controller: profileCtrl,
+            appointmentRepository: apptRepo,
+            onSignOut: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify initial weight loaded from appointment repo (70.0)
+    expect(find.text('70.0'), findsOneWidget);
+
+    // Tap + to increment by 0.5
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pumpAndSettle();
+    expect(find.text('70.5'), findsOneWidget);
+
+    // Tap - to decrement by 0.5
+    await tester.tap(find.byIcon(Icons.remove));
+    await tester.pumpAndSettle();
+    expect(find.text('70.0'), findsOneWidget);
+
+    // Manually enter weight
+    await tester.enterText(find.widgetWithText(TextField, '70.0'), '68.5');
+    await tester.pumpAndSettle();
+    expect(find.text('68.5'), findsOneWidget);
+
+    // Tap Log weight
+    await tester.tap(find.text('Log weight'));
+    await tester.pumpAndSettle();
+    expect(apptRepo.lastLoggedWeight, 68.5);
+  });
+
+  testWidgets('ProfilePage supports blood pressure inputting and logging', (tester) async {
+    tester.view.physicalSize = const Size(430, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final profileRepo = FakeProfileRepository();
+    final profileCtrl = ProfileController(repo: profileRepo);
+    final apptRepo = FakeAppointmentRepo();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ProfilePage(
+            controller: profileCtrl,
+            appointmentRepository: apptRepo,
+            onSignOut: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify BP tracker is displayed
+    expect(find.text('Blood Pressure Tracker'), findsOneWidget);
+    expect(find.text('Last: 120/80 mmHg'), findsOneWidget);
+
+    // Enter new BP values
+    await tester.enterText(find.widgetWithText(TextField, '120'), '130');
+    await tester.enterText(find.widgetWithText(TextField, '80'), '85');
+    await tester.pumpAndSettle();
+
+    // Tap Log blood pressure
+    await tester.ensureVisible(find.text('Log blood pressure'));
+    await tester.tap(find.text('Log blood pressure'));
+    await tester.pumpAndSettle();
+
+    expect(apptRepo.lastLoggedSystolic, 130.0);
+    expect(apptRepo.lastLoggedDiastolic, 85.0);
   });
 }
 

@@ -336,7 +336,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.byType(NavigationDestination), findsNWidgets(6));
+      expect(find.byType(NavigationDestination), findsNWidgets(4));
       await tester.tap(find.widgetWithText(NavigationDestination, 'Community'));
       await tester.pumpAndSettle();
       expect(find.text('Posting as calm_meadow'), findsOneWidget);

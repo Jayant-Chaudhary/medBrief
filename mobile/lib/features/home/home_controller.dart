@@ -66,7 +66,7 @@ class HomeController extends ChangeNotifier {
 
   /// Log weight (kg) and optionally blood pressure.
   Future<void> logVitals({
-    required double weight,
+    double? weight,
     double? bpSystolic,
     double? bpDiastolic,
     bool logWeight = true,
@@ -80,7 +80,7 @@ class HomeController extends ChangeNotifier {
       final apptId = _selectedId;
       final futures = <Future<void>>[];
 
-      if (logWeight) {
+      if (logWeight && weight != null) {
         futures.add(
           repo.logVital(
             metricKey: 'weight',

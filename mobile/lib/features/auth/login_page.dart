@@ -5,6 +5,7 @@ import '../../core/app_theme.dart';
 import 'auth_controller.dart';
 import 'auth_widgets.dart';
 import 'invite_page.dart';
+import 'signup_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.auth, this.setupError});
@@ -36,6 +37,14 @@ class _LoginPageState extends State<LoginPage> {
     if (widget.auth!.error == null) {
       TextInput.finishAutofillContext();
     }
+  }
+
+  Future<void> _openSignup() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => SignupPage(auth: widget.auth),
+      ),
+    );
   }
 
   Future<void> _openInvite() async {
@@ -189,6 +198,23 @@ class _LoginPageState extends State<LoginPage> {
           ],
         ),
         const SizedBox(height: 16),
+        FilledButton.tonalIcon(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(double.infinity, 54),
+            backgroundColor: const Color(0xFFE4F0EF),
+            foregroundColor: primary,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+          onPressed: configured && !busy ? _openSignup : null,
+          icon: const Icon(Icons.person_add_outlined, size: 20),
+          label: const Text(
+            'Sign up for an account',
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+          ),
+        ),
+        const SizedBox(height: 12),
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
             minimumSize: const Size(double.infinity, 54),
