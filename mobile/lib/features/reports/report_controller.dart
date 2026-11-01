@@ -4,6 +4,24 @@ import 'report_repository.dart';
 
 enum ReportStage { loading, ready, uploading, error }
 
+/// An upload waiting on the user: the report is printed with a name other than
+/// the account's, and nothing has been saved yet.
+class ReportNameMismatch {
+  const ReportNameMismatch({
+    required this.nameOnReport,
+    required this.nameOnAccount,
+    required this.bytes,
+    required this.filename,
+    this.appointmentId,
+  });
+
+  final String nameOnReport;
+  final String nameOnAccount;
+  final List<int> bytes;
+  final String filename;
+  final String? appointmentId;
+}
+
 class ReportController extends ChangeNotifier {
   ReportController({required this.repo});
 
@@ -13,6 +31,7 @@ class ReportController extends ChangeNotifier {
   List<LabReport> reports = [];
   String? errorMessage;
   String? message;
+  ReportNameMismatch? nameMismatch;
 
   bool get isLoading => stage == ReportStage.loading;
   bool get isUploading => stage == ReportStage.uploading;
@@ -36,6 +55,7 @@ class ReportController extends ChangeNotifier {
     required List<int> bytes,
     required String filename,
     String? appointmentId,
+    bool confirmNameMismatch = false,
   }) async {
     stage = ReportStage.uploading;
     errorMessage = null;
@@ -47,6 +67,7 @@ class ReportController extends ChangeNotifier {
         bytes: bytes,
         filename: filename,
         appointmentId: appointmentId,
+        confirmNameMismatch: confirmNameMismatch,
       );
 
       final metrics = (res['metrics'] as List?)?.length ?? 0;
@@ -57,11 +78,40 @@ class ReportController extends ChangeNotifier {
       await load();
       return true;
     } catch (e) {
-      errorMessage = e is AppException ? e.message : 'Failed to upload report.';
+      if (e is AppException && e.code == 'REPORT_NAME_MISMATCH') {
+        nameMismatch = ReportNameMismatch(
+          nameOnReport: e.details?['nameOnReport']?.toString() ?? '',
+          nameOnAccount: e.details?['nameOnAccount']?.toString() ?? '',
+          bytes: bytes,
+          filename: filename,
+          appointmentId: appointmentId,
+        );
+      } else {
+        errorMessage = e is AppException ? e.message : 'Failed to upload report.';
+      }
       stage = ReportStage.ready;
       notifyListeners();
       return false;
     }
+  }
+
+  /// The user says the report is theirs: send it again, confirmed.
+  Future<bool> proceedWithNameMismatch() async {
+    final pending = nameMismatch;
+    if (pending == null) return false;
+    nameMismatch = null;
+    return uploadReport(
+      bytes: pending.bytes,
+      filename: pending.filename,
+      appointmentId: pending.appointmentId,
+      confirmNameMismatch: true,
+    );
+  }
+
+  void cancelNameMismatch() {
+    nameMismatch = null;
+    message = 'Upload cancelled. The report was not saved.';
+    notifyListeners();
   }
 
   Future<void> toggleShare(

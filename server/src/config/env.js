@@ -36,6 +36,13 @@ module.exports = {
     // A multi-page scan on CPU takes ~10s a page, and uploads queue behind
     // each other there, so this is generous on purpose.
     timeoutMs: Number(process.env.OCR_TIMEOUT_MS || 180000),
+    // Shortest word in a report's patient name where a one-letter difference
+    // is treated as a misread rather than as a different name.
+    nameTypoMinLength: Number(process.env.OCR_NAME_TYPO_MIN_LENGTH || 6),
+    // How long a scan waits in memory for the uploader to answer a name
+    // mismatch, and how many may wait at once. Past either, they rescan.
+    pendingExtractionTtlMs: Number(process.env.OCR_PENDING_EXTRACTION_TTL_MS || 10 * 60 * 1000),
+    pendingExtractionMax: Number(process.env.OCR_PENDING_EXTRACTION_MAX || 100),
   },
   maxUploadBytes: Number(process.env.MAX_UPLOAD_BYTES || 20 * 1024 * 1024),
   // Demo only: lets a clinician verify their own account from the

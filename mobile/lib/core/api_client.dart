@@ -3,11 +3,16 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart' show MediaType;
 
 class AppException implements Exception {
-  const AppException(this.message, {this.status});
+  const AppException(this.message, {this.status, this.code, this.details});
   final String message;
   final int? status;
+
+  /// Set when the UI has something to do besides show the message.
+  final String? code;
+  final Map<String, dynamic>? details;
 }
 
 /// The same bearer-token contract used by client/src/services/apiClient.js.
@@ -60,6 +65,8 @@ class ApiClient {
     required List<int> bytes,
     required String filename,
     Map<String, String>? fields,
+    String? contentType,
+    Duration timeout = const Duration(seconds: 45),
     bool authenticated = true,
   }) async {
     final token = authenticated ? accessToken() : null;
@@ -75,12 +82,13 @@ class ApiClient {
           fieldName,
           bytes,
           filename: filename,
+          contentType: contentType == null ? null : MediaType.parse(contentType),
         ),
       );
       final response = await _client
           .send(request)
           .then(http.Response.fromStream)
-          .timeout(const Duration(seconds: 45));
+          .timeout(timeout);
       return _decodeResponse(response);
     } on TimeoutException {
       throw const AppException(
@@ -109,10 +117,19 @@ class ApiClient {
         403 => 'This account cannot access this information.',
         404 => 'This record could not be found. Please contact your clinic.',
         410 => 'This invitation has expired or has already been used.',
+        415 => 'This file type is not supported. Please upload a PDF or a photo.',
         429 => 'Too many attempts. Please wait a moment and try again.',
         _ => 'We could not complete that request. Please try again.',
       };
-      throw AppException(message, status: response.statusCode);
+      final error = payload is Map<String, dynamic> ? payload : null;
+      final code = error?['code'];
+      final details = error?['details'];
+      throw AppException(
+        message,
+        status: response.statusCode,
+        code: code is String ? code : null,
+        details: details is Map<String, dynamic> ? details : null,
+      );
     }
     return payload;
   }

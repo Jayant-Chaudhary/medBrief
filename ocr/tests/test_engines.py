@@ -272,5 +272,33 @@ class TestKeyNormalization(unittest.TestCase):
         self.assertEqual(sp.normalize_key("Some Other Field"), "some_other_field")
 
 
+class TestPatientNameLabels(unittest.TestCase):
+    """Only the patient's own name label may fill patient.name."""
+
+    @staticmethod
+    def _pairs(text):
+        tokens = [type("Tok", (), {"text": word})() for word in text.split()]
+        return sp.parse_kv_pairs([sp.Field(tokens=tokens)])
+
+    def test_someone_elses_name_is_not_the_patients(self):
+        for label in ("Doctor Name", "Lab Name", "Husband Name", "Father's Name", "Hospital Name"):
+            with self.subTest(label=label):
+                pairs = self._pairs(f"{label} : Test Person")
+                self.assertEqual(pairs, [(label, "Test Person")])
+                self.assertNotEqual(sp.normalize_key(pairs[0][0]), "name")
+
+    def test_patient_labels_still_read_as_the_name(self):
+        for label in ("Name", "Patient Name"):
+            with self.subTest(label=label):
+                [(key, value)] = self._pairs(f"{label} : Jane Doe")
+                self.assertEqual((sp.normalize_key(key), value), ("name", "Jane Doe"))
+
+    def test_a_qualified_label_ends_the_value_before_it(self):
+        self.assertEqual(
+            self._pairs("Name : Jane Doe Doctor Name : Test Person"),
+            [("Name", "Jane Doe"), ("Doctor Name", "Test Person")],
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

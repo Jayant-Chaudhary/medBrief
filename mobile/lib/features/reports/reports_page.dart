@@ -26,11 +26,22 @@ class ReportsPage extends StatefulWidget {
 
 class _ReportsPageState extends State<ReportsPage> {
   final ImagePicker _picker = ImagePicker();
+  bool _askingAboutName = false;
 
   @override
   void initState() {
     super.initState();
     widget.controller.load();
+    widget.controller.addListener(_askAboutNameIfNeeded);
+    // Switching tabs disposes this page but not the controller, so an upload
+    // can come back with a name mismatch while nothing is here to ask about it.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _askAboutNameIfNeeded());
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_askAboutNameIfNeeded);
+    super.dispose();
   }
 
   Future<void> _pickImage(ImageSource source) async {
@@ -61,6 +72,58 @@ class _ReportsPageState extends State<ReportsPage> {
       filename: '$name.txt',
       appointmentId: widget.activeAppointment?.id,
     );
+  }
+
+  Future<void> _askAboutNameIfNeeded() async {
+    if (!mounted || _askingAboutName) return;
+    final controller = widget.controller;
+    final mismatch = controller.nameMismatch;
+    if (mismatch == null) return;
+
+    _askingAboutName = true;
+    final proceed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Is this report yours?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('The name on this report is different from the name on your account.'),
+            const SizedBox(height: 12),
+            Text('Name on the report: ${mismatch.nameOnReport}',
+                style: const TextStyle(fontWeight: FontWeight.w600, color: ink)),
+            const SizedBox(height: 4),
+            Text('Name on your account: ${mismatch.nameOnAccount}',
+                style: const TextStyle(fontWeight: FontWeight.w600, color: ink)),
+            const SizedBox(height: 12),
+            const Text(
+              'If you continue, its values are added to your record and your doctor may see them. '
+              'Continue only if this report is yours, for example if it uses a different spelling or a previous name.',
+              style: TextStyle(fontSize: 13, color: muted),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel upload'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Upload anyway'),
+          ),
+        ],
+      ),
+    );
+    _askingAboutName = false;
+
+    if (proceed == true) {
+      await controller.proceedWithNameMismatch();
+    } else {
+      controller.cancelNameMismatch();
+    }
   }
 
   void _showUploadOptions() {

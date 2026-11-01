@@ -37,7 +37,15 @@ run, download), then `ready`. Digital PDFs are served before that.
 - `POST /api/lab-reports/upload` is the main flow: multipart `file` (PDF, PNG,
   JPG/JPEG). The upload is always recorded. If extraction fails or the OCR
   service is down, the report is saved with `ocr_status = failed` and no
-  metrics, so a clinician can review it by hand.
+  metrics, so a clinician can review it by hand. The one exception: if the
+  patient name printed on the report differs from the patient's account name,
+  nothing is kept and the response is `409` with `code: REPORT_NAME_MISMATCH`
+  and `details: { nameOnReport, nameOnAccount }`. Send the file again with the
+  form field `confirmNameMismatch=true` to save it anyway; that sets
+  `name_mismatch_confirmed` in `raw_ocr_payload`. A report with no readable name
+  is not a mismatch. The first scan waits in memory (see
+  `OCR_PENDING_EXTRACTION_TTL_MS`) so the confirmed request does not read the
+  file again; if it has expired or the server restarted, the file is rescanned.
 - `GET /api/ocr/health` checks whether the OCR service is reachable. No auth.
 - `POST /api/ocr/recognize` (auth required) returns raw recognized text lines,
   scores and boxes for an image (JPEG, PNG, BMP, TIFF, up to 10 MB). It does

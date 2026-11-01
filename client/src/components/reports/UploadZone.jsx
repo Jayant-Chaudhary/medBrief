@@ -32,6 +32,8 @@ export default function UploadZone({ onUpload, disabled = false }) {
     if (e.target.files && e.target.files[0]) {
       handleFiles(e.target.files[0]);
     }
+    // Otherwise picking the same file again after a cancelled upload does nothing.
+    e.target.value = '';
   };
 
   const handleFiles = (file) => {

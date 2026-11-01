@@ -1,14 +1,21 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:health_on_patient/core/api_client.dart';
 import 'package:health_on_patient/features/home/appointment_repository.dart';
 import 'package:health_on_patient/features/reports/report_controller.dart';
 import 'package:health_on_patient/features/reports/report_repository.dart';
 import 'package:health_on_patient/features/reports/reports_page.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 class FakeReportRepository extends ReportRepository {
-  FakeReportRepository({this.reports});
+  FakeReportRepository({this.reports, this.rejectNameMismatch = false});
 
   List<LabReport>? reports;
+  final bool rejectNameMismatch;
+  final confirmedUploads = <bool>[];
   final sharedCalls = <Map<String, dynamic>>[];
   final unsharedCalls = <Map<String, dynamic>>[];
   final removedCalls = <String>[];
@@ -56,8 +63,18 @@ class FakeReportRepository extends ReportRepository {
     required List<int> bytes,
     required String filename,
     String? appointmentId,
+    bool confirmNameMismatch = false,
   }) async {
     uploadCalled = true;
+    confirmedUploads.add(confirmNameMismatch);
+    if (rejectNameMismatch && !confirmNameMismatch) {
+      throw const AppException(
+        'We could not complete that request. Please try again.',
+        status: 409,
+        code: 'REPORT_NAME_MISMATCH',
+        details: {'nameOnReport': 'Someone Else', 'nameOnAccount': 'Test Patient'},
+      );
+    }
     return {
       'metrics': [{'id': 'm-new'}],
     };
@@ -119,6 +136,173 @@ void main() {
     final removed = await controller.removeReport('rep-1');
     expect(removed, isTrue);
     expect(repo.removedCalls.contains('rep-1'), isTrue);
+  });
+
+  test('A name mismatch waits for the user, and saves nothing until they proceed', () async {
+    final repo = FakeReportRepository(rejectNameMismatch: true);
+    final controller = ReportController(repo: repo);
+
+    final saved = await controller.uploadReport(bytes: [1, 2, 3], filename: 'report.pdf');
+    expect(saved, isFalse);
+    expect(controller.errorMessage, isNull);
+    expect(controller.isUploading, isFalse);
+    expect(controller.nameMismatch?.nameOnReport, 'Someone Else');
+    expect(controller.nameMismatch?.nameOnAccount, 'Test Patient');
+
+    expect(await controller.proceedWithNameMismatch(), isTrue);
+    expect(repo.confirmedUploads, [false, true]);
+    expect(controller.nameMismatch, isNull);
+  });
+
+  test('Cancelling a name mismatch does not send the report again', () async {
+    final repo = FakeReportRepository(rejectNameMismatch: true);
+    final controller = ReportController(repo: repo);
+
+    await controller.uploadReport(bytes: [1, 2, 3], filename: 'report.pdf');
+    controller.cancelNameMismatch();
+
+    expect(repo.confirmedUploads, [false]);
+    expect(controller.nameMismatch, isNull);
+    expect(controller.message, contains('not saved'));
+  });
+
+  test('LabReportMetric reads confidence from the database column', () {
+    final metric = LabReportMetric.fromJson(const {
+      'id': 'm-1',
+      'raw_key': 'Hb',
+      'confidence_score': 0.92,
+    });
+    expect(metric.confidence, 0.92);
+  });
+
+  group('reportContentType', () {
+    test('recognizes the file types the server accepts', () {
+      expect(reportContentType(const [0xFF, 0xD8, 0xFF, 0xE0, 0x00]), 'image/jpeg');
+      expect(reportContentType(const [0x89, 0x50, 0x4E, 0x47, 0x0D]), 'image/png');
+      expect(reportContentType(utf8.encode('%PDF-1.7')), 'application/pdf');
+    });
+
+    test('has no answer for anything else', () {
+      expect(reportContentType(utf8.encode('plain text')), isNull);
+      expect(reportContentType(const [0xFF]), isNull);
+      expect(reportContentType(const []), isNull);
+    });
+  });
+
+  test('ReportRepository sends a photo as an image, with the confirmation when given', () async {
+    late String body;
+    final api = ApiClient(
+      baseUrl: 'https://api.example',
+      accessToken: () => 'token',
+      client: MockClient((request) async {
+        body = utf8.decode(request.bodyBytes, allowMalformed: true);
+        return http.Response('{"metrics":[]}', 201);
+      }),
+    );
+    addTearDown(api.close);
+    final repo = ReportRepository(api: api);
+
+    await repo.uploadReport(bytes: const [0xFF, 0xD8, 0xFF, 0xE0], filename: 'photo.jpg');
+    expect(body, contains('content-type: image/jpeg'));
+    expect(body, isNot(contains('confirmNameMismatch')));
+
+    await repo.uploadReport(
+      bytes: const [0xFF, 0xD8, 0xFF, 0xE0],
+      filename: 'photo.jpg',
+      confirmNameMismatch: true,
+    );
+    expect(body, contains('name="confirmNameMismatch"'));
+  });
+
+  group('ReportsPage name mismatch dialog', () {
+    Future<FakeReportRepository> reachDialog(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(430, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final repo = FakeReportRepository(rejectNameMismatch: true);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ReportsPage(
+              controller: ReportController(repo: repo),
+              appointments: const [],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Upload Report'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sample CBC Blood Panel'));
+      await tester.pumpAndSettle();
+      return repo;
+    }
+
+    testWidgets('shows both names and sends the report again on Upload anyway', (tester) async {
+      final repo = await reachDialog(tester);
+
+      expect(find.text('Is this report yours?'), findsOneWidget);
+      expect(find.text('Name on the report: Someone Else'), findsOneWidget);
+      expect(find.text('Name on your account: Test Patient'), findsOneWidget);
+      expect(repo.confirmedUploads, [false]);
+
+      await tester.tap(find.text('Upload anyway'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Is this report yours?'), findsNothing);
+      expect(repo.confirmedUploads, [false, true]);
+    });
+
+    testWidgets('asks when the page opens if the upload finished while another tab was open', (tester) async {
+      tester.view.physicalSize = const Size(430, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final repo = FakeReportRepository(rejectNameMismatch: true);
+      final controller = ReportController(repo: repo);
+      await controller.uploadReport(bytes: const [1, 2, 3], filename: 'report.pdf');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ReportsPage(controller: controller, appointments: const []),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Is this report yours?'), findsOneWidget);
+    });
+
+    testWidgets('does not ask again once answered, even after another upload', (tester) async {
+      final repo = await reachDialog(tester);
+
+      await tester.tap(find.text('Upload anyway'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Upload Report'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sample Lipid Profile'));
+      await tester.pumpAndSettle();
+
+      // The new file gets its own warning; the answered one is not reused.
+      expect(find.text('Is this report yours?'), findsOneWidget);
+      expect(repo.confirmedUploads, [false, true, false]);
+    });
+
+    testWidgets('does not send anything more on Cancel upload', (tester) async {
+      final repo = await reachDialog(tester);
+
+      await tester.tap(find.text('Cancel upload'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Is this report yours?'), findsNothing);
+      expect(find.text('Upload cancelled. The report was not saved.'), findsOneWidget);
+      expect(repo.confirmedUploads, [false]);
+    });
   });
 
   testWidgets('ReportsPage displays reports, opens OCR preview and share dialog', (tester) async {

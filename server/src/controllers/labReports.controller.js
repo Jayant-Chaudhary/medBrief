@@ -12,6 +12,8 @@ const {
   createSignedUrl,
   removeFile,
 } = require('../services/storage.service');
+const { reportNameDiffers } = require('../services/reportNameCheck.service');
+const { holdExtraction, takeExtraction } = require('../services/pendingExtraction.service');
 const { metricSourceSchema } = require('../validators/labReports.validators');
 const {
   assertAppointmentAccess,
@@ -95,12 +97,32 @@ async function persistReport({ patientId, appointmentId, storagePath, reportDate
   return { labReport, metrics: savedMetrics };
 }
 
+/** The name a report should carry: the patient's, even when a clinician uploads it. */
+async function patientFullName(patientId, user) {
+  if (patientId === user.id) return user.fullName;
+
+  const { data, error } = await supabaseAdmin
+    .from('profiles')
+    .select('full_name')
+    .eq('id', patientId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data?.full_name ?? null;
+}
+
 /**
  * Receives a file, stores it, and runs the extraction pipeline over it.
  *
  * The upload is recorded even when extraction fails: losing a patient's
  * document because OCR had a bad day is worse than a report the clinician
  * has to read manually.
+ *
+ * A report printed with another person's name is the exception. Nothing is
+ * saved until the uploader confirms it is theirs by sending the file again with
+ * `confirmNameMismatch`, so an unanswered prompt can never leave someone else's
+ * values in this patient's record or in front of their clinician. The confirmed
+ * request reuses the first scan when it can, so the file is not read twice.
  */
 async function uploadReport(req, res, next) {
   let storagePath = null;
@@ -128,14 +150,33 @@ async function uploadReport(req, res, next) {
       contentType: req.file.mimetype,
     });
 
-    const extracted = await processDocument({
-      buffer: req.file.buffer,
-      filename: req.file.originalname,
-      contentType: req.file.mimetype,
-      storagePath,
-      appointmentId,
-      requestId: req.id,
-    });
+    const confirmed = req.body.confirmNameMismatch === 'true';
+    const scanOwner = { userId: req.user.id, patientId, buffer: req.file.buffer };
+
+    const extracted =
+      (confirmed && takeExtraction(scanOwner)) ||
+      (await processDocument({
+        buffer: req.file.buffer,
+        filename: req.file.originalname,
+        contentType: req.file.mimetype,
+        storagePath,
+        appointmentId,
+        requestId: req.id,
+      }));
+
+    const nameOnReport = extracted.raw?.structured?.patient?.name;
+    const nameOnAccount = await patientFullName(patientId, req.user);
+    const nameMismatch = reportNameDiffers(nameOnReport, nameOnAccount);
+
+    if (nameMismatch && !confirmed) {
+      holdExtraction(scanOwner, extracted);
+      await removeFile(LAB_REPORTS_BUCKET, storagePath);
+      return res.status(409).json({
+        error: 'The name on this report does not match the name on this account.',
+        code: 'REPORT_NAME_MISMATCH',
+        details: { nameOnReport, nameOnAccount },
+      });
+    }
 
     const result = await persistReport({
       patientId,
@@ -145,7 +186,9 @@ async function uploadReport(req, res, next) {
       ocrStatus: extracted.ocrStatus,
       metrics: extracted.metrics,
       // The pipeline's full envelope; on failure, the error that caused it.
-      rawPayload: extracted.raw ?? { error: extracted.error ?? null },
+      rawPayload: extracted.raw
+        ? { ...extracted.raw, ...(nameMismatch && { name_mismatch_confirmed: true }) }
+        : { error: extracted.error ?? null },
     });
 
     res.status(201).json({

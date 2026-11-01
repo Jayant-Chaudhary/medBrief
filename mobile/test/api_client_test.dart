@@ -45,6 +45,52 @@ void main() {
     },
   );
 
+  test('an upload sends the content type it was given', () async {
+    final api = ApiClient(
+      baseUrl: 'https://api.example',
+      accessToken: () => 'token',
+      client: MockClient((request) async {
+        expect(request.body, contains('content-type: application/pdf'));
+        return http.Response('{}', 201);
+      }),
+    );
+    addTearDown(api.close);
+    await api.uploadMultipart(
+      '/api/lab-reports/upload',
+      fieldName: 'file',
+      bytes: utf8.encode('%PDF-synthetic'),
+      filename: 'report.pdf',
+      contentType: 'application/pdf',
+    );
+  });
+
+  test('a refused request carries its code and details, not its message', () async {
+    final api = ApiClient(
+      baseUrl: 'https://api.example',
+      accessToken: () => 'token',
+      client: MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'error': 'backend wording',
+            'code': 'REPORT_NAME_MISMATCH',
+            'details': {'nameOnReport': 'Someone Else', 'nameOnAccount': 'Test Patient'},
+          }),
+          409,
+        ),
+      ),
+    );
+    addTearDown(api.close);
+    await expectLater(
+      api.request('/api/lab-reports/upload', method: 'POST'),
+      throwsA(
+        isA<AppException>()
+            .having((error) => error.code, 'code', 'REPORT_NAME_MISMATCH')
+            .having((error) => error.details?['nameOnReport'], 'nameOnReport', 'Someone Else')
+            .having((error) => error.message, 'message', isNot(contains('backend'))),
+      ),
+    );
+  });
+
   test('server errors do not expose raw backend details', () async {
     final api = ApiClient(
       baseUrl: 'https://api.example',

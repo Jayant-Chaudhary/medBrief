@@ -286,6 +286,25 @@ def _is_known_label(text: str) -> bool:
     return bool(squashed) and squashed in _SQUASHED_HEADER_KEY_MAP
 
 
+#: Words that turn a "... Name:" label into someone or something other than the
+#: patient. Without them "Doctor Name:" reads as the label "Name", and whichever
+#: comes last on the page overwrites the patient's name.
+_OTHER_NAME_QUALIFIERS = {
+    "attendant", "center", "centre", "client", "clinic", "company", "consultant",
+    "department", "doctor", "doctors", "dr", "father", "fathers", "guardian",
+    "hospital", "husband", "husbands", "investigation", "lab", "laboratory",
+    "mother", "mothers", "panel", "physician", "ref", "referred", "referring",
+    "report", "sample", "spouse", "test", "ward",
+}
+
+
+def _names_someone_else(label: str, previous_word: str) -> bool:
+    """True for a bare "Name" label qualified by the word in front of it."""
+    if label.strip().lower() != "name":
+        return False
+    return re.sub(r"[^a-z]", "", previous_word.lower()) in _OTHER_NAME_QUALIFIERS
+
+
 def parse_kv_pairs(fields: list[Field]) -> list[tuple[str, str]]:
     """Split a header line into every `label : value` pair it carries.
 
@@ -329,6 +348,8 @@ def parse_kv_pairs(fields: list[Field]) -> list[tuple[str, str]]:
 
         for start, end, label in candidates:
             if _is_known_label(label):
+                if _names_someone_else(label, words[start - 1] if start > 0 else ""):
+                    start, label = start - 1, f"{words[start - 1]} {label}"
                 boundaries.append((start, end, label))
                 break
 

@@ -31,7 +31,7 @@ class LabReportMetric {
       reviewedValue: json['reviewed_value'] as num?,
       unitRaw: json['unit_raw'] as String?,
       unitStandard: json['unit_standard'] as String?,
-      confidence: json['confidence'] as num?,
+      confidence: json['confidence_score'] as num?,
       needsReview: json['needs_review'] == true,
       displayName: dict?['display_name'] as String?,
       category: dict?['category'] as String?,
@@ -142,6 +142,29 @@ class LabReport {
 // Repository
 // ---------------------------------------------------------------------------
 
+/// The response only comes back once extraction has finished, and the server
+/// allows that up to OCR_TIMEOUT_MS (180s). Giving up sooner would lose the
+/// result, including any name mismatch warning.
+const _reportUploadTimeout = Duration(seconds: 190);
+
+/// The type to upload a report as, from its leading bytes, or null if it is not
+/// one the server accepts. A file name can say anything, and without a type the
+/// upload goes out as application/octet-stream, which the server refuses.
+String? reportContentType(List<int> bytes) {
+  bool startsWith(List<int> signature) {
+    if (bytes.length < signature.length) return false;
+    for (var i = 0; i < signature.length; i++) {
+      if (bytes[i] != signature[i]) return false;
+    }
+    return true;
+  }
+
+  if (startsWith(const [0xFF, 0xD8, 0xFF])) return 'image/jpeg';
+  if (startsWith(const [0x89, 0x50, 0x4E, 0x47])) return 'image/png';
+  if (startsWith(const [0x25, 0x50, 0x44, 0x46])) return 'application/pdf';
+  return null;
+}
+
 class ReportRepository {
   const ReportRepository({this.api});
   final ApiClient? api;
@@ -168,15 +191,20 @@ class ReportRepository {
         .toList();
   }
 
+  /// Throws an [AppException] with code `REPORT_NAME_MISMATCH`, and saves
+  /// nothing, when the report is printed with another name. Send it again with
+  /// [confirmNameMismatch] once the user says it is theirs.
   Future<Map<String, dynamic>> uploadReport({
     required List<int> bytes,
     required String filename,
     String? appointmentId,
+    bool confirmNameMismatch = false,
   }) async {
     final client = api;
     if (client == null) return {};
     final fields = <String, String>{};
     if (appointmentId != null) fields['appointmentId'] = appointmentId;
+    if (confirmNameMismatch) fields['confirmNameMismatch'] = 'true';
 
     final res = await client.uploadMultipart(
       '/api/lab-reports/upload',
@@ -184,6 +212,8 @@ class ReportRepository {
       bytes: bytes,
       filename: filename,
       fields: fields,
+      contentType: reportContentType(bytes),
+      timeout: _reportUploadTimeout,
     );
     if (res is Map<String, dynamic>) return res;
     return {};

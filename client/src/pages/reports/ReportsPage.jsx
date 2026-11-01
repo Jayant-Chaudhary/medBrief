@@ -6,6 +6,7 @@ import { useToast } from '../../context/ToastContext';
 import UploadZone from '../../components/reports/UploadZone';
 import ReportCard from '../../components/reports/ReportCard';
 import AppointmentSharePicker from '../../components/reports/AppointmentSharePicker';
+import NameMismatchModal from '../../components/reports/NameMismatchModal';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 
@@ -21,6 +22,7 @@ export default function ReportsPage() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [nameMismatch, setNameMismatch] = useState(null);
   const { showToast } = useToast();
 
   const loadReports = useCallback(async () => {
@@ -37,13 +39,14 @@ export default function ReportsPage() {
     loadReports();
   }, [loadReports]);
 
-  const handleUpload = async (file) => {
+  const handleUpload = async (file, { confirmNameMismatch = false } = {}) => {
     setUploading(true);
     showToast('Uploading and reading your report…', 'info');
 
     try {
       const result = await reportService.uploadReport(file, {
         appointmentId: activeAppointment?.id,
+        confirmNameMismatch,
       });
 
       const found = result?.metrics?.length ?? 0;
@@ -56,10 +59,25 @@ export default function ReportsPage() {
 
       await loadReports();
     } catch (err) {
-      showToast(err.message || 'Failed to upload report.', 'error');
+      if (err.code === 'REPORT_NAME_MISMATCH') {
+        setNameMismatch({ file, ...err.details });
+      } else {
+        showToast(err.message || 'Failed to upload report.', 'error');
+      }
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleCancelNameMismatch = () => {
+    setNameMismatch(null);
+    showToast('Upload cancelled. The report was not saved.', 'info');
+  };
+
+  const handleProceedNameMismatch = () => {
+    const { file } = nameMismatch;
+    setNameMismatch(null);
+    handleUpload(file, { confirmNameMismatch: true });
   };
 
   const handleRemove = async (id) => {
@@ -148,6 +166,12 @@ export default function ReportsPage() {
           )}
         </div>
       </div>
+
+      <NameMismatchModal
+        mismatch={nameMismatch}
+        onCancel={handleCancelNameMismatch}
+        onProceed={handleProceedNameMismatch}
+      />
     </div>
   );
 }
