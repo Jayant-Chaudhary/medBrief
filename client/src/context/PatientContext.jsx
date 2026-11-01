@@ -12,6 +12,7 @@ const PatientContext = createContext(null);
  * user is currently looking at, rather than silently picking the first.
  */
 export function PatientProvider({ children }) {
+  const { user, role, loading: authLoading } = useAuthContext();
   const [profile, setProfile] = useState(null);
   const [appointments, setAppointments] = useState({ all: [], upcoming: [], past: [] });
   const [selectedId, setSelectedId] = useState(null);
@@ -20,6 +21,10 @@ export function PatientProvider({ children }) {
   const [error, setError] = useState(null);
 
   const load = useCallback(async () => {
+    if (authLoading || !user || role !== 'patient') {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -38,11 +43,18 @@ export function PatientProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [authLoading, user, role]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!authLoading && user && role === 'patient') {
+      load();
+    } else if (!authLoading && (!user || role !== 'patient')) {
+      setProfile(null);
+      setAppointments({ all: [], upcoming: [], past: [] });
+      setVitals(null);
+      setLoading(false);
+    }
+  }, [load, authLoading, user, role]);
 
   /** The appointment the UI is currently acting on. */
   const activeAppointment = useMemo(

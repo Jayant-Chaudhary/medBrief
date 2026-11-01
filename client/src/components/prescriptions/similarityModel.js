@@ -49,8 +49,11 @@ export function fitSimilarityModel(templates, definitions = [], { excludeTemplat
   const excluded = new Set(excludeTemplateIds);
   const eligible = templates.filter(template => !excluded.has(template.id) && !template.archived && (!template.autoCapture || template.autoCapture.stage === 'visit-completed'));
   const ranges = {}, featureIds = new Set();
-  const references = eligible.map(template => {
-    const features = referenceFeatures(template, definitions);
+  const references = eligible.flatMap(template => {
+    const examples = (template.similarityExamples || []).filter(example => example?.factorSnapshot && typeof example.factorSnapshot === 'object');
+    const sources = examples.length ? examples.map(example => ({ ...template, factorSnapshot: example.factorSnapshot, referenceRecordedAt: example.recordedAt || '' })) : [template];
+    return sources.map(source => {
+    const features = referenceFeatures(source, definitions);
     for (const [id, record] of Object.entries(features)) {
       featureIds.add(id);
       if (record.type !== 'number') continue;
@@ -60,6 +63,7 @@ export function fitSimilarityModel(templates, definitions = [], { excludeTemplat
       ranges[key] = stats;
     }
     return { template, features };
+    });
   });
   const featureWeights = {};
   for (const id of featureIds) featureWeights[id] = Number.isFinite(weights[id]) && weights[id] > 0 ? weights[id] : 1;
@@ -100,7 +104,13 @@ export function scoreSimilarity(model, reference, context, ruleMatch) {
   return { ...ruleMatch, supportedSimilarity: supported, method: 'gower', score: supported === null ? null : Math.round(100 * supported), rawSimilarity, coverage, compared, featureCount: model.featureIds.length, similarityDetails: details, modelVersion: model.version, candidate, suggested: candidate && !mandatoryUnknown };
 }
 export function rankSimilarityModel(model, context, evaluateRules) {
-  return model.references.map(reference => ({ template: reference.template, match: scoreSimilarity(model, reference, context, evaluateRules(reference.template, context)) }))
+  const byTemplate = new Map();
+  for (const reference of model.references) {
+    const ranked = { template: reference.template, match: scoreSimilarity(model, reference, context, evaluateRules(reference.template, context)) };
+    const current = byTemplate.get(reference.template.id);
+    if (!current || (ranked.match.supportedSimilarity ?? -1) > (current.match.supportedSimilarity ?? -1)) byTemplate.set(reference.template.id, ranked);
+  }
+  return [...byTemplate.values()]
     .sort((a,b) => Number(a.match.conflicts.length > 0) - Number(b.match.conflicts.length > 0) ||
       Number(b.match.method === 'gower') - Number(a.match.method === 'gower') ||
       (b.match.supportedSimilarity ?? (b.match.score ?? -1) / 100) - (a.match.supportedSimilarity ?? (a.match.score ?? -1) / 100) || b.match.compared - a.match.compared ||

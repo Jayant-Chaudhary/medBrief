@@ -1,6 +1,6 @@
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
-import { blankDraft, blankTemplate, blankMedication, evaluateTemplate, applyTemplate, templateFromDraft, storageKeys, readLocal, validLibrary, buildPatientContext, rankTemplates, capturePrescriptionTemplate, autoTemplateId } from './templateModel.js';
+import { blankDraft, blankTemplate, blankMedication, evaluateTemplate, applyTemplate, templateFromDraft, storageKeys, readLocal, validLibrary, buildPatientContext, rankTemplates, capturePrescriptionTemplate, autoTemplateId, allergyReview } from './templateModel.js';
 const context = { factors: 'factor A, Factor B', purpose: 'Follow-up', pregnancy: '', age: '30' };
 function template(overrides={}) { return {...blankTemplate(),name:'Example',purpose:'Follow-up',required:'factor a',...overrides}; }
 test('matches normalized confirmed factors and purpose',()=>{
@@ -16,6 +16,22 @@ test('known exclusions and age or pregnancy conflicts prevent suggestions',()=>{
     const result=evaluateTemplate(template(changes),{...context,pregnancy:'First trimester'});
     assert.equal(result.suggested,false);assert.ok(result.conflicts.length);
   }
+});
+test('allergy review uses curated medicine association keys and patient allergy records',()=>{
+  const value = template({ medications: [{ ...blankMedication(), name: 'Amoxicillin 500 mg', allergySubstanceKeys: ['penicillin'] }, { ...blankMedication(), name: 'Iron supplement', allergySubstanceKeys: [] }] });
+  const review = allergyReview(value, { allergyReview: { status: 'allergies_documented' }, allergies: [{ substance_key: 'penicillin', substance_display: 'Penicillin', reaction: 'Rash' }] });
+  assert.equal(review.status, 'reported');
+  assert.deepEqual(review.allergies, [{ name: 'Penicillin', reaction: 'Rash' }]);
+  assert.equal(review.matchedCount, 1);
+  assert.equal(value.medications.length, 2);
+  assert.deepEqual(review.items[0].matches.map(row => row.substance_key), ['penicillin']);
+  assert.equal(review.uncheckedCount, 1);
+});
+test('allergy review distinguishes unknown and no-known-allergy states',()=>{
+  const value = template();
+  assert.equal(allergyReview(value, {}).status, 'unknown');
+  assert.equal(allergyReview(value, { allergyReview: { status: 'none_known' } }).status, 'none-reported');
+  assert.equal(allergyReview(value, { allergyReview: { status: 'not_assessed' } }).status, 'unknown');
 });
 test('unknown age and pregnancy stay unknown; untagged and archived templates are not suggested',()=>{
   const result=evaluateTemplate(template({minAge:'18',pregnancy:'First trimester'}),{...context,age:''});
