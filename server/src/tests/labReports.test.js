@@ -598,14 +598,42 @@ describe('POST /lab-reports/upload name check', () => {
     expect(chains.lab_reports[0].insert.mock.calls[0][0].raw_ocr_payload.name_mismatch_confirmed).toBeUndefined();
   });
 
-  it.each([
-    ['the report has no readable name', extraction(null)],
-    ['extraction failed', { reportDate: null, ocrStatus: 'failed', metrics: [], raw: null, error: 'down' }],
-  ])('records the upload when %s', async (_label, extracted) => {
+  it('records the upload when the OCR service could not scan it at all', async () => {
     tables();
-    processDocument.mockResolvedValue(extracted);
+    processDocument.mockResolvedValue({ reportDate: null, ocrStatus: 'failed', metrics: [], raw: null, error: 'down' });
 
     expect((await send()).status).toBe(201);
+  });
+
+  it('asks, and keeps nothing, when no name could be read on the report', async () => {
+    const chains = tables();
+    processDocument.mockResolvedValue(extraction(null));
+
+    const response = await send();
+
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({
+      code: 'REPORT_NAME_UNREADABLE',
+      details: { nameOnReport: null, nameOnAccount: accountName },
+    });
+    expect(response.body.error).not.toContain(accountName);
+    expect(chains.lab_reports).toBeUndefined();
+    expect(removeFile).toHaveBeenCalledWith('lab-reports', 'patient-123/report.pdf');
+  });
+
+  it('saves a report with no readable name once confirmed, without scanning twice', async () => {
+    const chains = tables();
+    processDocument.mockResolvedValue(extraction(null));
+    const file = newFile();
+
+    await send(patient, {}, file);
+    const response = await send(patient, { confirmNameMismatch: 'true' }, file);
+
+    expect(response.status).toBe(201);
+    expect(processDocument).toHaveBeenCalledTimes(1);
+    const saved = chains.lab_reports[0].insert.mock.calls[0][0].raw_ocr_payload;
+    expect(saved.name_unreadable_confirmed).toBe(true);
+    expect(saved.name_mismatch_confirmed).toBeUndefined();
   });
 
   it("compares a clinician's upload with the patient's name, not the clinician's", async () => {

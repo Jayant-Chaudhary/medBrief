@@ -126,7 +126,7 @@ def get_ocr(device: str | None = None, lang: str = "en", textline_orientation: b
             # orientation and UVDoc unwarping add two model loads and most of
             # the per-page runtime, and unwarping bends flat scans enough to
             # corrupt glyphs. Opt back in for curled phone photos.
-            "use_doc_orientation_classify": _env_flag("OCR_DOC_ORIENTATION", False),
+            "use_doc_orientation_classify": _env_flag("OCR_DOC_ORIENTATION", False) or _env_flag("OCR_AUTOROTATE", False),
             "use_doc_unwarping": _env_flag("OCR_DOC_UNWARPING", False),
         }
         # The small models read a one-page CPU scan in ~10s where PaddleOCR's

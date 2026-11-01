@@ -12,7 +12,7 @@ const {
   createSignedUrl,
   removeFile,
 } = require('../services/storage.service');
-const { reportNameDiffers } = require('../services/reportNameCheck.service');
+const { reportNameProblem, NAME_MISMATCH, NAME_UNREADABLE } = require('../services/reportNameCheck.service');
 const { holdExtraction, takeExtraction } = require('../services/pendingExtraction.service');
 const { metricSourceSchema } = require('../validators/labReports.validators');
 const {
@@ -166,15 +166,19 @@ async function uploadReport(req, res, next) {
 
     const nameOnReport = extracted.raw?.structured?.patient?.name;
     const nameOnAccount = await patientFullName(patientId, req.user);
-    const nameMismatch = reportNameDiffers(nameOnReport, nameOnAccount);
+    // With no scan at all (OCR down) there is nothing to check; it is recorded for manual review.
+    const nameProblem = extracted.raw ? reportNameProblem(nameOnReport, nameOnAccount) : null;
 
-    if (nameMismatch && !confirmed) {
+    if (nameProblem && !confirmed) {
       holdExtraction(scanOwner, extracted);
       await removeFile(LAB_REPORTS_BUCKET, storagePath);
       return res.status(409).json({
-        error: 'The name on this report does not match the name on this account.',
-        code: 'REPORT_NAME_MISMATCH',
-        details: { nameOnReport, nameOnAccount },
+        error:
+          nameProblem === NAME_MISMATCH
+            ? 'The name on this report does not match the name on this account.'
+            : 'No patient name could be read on this report.',
+        code: nameProblem,
+        details: { nameOnReport: nameOnReport || null, nameOnAccount },
       });
     }
 
@@ -187,7 +191,11 @@ async function uploadReport(req, res, next) {
       metrics: extracted.metrics,
       // The pipeline's full envelope; on failure, the error that caused it.
       rawPayload: extracted.raw
-        ? { ...extracted.raw, ...(nameMismatch && { name_mismatch_confirmed: true }) }
+        ? {
+            ...extracted.raw,
+            ...(nameProblem === NAME_MISMATCH && { name_mismatch_confirmed: true }),
+            ...(nameProblem === NAME_UNREADABLE && { name_unreadable_confirmed: true }),
+          }
         : { error: extracted.error ?? null },
     });
 

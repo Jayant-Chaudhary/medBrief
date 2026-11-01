@@ -3,7 +3,7 @@ import { UploadCloud } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 
-export default function UploadZone({ onUpload, disabled = false }) {
+export default function UploadZone({ onUpload, onBusy, disabled = false }) {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -37,7 +37,11 @@ export default function UploadZone({ onUpload, disabled = false }) {
   };
 
   const handleFiles = (file) => {
-    if (disabled) return;
+    // The button is disabled mid-upload, but a dropped file still lands here.
+    if (disabled) {
+      onBusy?.();
+      return;
+    }
     onUpload(file);
   };
 

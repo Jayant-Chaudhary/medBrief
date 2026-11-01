@@ -80,6 +80,8 @@ class _ReportsPageState extends State<ReportsPage> {
     final mismatch = controller.nameMismatch;
     if (mismatch == null) return;
 
+    final nameRead = mismatch.nameOnReport.isNotEmpty;
+
     _askingAboutName = true;
     final proceed = await showDialog<bool>(
       context: context,
@@ -90,18 +92,27 @@ class _ReportsPageState extends State<ReportsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('The name on this report is different from the name on your account.'),
+            Text(
+              nameRead
+                  ? 'The name on this report is different from the name on your account.'
+                  : 'We could not read a patient name on this report, so we cannot check that it is yours.',
+            ),
             const SizedBox(height: 12),
-            Text('Name on the report: ${mismatch.nameOnReport}',
-                style: const TextStyle(fontWeight: FontWeight.w600, color: ink)),
-            const SizedBox(height: 4),
+            if (nameRead) ...[
+              Text('Name on the report: ${mismatch.nameOnReport}',
+                  style: const TextStyle(fontWeight: FontWeight.w600, color: ink)),
+              const SizedBox(height: 4),
+            ],
             Text('Name on your account: ${mismatch.nameOnAccount}',
                 style: const TextStyle(fontWeight: FontWeight.w600, color: ink)),
             const SizedBox(height: 12),
-            const Text(
-              'If you continue, its values are added to your record and your doctor may see them. '
-              'Continue only if this report is yours, for example if it uses a different spelling or a previous name.',
-              style: TextStyle(fontSize: 13, color: muted),
+            Text(
+              nameRead
+                  ? 'If you continue, its values are added to your record and your doctor may see them. '
+                      'Continue only if this report is yours, for example if it uses a different spelling or a previous name.'
+                  : 'If you continue, its values are added to your record and your doctor may see them. '
+                      'Continue only if this report is yours. A clearer, upright photo can help us read the name.',
+              style: const TextStyle(fontSize: 13, color: muted),
             ),
           ],
         ),

@@ -1,5 +1,5 @@
 import { request, upload } from './apiClient.js';
-import { buildFlowsheet, reviewReason } from '../utils/flowsheet.js';
+import { buildFlowsheet, reviewReason, getScannedNumber } from '../utils/flowsheet.js';
 import { fileKindOf } from '../utils/sourceCrop.js';
 
 /** Create an appointment, attach its questionnaire and invite the patient. */
@@ -312,6 +312,9 @@ function buildTriageAlerts(reports = []) {
         sourceBox: metric.source_box ?? null,
         fileKind: fileKindOf(report.storage_path),
         printed: [metric.raw_value, metric.unit_raw].filter(Boolean).join(' '),
+        parsedValue: metric.parsed_value ?? null,
+        rawValue: metric.raw_value ?? null,
+        scannedValue: getScannedNumber(metric.parsed_value, metric.raw_value),
       }))
   );
 }

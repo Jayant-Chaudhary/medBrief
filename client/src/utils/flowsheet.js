@@ -35,6 +35,29 @@ const GROUP_ORDER = [
 ];
 const OTHER_GROUP = ['other', 'Other tests'];
 
+/**
+ * Resolves the numeric value scanned by the OCR pipeline, if a finite number was extracted.
+ * Returns null if the reading was qualitative, a limit, or unreadable.
+ */
+export function getScannedNumber(parsedValue, rawValue) {
+  if (parsedValue != null && Number.isFinite(Number(parsedValue))) {
+    return Number(parsedValue);
+  }
+  if (rawValue != null) {
+    const trimmed = String(rawValue).trim();
+    if (trimmed !== '') {
+      const direct = Number(trimmed);
+      if (Number.isFinite(direct)) return direct;
+      const match = trimmed.match(/^[-+]?[0-9]*\.?[0-9]+/);
+      if (match) {
+        const parsed = Number(match[0]);
+        if (Number.isFinite(parsed)) return parsed;
+      }
+    }
+  }
+  return null;
+}
+
 /** Grouping key for a metric: its dictionary key, or its printed name. */
 export function metricKey(metric) {
   return metric.standard_key ?? `raw:${(metric.raw_key ?? '').trim().toLowerCase()}`;
@@ -153,6 +176,9 @@ export function buildFlowsheet(reports = [], currentAppointmentId = null) {
         sourceBox: metric.source_box ?? null,
         fileKind: fileKindOf(report.storage_path),
         printed: [metric.raw_value, metric.unit_raw].filter(Boolean).join(' '),
+        parsedValue: metric.parsed_value ?? null,
+        rawValue: metric.raw_value ?? null,
+        scannedValue: getScannedNumber(metric.parsed_value, metric.raw_value),
         date,
       };
 

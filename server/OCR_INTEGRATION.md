@@ -42,8 +42,10 @@ run, download), then `ready`. Digital PDFs are served before that.
   nothing is kept and the response is `409` with `code: REPORT_NAME_MISMATCH`
   and `details: { nameOnReport, nameOnAccount }`. Send the file again with the
   form field `confirmNameMismatch=true` to save it anyway; that sets
-  `name_mismatch_confirmed` in `raw_ocr_payload`. A report with no readable name
-  is not a mismatch. The first scan waits in memory (see
+  `name_mismatch_confirmed` in `raw_ocr_payload`. A scanned report with no
+  readable name is handled the same way, with `code: REPORT_NAME_UNREADABLE` and
+  `name_unreadable_confirmed`, because the check cannot vouch for it. Only an
+  upload the OCR service could not scan at all skips this. The first scan waits in memory (see
   `OCR_PENDING_EXTRACTION_TTL_MS`) so the confirmed request does not read the
   file again; if it has expired or the server restarted, the file is rescanned.
 - `GET /api/ocr/health` checks whether the OCR service is reachable. No auth.

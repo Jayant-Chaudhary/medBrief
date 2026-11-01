@@ -11,10 +11,15 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 class FakeReportRepository extends ReportRepository {
-  FakeReportRepository({this.reports, this.rejectNameMismatch = false});
+  FakeReportRepository({
+    this.reports,
+    this.rejectNameMismatch = false,
+    this.rejectUnreadableName = false,
+  });
 
   List<LabReport>? reports;
   final bool rejectNameMismatch;
+  final bool rejectUnreadableName;
   final confirmedUploads = <bool>[];
   final sharedCalls = <Map<String, dynamic>>[];
   final unsharedCalls = <Map<String, dynamic>>[];
@@ -73,6 +78,14 @@ class FakeReportRepository extends ReportRepository {
         status: 409,
         code: 'REPORT_NAME_MISMATCH',
         details: {'nameOnReport': 'Someone Else', 'nameOnAccount': 'Test Patient'},
+      );
+    }
+    if (rejectUnreadableName && !confirmNameMismatch) {
+      throw const AppException(
+        'We could not complete that request. Please try again.',
+        status: 409,
+        code: 'REPORT_NAME_UNREADABLE',
+        details: {'nameOnReport': null, 'nameOnAccount': 'Test Patient'},
       );
     }
     return {
@@ -152,6 +165,47 @@ void main() {
     expect(await controller.proceedWithNameMismatch(), isTrue);
     expect(repo.confirmedUploads, [false, true]);
     expect(controller.nameMismatch, isNull);
+  });
+
+  test('A report with no readable name also waits for the user', () async {
+    final repo = FakeReportRepository(rejectUnreadableName: true);
+    final controller = ReportController(repo: repo);
+
+    final saved = await controller.uploadReport(bytes: [1, 2, 3], filename: 'report.pdf');
+    expect(saved, isFalse);
+    expect(controller.errorMessage, isNull);
+    expect(controller.nameMismatch?.nameOnReport, isEmpty);
+    expect(controller.nameMismatch?.nameOnAccount, 'Test Patient');
+
+    expect(await controller.proceedWithNameMismatch(), isTrue);
+    expect(repo.confirmedUploads, [false, true]);
+  });
+
+  testWidgets('The dialog says when no name could be read', (tester) async {
+    tester.view.physicalSize = const Size(430, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final repo = FakeReportRepository(rejectUnreadableName: true);
+    final controller = ReportController(repo: repo);
+    await controller.uploadReport(bytes: const [1, 2, 3], filename: 'report.pdf');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ReportsPage(controller: controller, appointments: const []),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('We could not read a patient name on this report, so we cannot check that it is yours.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Name on the report'), findsNothing);
+    expect(find.text('Name on your account: Test Patient'), findsOneWidget);
   });
 
   test('Cancelling a name mismatch does not send the report again', () async {

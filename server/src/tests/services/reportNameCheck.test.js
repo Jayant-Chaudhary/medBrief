@@ -1,4 +1,26 @@
-const { reportNameDiffers } = require('../../services/reportNameCheck.service');
+const {
+  reportNameDiffers,
+  reportNameProblem,
+  NAME_MISMATCH,
+  NAME_UNREADABLE,
+} = require('../../services/reportNameCheck.service');
+
+describe('reportNameProblem', () => {
+  it.each([
+    ['a matching name', 'Mrs. Asha Example', null],
+    ['a different name', 'Someone Else', NAME_MISMATCH],
+    ['no name', undefined, NAME_UNREADABLE],
+    ['an empty name', '   ', NAME_UNREADABLE],
+    ['only a title', 'Mrs.', NAME_UNREADABLE],
+  ])('for %s on the report', (_label, onReport, expected) => {
+    expect(reportNameProblem(onReport, 'Asha Example')).toBe(expected);
+  });
+
+  it('has nothing to say when the account has no name to compare against', () => {
+    expect(reportNameProblem(undefined, null)).toBeNull();
+    expect(reportNameProblem('Someone Else', '')).toBeNull();
+  });
+});
 
 describe('reportNameDiffers', () => {
   it.each([

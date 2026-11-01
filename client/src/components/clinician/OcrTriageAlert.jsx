@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Icon } from '../common/Icon.jsx';
 import { Button } from '../common/Button.jsx';
 import { formatDate } from '../../utils/format.js';
+import { getScannedNumber } from '../../utils/flowsheet.js';
 import { SourcePreview } from './SourcePreview.jsx';
 
 /**
@@ -68,6 +69,22 @@ function AlertItem({ alert, onResolve }) {
   const [error, setError] = useState(null);
   const [showSource, setShowSource] = useState(false);
 
+  const scannedValue =
+    alert.scannedValue ?? getScannedNumber(alert.parsedValue, alert.rawValue ?? alert.printed);
+
+  async function handleKeepScanned() {
+    if (scannedValue == null) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onResolve?.(alert, scannedValue);
+    } catch (err) {
+      setError(err.message || 'Could not save that value.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function submit(event) {
     event.preventDefault();
     if (!value.trim()) return;
@@ -86,18 +103,25 @@ function AlertItem({ alert, onResolve }) {
     <li className="rounded-xl border border-terracotta-border bg-surface p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-display text-label-lg text-ink">{alert.label}</p>
-        {alert.confidence != null && (
-          <span className="rounded-full bg-terracotta-surface px-2 py-0.5 text-label-sm tabular text-terracotta">
-            {Math.round(alert.confidence * 100)}% confidence
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {alert.printed && (
+            <span className="text-body-sm text-ink-3">
+              Scanned: <span className="font-medium text-ink">{alert.printed}</span>
+            </span>
+          )}
+          {alert.confidence != null && (
+            <span className="rounded-full bg-terracotta-surface px-2 py-0.5 text-label-sm tabular text-terracotta">
+              {Math.round(alert.confidence * 100)}% confidence
+            </span>
+          )}
+        </div>
       </div>
       <p className="mt-0.5 text-body-sm text-ink-3">
         {alert.reportName} · {formatDate(alert.reportDate)}
       </p>
       <p className="mt-1 text-body-sm text-ink-2">{alert.reason}</p>
 
-      <form onSubmit={submit} className="mt-2.5 flex items-center gap-2">
+      <form onSubmit={submit} className="mt-2.5 flex flex-wrap items-center gap-2">
         <label className="sr-only" htmlFor={`ocr-${alert.id}`}>
           Corrected value for {alert.label}
         </label>
@@ -105,15 +129,27 @@ function AlertItem({ alert, onResolve }) {
           id={`ocr-${alert.id}`}
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder="Enter value from scan"
-          className="field h-9 flex-1"
+          placeholder={scannedValue != null ? `Or enter new value (scanned: ${scannedValue})` : 'Enter value from scan'}
+          className="field h-9 flex-1 min-w-[140px]"
         />
+        {scannedValue != null && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={handleKeepScanned}
+            disabled={saving}
+            title={`Keep scanned value (${scannedValue}) without re-typing`}
+          >
+            {saving ? 'Saving…' : `Keep scanned (${scannedValue})`}
+          </Button>
+        )}
         {alert.imageUrl && (
           <button
             type="button"
             onClick={() => setShowSource(true)}
             aria-haspopup="dialog"
-            className="shrink-0 rounded-xl border border-line px-3 py-2 text-label-md text-cypress hover:bg-subcanvas"
+            className="shrink-0 rounded-xl border border-line px-3 py-1.5 text-label-md text-cypress hover:bg-subcanvas"
           >
             View on report
           </button>
@@ -129,16 +165,25 @@ function AlertItem({ alert, onResolve }) {
           showSource
             ? {
                 name: alert.label,
-                value: alert.printed || '—',
+                value: alert.printed || (scannedValue != null ? String(scannedValue) : '—'),
                 printed: alert.printed,
+                parsedValue: alert.parsedValue,
+                rawValue: alert.rawValue,
+                scannedValue,
                 scanUrl: alert.imageUrl,
                 fileKind: alert.fileKind,
                 sourcePage: alert.sourcePage,
                 sourceBox: alert.sourceBox,
+                needsReview: true,
+                reason: alert.reason,
               }
             : null
         }
         onClose={() => setShowSource(false)}
+        onResolve={async (val) => {
+          await onResolve?.(alert, val);
+          setShowSource(false);
+        }}
       />
     </li>
   );

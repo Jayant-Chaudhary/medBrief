@@ -5,7 +5,8 @@ import 'report_repository.dart';
 enum ReportStage { loading, ready, uploading, error }
 
 /// An upload waiting on the user: the report is printed with a name other than
-/// the account's, and nothing has been saved yet.
+/// the account's, or none could be read ([nameOnReport] is empty). Nothing has
+/// been saved yet.
 class ReportNameMismatch {
   const ReportNameMismatch({
     required this.nameOnReport,
@@ -78,7 +79,8 @@ class ReportController extends ChangeNotifier {
       await load();
       return true;
     } catch (e) {
-      if (e is AppException && e.code == 'REPORT_NAME_MISMATCH') {
+      if (e is AppException &&
+          (e.code == 'REPORT_NAME_MISMATCH' || e.code == 'REPORT_NAME_UNREADABLE')) {
         nameMismatch = ReportNameMismatch(
           nameOnReport: e.details?['nameOnReport']?.toString() ?? '',
           nameOnAccount: e.details?['nameOnAccount']?.toString() ?? '',

@@ -293,6 +293,42 @@ class TestPatientNameLabels(unittest.TestCase):
                 [(key, value)] = self._pairs(f"{label} : Jane Doe")
                 self.assertEqual((sp.normalize_key(key), value), ("name", "Jane Doe"))
 
+    @staticmethod
+    def _patient_name(*lines):
+        tokens = []
+        for row, line in enumerate(lines):
+            x = 40.0
+            for word in line.split():
+                width = 6.0 * len(word)
+                tokens.append(type("Tok", (), {
+                    "text": word, "x0": x, "x1": x + width,
+                    "top": 50.0 + row * 20, "bottom": 60.0 + row * 20, "page": 0,
+                })())
+                x += width + 4.0
+        return sp.structure_document(tokens)["patient"].get("name")
+
+    def test_common_misreads_of_the_label_still_read_as_the_name(self):
+        for label in ("Nam", "Nane", "NARNE", "Neme"):
+            with self.subTest(label=label):
+                self.assertEqual(self._patient_name(f"{label} : Jane Doe"), "Jane Doe")
+
+    def test_a_misread_label_can_still_name_someone_else(self):
+        self.assertIsNone(self._patient_name("Doctor Nam : Test Person"))
+        self.assertEqual(self._patient_name("Name : Jane Doe", "Doctor Nam : Test Person"), "Jane Doe")
+
+    def test_a_name_line_that_lost_its_colon_is_still_read(self):
+        self.assertEqual(self._patient_name("Name Mrs. Jane Doe"), "Mrs. Jane Doe")
+        self.assertEqual(self._patient_name("Patient Name Jane Doe"), "Jane Doe")
+
+    def test_a_labelled_name_wins_over_a_colonless_one(self):
+        self.assertEqual(self._patient_name("Name Other Person", "Name : Jane Doe"), "Jane Doe")
+        self.assertEqual(self._patient_name("Name : Jane Doe", "Name Other Person"), "Jane Doe")
+
+    def test_lines_that_only_start_with_name_are_not_a_name(self):
+        for line in ("Name of Test", "Name and Address", "Name Result Units", "Name Jane Doe 27", "Name"):
+            with self.subTest(line=line):
+                self.assertIsNone(self._patient_name(line))
+
     def test_a_qualified_label_ends_the_value_before_it(self):
         self.assertEqual(
             self._pairs("Name : Jane Doe Doctor Name : Test Person"),

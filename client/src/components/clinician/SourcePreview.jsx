@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ExternalLink, FileText } from 'lucide-react';
 import { Modal } from '../ui/Modal.jsx';
 import { cropForRow, highlightInCrop } from '../../utils/sourceCrop.js';
+import { getScannedNumber } from '../../utils/flowsheet.js';
 
 /** Rendered width of a PDF page, in pixels; enough to read small print when cropped. */
 const PDF_RENDER_WIDTH = 1600;
@@ -233,6 +234,22 @@ function ReviewForm({ item, onResolve, onDone }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
+  const scannedValue =
+    item.scannedValue ?? getScannedNumber(item.parsedValue, item.rawValue ?? item.value);
+
+  async function handleKeepScanned() {
+    if (scannedValue == null) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onResolve(String(scannedValue));
+      onDone();
+    } catch (err) {
+      setError(err.message || 'Could not save that value.');
+      setSaving(false);
+    }
+  }
+
   async function submit(event) {
     event.preventDefault();
     if (!value.trim()) return;
@@ -250,7 +267,7 @@ function ReviewForm({ item, onResolve, onDone }) {
   return (
     <form onSubmit={submit} className="rounded-xl border border-terracotta-border bg-terracotta-surface p-3">
       <p className="mb-2 text-body-sm text-terracotta-deep">{item.reason || 'This value needs review.'}</p>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <label className="sr-only" htmlFor="source-correction">
           Correct value for {item.name}
         </label>
@@ -258,11 +275,22 @@ function ReviewForm({ item, onResolve, onDone }) {
           id="source-correction"
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder="Enter the value shown above"
+          placeholder={scannedValue != null ? `Or enter new value (scanned: ${scannedValue})` : 'Enter the value shown above'}
           inputMode="decimal"
-          className="field h-10 flex-1"
+          className="field h-10 flex-1 min-w-[140px]"
           autoFocus
         />
+        {scannedValue != null && (
+          <button
+            type="button"
+            onClick={handleKeepScanned}
+            disabled={saving}
+            className="rounded-xl border border-line bg-subcanvas px-4 py-2 text-label-lg text-cypress hover:bg-canvas-alt disabled:opacity-50"
+            title={`Keep scanned value (${scannedValue}) without re-typing`}
+          >
+            {saving ? 'Saving…' : `Keep scanned (${scannedValue})`}
+          </button>
+        )}
         <button
           type="submit"
           disabled={saving || !value.trim()}

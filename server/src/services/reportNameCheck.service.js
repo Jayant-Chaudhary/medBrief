@@ -61,4 +61,19 @@ function reportNameDiffers(nameOnReport, nameOnAccount) {
   return !shorter.every((token) => longer.some((other) => tokensMatch(token, other)));
 }
 
-module.exports = { reportNameDiffers };
+const NAME_MISMATCH = 'REPORT_NAME_MISMATCH';
+const NAME_UNREADABLE = 'REPORT_NAME_UNREADABLE';
+
+/**
+ * Why the uploader must confirm a report before it is saved, or null.
+ *
+ * A report with no readable name asks too: most phone photos lose the name,
+ * so passing them silently would skip the check exactly when it is blind.
+ */
+function reportNameProblem(nameOnReport, nameOnAccount) {
+  if (nameTokens(nameOnAccount).length === 0) return null; // Nothing to compare against.
+  if (nameTokens(nameOnReport).length === 0) return NAME_UNREADABLE;
+  return reportNameDiffers(nameOnReport, nameOnAccount) ? NAME_MISMATCH : null;
+}
+
+module.exports = { reportNameDiffers, reportNameProblem, NAME_MISMATCH, NAME_UNREADABLE };

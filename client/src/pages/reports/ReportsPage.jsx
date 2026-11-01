@@ -59,7 +59,7 @@ export default function ReportsPage() {
 
       await loadReports();
     } catch (err) {
-      if (err.code === 'REPORT_NAME_MISMATCH') {
+      if (err.code === 'REPORT_NAME_MISMATCH' || err.code === 'REPORT_NAME_UNREADABLE') {
         setNameMismatch({ file, ...err.details });
       } else {
         showToast(err.message || 'Failed to upload report.', 'error');
@@ -127,7 +127,11 @@ export default function ReportsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-1">
           <div className="sticky top-24 space-y-4">
-            <UploadZone onUpload={handleUpload} disabled={uploading} />
+            <UploadZone
+              onUpload={handleUpload}
+              onBusy={() => showToast('Please wait for the current upload to finish.', 'info')}
+              disabled={uploading}
+            />
             {uploading && (
               <p className="text-sm text-primary font-bold flex items-center justify-center gap-2">
                 <span className="animate-spin inline-block">⏳</span> Reading your document…

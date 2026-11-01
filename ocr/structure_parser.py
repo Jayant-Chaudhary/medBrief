@@ -300,9 +300,30 @@ _OTHER_NAME_QUALIFIERS = {
 
 def _names_someone_else(label: str, previous_word: str) -> bool:
     """True for a bare "Name" label qualified by the word in front of it."""
-    if label.strip().lower() != "name":
+    if label.strip().lower() not in ("name", *_NAME_LABEL_MISREADS):
         return False
     return re.sub(r"[^a-z]", "", previous_word.lower()) in _OTHER_NAME_QUALIFIERS
+
+
+#: OCR often loses the small colon on a tilted photo, leaving "Name Mr. X". Only
+#: letters and name punctuation may follow, which rules out anything with a
+#: number or another label's colon.
+_COLONLESS_NAME_RE = re.compile(
+    r"^(?:patient\s*name|name)\s+(?P<value>[^\W\d_](?:[^\W\d_]|[.' -])*)$", re.I
+)
+_NOT_A_NAME_WORDS = _COLUMN_HEADER_WORDS | {"of", "and", "the", "for"}
+
+
+def colonless_patient_name(text: str) -> str | None:
+    """The patient's name from a header line that lost its colon, or None."""
+    match = _COLONLESS_NAME_RE.match(text.strip())
+    if not match:
+        return None
+    value = match.group("value").strip()
+    words = value.lower().split()
+    if len(words) > 5 or any(word.strip(".,") in _NOT_A_NAME_WORDS for word in words):
+        return None
+    return value
 
 
 def parse_kv_pairs(fields: list[Field]) -> list[tuple[str, str]]:
@@ -433,8 +454,12 @@ def parse_test_row(fields: list[Field]) -> dict | None:
 # ------------------------------------------------------------------
 # Header key normalization
 # ------------------------------------------------------------------
+#: How OCR misreads the label on small or blurred photos.
+_NAME_LABEL_MISREADS = ("nam", "nane", "narne", "neme")
+
 _HEADER_KEY_MAP = {
     "name": "name",
+    **{misread: "name" for misread in _NAME_LABEL_MISREADS},
     "patient name": "name",
     "lab no": "lab_no",
     "lab no.": "lab_no",
@@ -551,6 +576,12 @@ def structure_document(
             if len(fields) == 1 and is_method_annotation(fields[0].text):
                 if current_section is not None:
                     current_section["method"] = fields[0].text.strip()
+                continue
+
+            colonless_name = colonless_patient_name(text)
+            if colonless_name:
+                # A properly labelled "Name :" line still wins, whichever comes first.
+                patient.setdefault("name", colonless_name)
                 continue
 
             if is_section_title(fields):
