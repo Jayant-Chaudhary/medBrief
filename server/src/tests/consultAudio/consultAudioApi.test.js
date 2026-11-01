@@ -15,6 +15,11 @@ jest.mock('../../config/supabaseAdminClient', () => ({
   from: jest.fn(),
 }));
 
+jest.mock('../../utils/audioConverter', () => ({
+  convertTo16kHzMonoWav: jest.fn((buf) => Promise.resolve(buf)),
+  checkFfmpegInstalled: jest.fn().mockResolvedValue(true),
+}));
+
 describe('Consult Audio HTTP Endpoints', () => {
   const doctorUser = { id: 'doc-user-1', email: 'doctor@example.com' };
   const patientUser = { id: 'patient-user-1', email: 'patient@example.com' };
@@ -503,6 +508,55 @@ describe('Consult Audio HTTP Endpoints', () => {
       expect(res.body.sessionId).toBe('sess-100');
       expect(res.body.segments).toHaveLength(1);
       expect(res.body.segments[0].text).toBe('Good morning.');
+    });
+  });
+
+  describe('POST /api/consults/test-stt (Pre-Flight STT Verification)', () => {
+    test('rejects request with 401 if missing Authorization header', async () => {
+      const res = await request(app)
+        .post('/api/consults/test-stt')
+        .set('Content-Type', 'audio/webm')
+        .send(Buffer.from('fake-audio-bytes'));
+
+      expect(res.status).toBe(401);
+    });
+
+    test('rejects request with 400 if audio buffer is empty', async () => {
+      const doctorToken = signSessionToken({
+        sessionId: 'sess-100',
+        userId: doctorUser.id,
+        role: 'doctor',
+        device: 'doctor',
+      });
+
+      const res = await request(app)
+        .post('/api/consults/test-stt')
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .set('Content-Type', 'audio/webm');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/Audio buffer is required/i);
+    });
+
+    test('successfully transcribes test audio sample with doctor token', async () => {
+      const doctorToken = signSessionToken({
+        sessionId: 'sess-100',
+        userId: doctorUser.id,
+        role: 'doctor',
+        device: 'doctor',
+      });
+
+      const res = await request(app)
+        .post('/api/consults/test-stt')
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .set('Content-Type', 'audio/webm')
+        .send(Buffer.from('synthetic-test-speech-chunk'));
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body).toHaveProperty('text');
+      expect(res.body).toHaveProperty('latencyMs');
+      expect(res.body).toHaveProperty('provider');
     });
   });
 });

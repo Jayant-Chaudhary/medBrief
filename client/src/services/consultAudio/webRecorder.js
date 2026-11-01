@@ -124,6 +124,74 @@ export class WebRecorder {
   }
 
   /**
+   * Records a short audio sample to test the speech-to-text pipeline.
+   *
+   * @param {number} [durationMs=3000]
+   * @param {Function} [onCountdown] - Callback receiving remaining seconds (e.g. 3, 2, 1).
+   * @returns {Promise<Blob>}
+   */
+  async recordTestSample(durationMs = 3000, onCountdown = null) {
+    if (!this.mediaStream) {
+      const ok = await this.initMicrophone();
+      if (!ok) throw new Error('Microphone not initialized');
+    }
+
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      await this.audioContext.resume();
+    }
+
+    let mimeType = 'audio/webm;codecs=opus';
+    if (typeof MediaRecorder !== 'undefined' && !MediaRecorder.isTypeSupported(mimeType)) {
+      mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
+    }
+
+    return new Promise((resolve, reject) => {
+      try {
+        const recorder = new MediaRecorder(this.mediaStream, mimeType ? { mimeType } : undefined);
+        const chunks = [];
+
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            chunks.push(e.data);
+          }
+        };
+
+        recorder.onstop = () => {
+          const finalBlob = new Blob(chunks, { type: mimeType || 'audio/webm' });
+          resolve(finalBlob);
+        };
+
+        recorder.onerror = (e) => {
+          reject(e.error || new Error('Test recording error'));
+        };
+
+        recorder.start();
+
+        const totalSeconds = Math.ceil(durationMs / 1000);
+        let remaining = totalSeconds;
+        if (onCountdown) onCountdown(remaining);
+
+        const countdownInterval = setInterval(() => {
+          remaining -= 1;
+          if (onCountdown && remaining >= 0) onCountdown(remaining);
+          if (remaining <= 0) {
+            clearInterval(countdownInterval);
+          }
+        }, 1000);
+
+        setTimeout(() => {
+          clearInterval(countdownInterval);
+          if (recorder.state === 'recording') {
+            recorder.stop();
+          }
+        }, durationMs);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  /**
    * Starts consultation recording.
    */
   async startRecording() {

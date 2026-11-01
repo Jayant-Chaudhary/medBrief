@@ -98,6 +98,8 @@ consultRouter.post('/:id/devices/:device/final', sessionTokenGuard, controller.r
 consultRouter.get('/:id/state', flexibleSessionAuth, controller.getSessionState);
 consultRouter.get('/:id/transcript', doctorSessionOrAuthGuard, controller.getTranscript);
 consultRouter.get('/by-appointment/:appointmentId', doctorSessionOrAuthGuard, controller.getSessionByAppointment);
+consultRouter.post('/test-stt', doctorSessionOrAuthGuard, rawAudioParser, controller.testAudioStt);
+consultRouter.post('/:id/test-stt', doctorSessionOrAuthGuard, rawAudioParser, controller.testAudioStt);
 
 module.exports = {
   consultRouter,

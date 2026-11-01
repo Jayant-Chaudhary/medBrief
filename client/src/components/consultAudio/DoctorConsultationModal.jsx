@@ -18,6 +18,8 @@ import {
   Clock,
   Activity,
   Layers,
+  Volume2,
+  Zap,
 } from 'lucide-react';
 import { Modal } from '../ui/Modal.jsx';
 import {
@@ -30,6 +32,7 @@ import {
   connectConsultationSocket,
   getConsultationTranscript,
   getSessionByAppointment,
+  testSpeechToText,
 } from '../../services/consultAudio/consultClient.service.js';
 import { WebRecorder } from '../../services/consultAudio/webRecorder.js';
 
@@ -63,6 +66,19 @@ export function DoctorConsultationModal({
   const [chunksUploaded, setChunksUploaded] = useState(0);
   const [remainingQueue, setRemainingQueue] = useState(0);
 
+  // STT Pipeline Pre-Flight Verification State
+  const [sttTesting, setSttTesting] = useState(false);
+  const [sttCountdown, setSttCountdown] = useState(0);
+  const [sttTestResult, setSttTestResult] = useState(null);
+  const [sttTestError, setSttTestError] = useState(null);
+  const [hasCompletedSttTest, setHasCompletedSttTest] = useState(() => {
+    try {
+      return localStorage.getItem('medbrief_stt_verified') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
   const recorderRef = useRef(null);
   const socketRef = useRef(null);
   const timerRef = useRef(null);
@@ -73,6 +89,42 @@ export function DoctorConsultationModal({
   const getSessionId = () => session?.sessionId || session?.session_id || session?.id;
   const getDoctorToken = () => session?.doctorToken || session?.doctor_token || session?.token;
   const getRoomCode = () => session?.roomCode || session?.room_code || '------';
+
+  // Run a short 3-second speech recognition test to verify STT pipeline before consultation
+  const handleRunSttTest = async () => {
+    if (!recorderRef.current) {
+      setError('Recorder is not initialized. Please click "Proceed to Mic Check" again.');
+      return;
+    }
+
+    setSttTesting(true);
+    setSttTestError(null);
+    setSttTestResult(null);
+    setSttCountdown(3);
+
+    try {
+      const sampleBlob = await recorderRef.current.recordTestSample(3000, (remaining) => {
+        setSttCountdown(remaining);
+      });
+
+      const result = await testSpeechToText({
+        audioBlob: sampleBlob,
+        sessionId: getSessionId(),
+        token: getDoctorToken(),
+      });
+
+      setSttTestResult(result);
+      setHasCompletedSttTest(true);
+      try {
+        localStorage.setItem('medbrief_stt_verified', 'true');
+      } catch {}
+    } catch (err) {
+      setSttTestError(err.message || 'Speech-to-text test failed');
+    } finally {
+      setSttTesting(false);
+      setSttCountdown(0);
+    }
+  };
 
   // Load transcript data
   const loadTranscript = useCallback(async (sessId, token) => {
@@ -285,6 +337,11 @@ export function DoctorConsultationModal({
       return;
     }
 
+    if (!hasCompletedSttTest && !sttTestResult) {
+      setError('Please run the speech recognition pre-flight test above to verify the pipeline.');
+      return;
+    }
+
     const sessionId = getSessionId();
     const token = getDoctorToken();
 
@@ -317,6 +374,11 @@ export function DoctorConsultationModal({
   const handleStartRecording = async () => {
     if (!consentAccepted) {
       setError('Doctor and patient consent is required before recording.');
+      return;
+    }
+
+    if (!hasCompletedSttTest && !sttTestResult) {
+      setError('Please run the speech recognition pre-flight test above to verify the pipeline.');
       return;
     }
 
@@ -633,6 +695,116 @@ export function DoctorConsultationModal({
                   <p className="text-[11px] text-slate-400">Speak normally to verify that voice activity registers in the green bar.</p>
                 </div>
 
+                {/* PRE-FLIGHT SPEECH-TO-TEXT PIPELINE VERIFICATION */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Volume2 className="w-4 h-4 text-primary" />
+                      <span className="font-semibold text-xs text-ink">
+                        Speech Recognition Pre-Flight Check
+                      </span>
+                    </div>
+                    {hasCompletedSttTest || sttTestResult ? (
+                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[11px] font-semibold rounded-full flex items-center gap-1 shadow-xs">
+                        <Check className="w-3 h-3 text-emerald-600" /> STT Verified
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 bg-amber-100 text-amber-900 text-[11px] font-semibold rounded-full flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 text-amber-600" /> Mandatory Initial Check
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-[11px] text-ink-3 leading-relaxed">
+                    {!hasCompletedSttTest && !sttTestResult
+                      ? 'Say a test phrase (e.g. "Testing consultation audio pipeline") to verify that speech recognition and GPU transcription are operating before starting.'
+                      : 'Speech recognition has been verified for your device. You may re-test anytime or proceed directly.'}
+                  </p>
+
+                  {/* ACTIVE RECORDING BANNER */}
+                  {sttTesting && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-center space-y-1.5 animate-pulse">
+                      <div className="inline-flex items-center gap-2 text-rose-700 font-bold text-xs uppercase tracking-wide">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-600"></span>
+                        Listening... Speak into microphone!
+                      </div>
+                      <div className="text-2xl font-black text-rose-900 font-mono">
+                        00:0{sttCountdown}s
+                      </div>
+                      <p className="text-[11px] text-rose-600">Say anything to test speech transcription...</p>
+                    </div>
+                  )}
+
+                  {/* TRANSCRIPTION RESULT DISPLAY */}
+                  {sttTestResult && !sttTesting && (
+                    <div className="p-3 bg-emerald-50/80 border border-emerald-200/80 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-emerald-900 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          Recognized Transcript:
+                        </span>
+                        <span className="font-mono text-emerald-800 bg-white/90 px-2 py-0.5 rounded border border-emerald-200 text-[10px] flex items-center gap-1">
+                          <Zap className="w-3 h-3 text-amber-500 fill-amber-400" />
+                          {sttTestResult.latencyMs}ms • {sttTestResult.provider || 'Whisper'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-ink font-medium bg-white p-2.5 rounded-lg border border-emerald-100 italic shadow-xs">
+                        "{sttTestResult.text}"
+                      </p>
+                    </div>
+                  )}
+
+                  {/* ERROR DISPLAY */}
+                  {sttTestError && !sttTesting && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-xs text-red-700">
+                      <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="font-semibold">STT Test Failed</p>
+                        <p className="text-[11px] mt-0.5">{sttTestError}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TEST TRIGGER BUTTON */}
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      onClick={handleRunSttTest}
+                      disabled={sttTesting}
+                      className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 shadow-sm transition ${
+                        sttTesting
+                          ? 'bg-rose-500 text-white cursor-not-allowed opacity-80'
+                          : hasCompletedSttTest || sttTestResult
+                          ? 'bg-white border border-slate-300 text-ink-2 hover:bg-slate-50'
+                          : 'bg-primary text-white hover:bg-primary-dark ring-2 ring-primary/20'
+                      }`}
+                    >
+                      {sttTesting ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Recording Sample ({sttCountdown}s)...
+                        </>
+                      ) : hasCompletedSttTest || sttTestResult ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 text-ink-3" />
+                          Re-test Microphone & STT
+                        </>
+                      ) : (
+                        <>
+                          <Mic className="w-3.5 h-3.5" />
+                          Speak Test Phrase (3s)
+                        </>
+                      )}
+                    </button>
+
+                    {hasCompletedSttTest && !sttTesting && (
+                      <span className="text-[11px] text-emerald-700 font-medium flex items-center gap-1">
+                        <Check className="w-3.5 h-3.5 text-emerald-600" /> Ready to proceed (Skip available)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3 pt-1">
                   <div className={`p-3 border rounded-xl flex items-center justify-between text-xs ${doctorReady ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-slate-50 border-slate-200'}`}>
                     <span className="font-medium">Doctor Device</span>
@@ -665,27 +837,34 @@ export function DoctorConsultationModal({
                     Back to Room Code
                   </button>
 
-                  <div className="flex gap-2">
-                    {!doctorReady ? (
-                      <button
-                        type="button"
-                        onClick={handleConfirmReady}
-                        disabled={!consentAccepted || loading}
-                        className="px-4 py-2 bg-emerald-600 text-white font-medium rounded-lg text-sm hover:bg-emerald-700 transition flex items-center gap-2 shadow-sm disabled:opacity-50"
-                      >
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-                        Confirm Readiness
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleStartRecording}
-                        disabled={loading}
-                        className="px-5 py-2 bg-rose-600 text-white font-semibold rounded-lg text-sm hover:bg-rose-700 transition flex items-center gap-2 shadow-sm animate-pulse"
-                      >
-                        <Radio className="w-4 h-4" />
-                        Start Consultation
-                      </button>
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="flex gap-2">
+                      {!doctorReady ? (
+                        <button
+                          type="button"
+                          onClick={handleConfirmReady}
+                          disabled={!consentAccepted || loading || (!hasCompletedSttTest && !sttTestResult)}
+                          className="px-4 py-2 bg-emerald-600 text-white font-medium rounded-lg text-sm hover:bg-emerald-700 transition flex items-center gap-2 shadow-sm disabled:opacity-50"
+                        >
+                          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                          Confirm Readiness
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleStartRecording}
+                          disabled={loading || (!hasCompletedSttTest && !sttTestResult)}
+                          className="px-5 py-2 bg-rose-600 text-white font-semibold rounded-lg text-sm hover:bg-rose-700 transition flex items-center gap-2 shadow-sm animate-pulse disabled:opacity-50"
+                        >
+                          <Radio className="w-4 h-4" />
+                          Start Consultation
+                        </button>
+                      )}
+                    </div>
+                    {!hasCompletedSttTest && !sttTestResult && (
+                      <span className="text-[10px] text-amber-700 font-medium">
+                        * Pre-flight speech test required once
+                      </span>
                     )}
                   </div>
                 </div>

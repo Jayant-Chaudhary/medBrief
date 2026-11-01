@@ -8,6 +8,8 @@
 const sessionService = require('../services/consultAudio/session.service');
 const chunkIngestService = require('../services/consultAudio/chunkIngest.service');
 const { verifySessionToken } = require('../services/consultAudio/token.service');
+const { convertTo16kHzMonoWav } = require('../utils/audioConverter');
+const providerFactory = require('../services/consultAudio/stt/providerFactory');
 const logger = require('../utils/logger');
 
 /**
@@ -302,6 +304,50 @@ async function getSessionByAppointment(req, res, next) {
   }
 }
 
+/**
+ * POST /api/consults/test-stt
+ * Tests speech-to-text pipeline with a short test audio buffer before consultation.
+ */
+async function testAudioStt(req, res, next) {
+  try {
+    const audioBuffer = req.body && Buffer.isBuffer(req.body) ? req.body : null;
+    if (!audioBuffer || audioBuffer.length === 0) {
+      return res.status(400).json({ error: 'Audio buffer is required for STT test' });
+    }
+
+    const startTimer = Date.now();
+    const wavBuffer = await convertTo16kHzMonoWav(audioBuffer);
+    const provider = providerFactory.getProvider();
+    const segments = await provider.transcribe(wavBuffer);
+    const latencyMs = Date.now() - startTimer;
+
+    const transcriptText = (segments || []).map((s) => s.text).join(' ').trim();
+
+    logger.info('Pre-consultation STT test completed', {
+      scope: 'consult-audio-test',
+      provider: provider.name,
+      byteLength: audioBuffer.length,
+      latencyMs,
+      segmentCount: (segments || []).length,
+    });
+
+    res.status(200).json({
+      success: true,
+      text: transcriptText || '(No speech detected)',
+      segments: segments || [],
+      provider: provider.name,
+      latencyMs,
+    });
+  } catch (err) {
+    logger.error('Pre-consultation STT test failed', {
+      scope: 'consult-audio-test',
+      errorCode: err.code || 'ERR_STT_TEST_FAILED',
+      errorMessage: err.message,
+    });
+    next(err);
+  }
+}
+
 module.exports = {
   createSession,
   joinSession,
@@ -316,4 +362,5 @@ module.exports = {
   getSessionByAppointment,
   uploadChunk,
   recordFinalMarker,
+  testAudioStt,
 };

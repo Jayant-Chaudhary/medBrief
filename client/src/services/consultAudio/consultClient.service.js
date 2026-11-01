@@ -249,3 +249,37 @@ export async function getSessionByAppointment(appointmentId) {
   if (!appointmentId) return null;
   return request(`/api/consults/by-appointment/${appointmentId}`);
 }
+
+/**
+ * Tests speech-to-text pipeline by sending a test audio blob.
+ */
+export async function testSpeechToText({ audioBlob, sessionId, token }) {
+  if (!audioBlob) {
+    throw new Error('Audio sample is required to test STT');
+  }
+
+  const endpoint = sessionId
+    ? `${BASE_URL}/api/consults/${sessionId}/test-stt`
+    : `${BASE_URL}/api/consults/test-stt`;
+
+  const headers = {
+    'Content-Type': audioBlob.type || 'audio/webm',
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers,
+    body: audioBlob,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Speech-to-text test failed (${res.status})`);
+  }
+
+  return res.json();
+}
+
