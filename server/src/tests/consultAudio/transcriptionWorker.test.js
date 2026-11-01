@@ -14,6 +14,13 @@ const {
 const FakeProvider = require('../../services/consultAudio/stt/fakeProvider');
 const supabaseAdmin = require('../../config/supabaseAdminClient');
 const { convertTo16kHzMonoWav } = require('../../utils/audioConverter');
+const audioCache = require('../../services/consultAudio/audioCache.service');
+const logger = require('../../utils/logger');
+
+jest.mock('../../services/consultAudio/audioCache.service', () => ({
+  get: jest.fn().mockResolvedValue(null),
+  remove: jest.fn().mockResolvedValue(true),
+}));
 
 jest.mock('../../config/supabaseAdminClient');
 jest.mock('../../utils/audioConverter');
@@ -21,6 +28,8 @@ jest.mock('../../utils/audioConverter');
 describe('Consult Audio — Transcription Worker', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    audioCache.get.mockResolvedValue(null);
+    audioCache.remove.mockResolvedValue(true);
     convertTo16kHzMonoWav.mockResolvedValue(Buffer.from('RIFF mock wav data'));
   });
 
@@ -406,6 +415,108 @@ describe('Consult Audio — Transcription Worker', () => {
 
       const count = await recoverStuckJobs();
       expect(count).toBe(1);
+    });
+  });
+
+  describe('Cache-first processing', () => {
+    const bytes = Buffer.from('synthetic-audio');
+    const chunk = {
+      id: 'synthetic-chunk', session_id: 'synthetic-session', device: 'doctor', seq: 0,
+      start_ms: 0, duration_ms: 15000, storage_path: 'consults/synthetic/doctor/0.wav',
+      size_bytes: bytes.length, silent: false,
+    };
+    const job = { id: 'synthetic-job', chunk_id: chunk.id, attempts: 1 };
+
+    function setup({ segmentError = null, completionError = null } = {}) {
+      const events = [];
+      const download = jest.fn().mockResolvedValue({
+        data: { arrayBuffer: async () => bytes }, error: null,
+      });
+      supabaseAdmin.storage = { from: jest.fn().mockReturnValue({ download }) };
+      const insert = jest.fn(async () => {
+        events.push('segments');
+        return { error: segmentError };
+      });
+      supabaseAdmin.from.mockImplementation((table) => {
+        const value = table === 'audio_chunks' ? chunk : { id: chunk.session_id };
+        const query = {
+          select: jest.fn().mockReturnThis(), eq: jest.fn().mockReturnThis(),
+          single: jest.fn().mockResolvedValue({ data: value, error: null }),
+          maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+          update: jest.fn((payload) => ({ eq: jest.fn(async () => {
+            events.push(payload.status);
+            return { error: payload.status === 'completed' ? completionError : null };
+          }) })),
+          insert,
+        };
+        return query;
+      });
+      audioCache.remove.mockImplementation(async () => { events.push('delete'); return true; });
+      return { events, download, insert };
+    }
+
+    test('cache hit skips Storage and deletes bytes after transcript and status writes', async () => {
+      const { events, download } = setup();
+      audioCache.get.mockResolvedValue(bytes);
+      const result = await processJob(job, new FakeProvider());
+      expect(result.ok).toBe(true);
+      expect(result.audioSource).toBe('redis');
+      expect(download).not.toHaveBeenCalled();
+      expect(convertTo16kHzMonoWav).toHaveBeenCalledWith(bytes);
+      expect(events).toEqual(['transcribing', 'segments', 'transcribed', 'completed', 'delete']);
+    });
+
+    test.each(['miss', 'outage'])('%s falls back to the durable bytes', async (condition) => {
+      const { download } = setup();
+      if (condition === 'outage') audioCache.get.mockRejectedValueOnce(new Error('synthetic Redis error'));
+      const result = await processJob(job, new FakeProvider());
+      expect(result.ok).toBe(true);
+      expect(result.audioSource).toBe('storage');
+      expect(download).toHaveBeenCalledTimes(1);
+      expect(convertTo16kHzMonoWav).toHaveBeenCalledWith(bytes);
+    });
+
+    test('a retryable provider failure retains cache and scrubs raw messages and codes', async () => {
+      setup();
+      audioCache.get.mockResolvedValue(bytes);
+      const log = jest.spyOn(logger, 'error').mockImplementation(() => {});
+      const sensitive = 'synthetic-name-marker transcript-marker health-value-marker';
+      const provider = { transcribe: jest.fn().mockRejectedValue(Object.assign(new Error(sensitive), { code: sensitive })) };
+      try {
+        expect((await processJob(job, provider)).ok).toBe(false);
+        expect(audioCache.remove).not.toHaveBeenCalled();
+        expect(JSON.stringify(log.mock.calls)).not.toContain(sensitive);
+      } finally { log.mockRestore(); }
+    });
+
+    test.each(['segments', 'completion'])('a failed %s write does not delete cached audio', async (failure) => {
+      setup({
+        segmentError: failure === 'segments' ? { message: 'synthetic-sensitive' } : null,
+        completionError: failure === 'completion' ? { message: 'synthetic-sensitive' } : null,
+      });
+      audioCache.get.mockResolvedValue(bytes);
+      expect((await processJob(job, new FakeProvider())).ok).toBe(false);
+      expect(audioCache.remove).not.toHaveBeenCalled();
+    });
+
+    test('cleanup failure does not retry a completed transcription', async () => {
+      setup();
+      audioCache.get.mockResolvedValue(bytes);
+      audioCache.remove.mockRejectedValueOnce(new Error('synthetic cleanup failure'));
+      const provider = new FakeProvider();
+      const transcribe = jest.spyOn(provider, 'transcribe');
+      expect((await processJob(job, provider)).ok).toBe(true);
+      expect(transcribe).toHaveBeenCalledTimes(1);
+    });
+
+    test('terminal provider failure deletes cache but leaves persistent audio', async () => {
+      setup();
+      audioCache.get.mockResolvedValue(bytes);
+      const provider = { transcribe: jest.fn().mockRejectedValue(new Error('synthetic failure')) };
+      expect((await processJob({ ...job, attempts: 3 }, provider)).ok).toBe(false);
+      expect(audioCache.remove).toHaveBeenCalledWith(chunk);
+      // The only Storage operation exposed to the worker is download.
+      expect(supabaseAdmin.storage.from).not.toHaveBeenCalled();
     });
   });
 });

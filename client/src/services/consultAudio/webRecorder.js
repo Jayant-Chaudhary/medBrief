@@ -57,6 +57,9 @@ export class WebRecorder {
     this.uploadQueue = [];
     this.isUploading = false;
     this.totalChunksExpected = 0;
+    this.chunkFinalization = Promise.resolve();
+    this.finalizationError = null;
+    this.stopPromise = null;
   }
 
   /**
@@ -210,6 +213,9 @@ export class WebRecorder {
     this.chunkStartWallMs = this.sessionStartWallMs;
     this.activeSamples = [];
     this.uploadQueue = [];
+    this.chunkFinalization = Promise.resolve();
+    this.finalizationError = null;
+    this.stopPromise = null;
 
     this.startLevelMeter();
     this.startFreshChunkRecorder();
@@ -244,12 +250,15 @@ export class WebRecorder {
     }
 
     const recorder = new MediaRecorder(this.mediaStream, mimeType ? { mimeType } : undefined);
+    const chunkData = [];
     this.activeRecorder = recorder;
-    this.activeChunksData = [];
+    this.activeChunksData = chunkData;
 
     recorder.ondataavailable = (event) => {
       if (event.data && event.data.size > 0) {
-        this.activeChunksData.push(event.data);
+        // This recorder owns this buffer, including data delivered after stop().
+        // A subsequent recorder must never receive its predecessor's bytes.
+        chunkData.push(event.data);
       }
     };
 
@@ -279,7 +288,7 @@ export class WebRecorder {
    */
   cutAndHandoverChunk(now, isFinal = false) {
     const prevRecorder = this.activeRecorder;
-    const prevData = [...this.activeChunksData];
+    const prevData = this.activeChunksData;
     const prevSamples = [...this.activeSamples];
     const seq = this.currentSeq;
     const startMs = this.chunkStartWallMs - this.sessionStartWallMs;
@@ -297,11 +306,26 @@ export class WebRecorder {
       this.activeRecorder = null;
     }
 
-    // 3. Stop previous recorder and package chunk
-    if (prevRecorder && prevRecorder.state !== 'inactive') {
+    const finalizationError = () => Object.assign(
+      new Error('Audio chunk could not be finalized'), { code: 'ERR_AUDIO_CHUNK_FINALIZE' },
+    );
+
+    // 3. Wait for the old recorder's final dataavailable event followed by stop.
+    // Resolve errors as values here so an out-of-order event cannot cause an
+    // unhandled rejection while an earlier chunk is still finalizing.
+    const dataReady = new Promise((resolve) => {
+      if (!prevRecorder || prevRecorder.state === 'inactive') {
+        resolve({ error: finalizationError() });
+        return;
+      }
+      prevRecorder.onerror = () => resolve({ error: finalizationError() });
       prevRecorder.onstop = () => {
         const mimeType = prevRecorder.mimeType || 'audio/webm';
-        const blob = new Blob(this.activeChunksData.length > 0 ? this.activeChunksData : prevData, { type: mimeType });
+        const blob = new Blob(prevData, { type: mimeType });
+        prevData.length = 0;
+        prevRecorder.ondataavailable = null;
+        prevRecorder.onstop = null;
+        prevRecorder.onerror = null;
         const silent = isChunkSilent(prevSamples, this.chunkerConfig.silenceDbfs);
 
         const chunkPayload = {
@@ -316,16 +340,31 @@ export class WebRecorder {
             : null,
         };
 
-        this.onChunkReady(chunkPayload);
-        this.enqueueUpload(chunkPayload);
+        resolve({ chunkPayload });
       };
 
       try {
         prevRecorder.stop();
-      } catch (err) {
-        // Safe to ignore if already stopped
+      } catch (_err) {
+        resolve({ error: finalizationError() });
       }
-    }
+    });
+
+    // Package and upload in sequence even if overlapping recorders fire stop
+    // events out of order. Stop must await this entire chain before the marker.
+    this.chunkFinalization = this.chunkFinalization.then(async () => {
+      const result = await dataReady;
+      if (result.error) throw result.error;
+      this.onChunkReady(result.chunkPayload);
+      this.enqueueUpload(result.chunkPayload);
+    });
+    this.chunkFinalization.catch((err) => {
+      if (!this.finalizationError) {
+        this.finalizationError = err;
+        this.onError(err);
+      }
+    });
+    return this.chunkFinalization;
   }
 
   /**
@@ -418,27 +457,29 @@ export class WebRecorder {
   /**
    * Stops consultation recording, flushes final chunk, and posts the final marker.
    */
-  async stopRecording() {
-    if (!this.isRecording) return;
+  stopRecording() {
+    if (this.stopPromise) return this.stopPromise;
+    if (!this.isRecording) return Promise.resolve();
     this.isRecording = false;
 
     const now = Date.now();
-    this.totalChunksExpected = this.currentSeq + 1;
+    this.stopPromise = (async () => {
+      try {
+        this.cutAndHandoverChunk(now, true);
+        this.totalChunksExpected = this.currentSeq;
+        this.stopLevelMeter();
+        await this.chunkFinalization;
 
-    // Cut final partial chunk
-    this.cutAndHandoverChunk(now, true);
-    this.stopLevelMeter();
-
-    // Wait for upload queue to drain
-    while (this.uploadQueue.length > 0 || this.isUploading) {
-      await new Promise((r) => setTimeout(r, 200));
-    }
-
-    // Send final marker to backend
-    await this.sendFinalMarker(this.totalChunksExpected);
-
-    // Release microphone tracks
-    this.cleanup();
+        // All recorder callbacks have enqueued their chunks before this check.
+        while (this.uploadQueue.length > 0 || this.isUploading) {
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        await this.sendFinalMarker(this.totalChunksExpected);
+      } finally {
+        this.cleanup();
+      }
+    })();
+    return this.stopPromise;
   }
 
   /**

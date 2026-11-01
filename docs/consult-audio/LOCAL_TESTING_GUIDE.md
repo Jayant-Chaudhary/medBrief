@@ -20,6 +20,8 @@ This runbook documents how to run local tests, verify each component across all 
 
 ## Phase 0: Discovery & Measurement Tools
 
+For the optional server-side Redis cache, see the setup and verification section at the end of this guide.
+
 ### 1. Dry-Run Measurement Tools
 These tools test provider integration contracts without making paid network calls or requiring active API keys.
 
@@ -204,3 +206,80 @@ In `server/.env`:
 - `STT_PROVIDER=local` $\rightarrow$ Uses local faster-whisper microservice (port 8001).
 - `STT_PROVIDER=sarvam` $\rightarrow$ Uses Sarvam AI cloud REST API (`SARVAM_API_KEY` required).
 - `STT_PROVIDER=fake` $\rightarrow$ Uses instant deterministic mock (zero network/GPU, ideal for unit tests).
+
+---
+
+## Optional server-side Redis audio cache
+
+Devices upload only to Node. Node uploads compressed bytes to private Supabase Storage, attempts the Redis write, then publishes the database transcription job. HTTP success requires durable storage and job publication; a Redis failure alone is safe to ignore. The worker uses Redis first and falls back to Storage. No new database migration or client upload setting is required.
+
+### Local setup
+
+From the repository root:
+
+```bash
+cd server
+npm ci
+docker compose -f docker-compose.redis.yml config
+docker compose -f docker-compose.redis.yml up -d --wait
+```
+
+Set these entries in `server/.env`, preserving the existing Supabase and authentication configuration:
+
+```dotenv
+CONSULT_AUDIO_CACHE_ENABLED=true
+REDIS_URL=redis://127.0.0.1:6379
+AUDIO_CACHE_TTL_SEC=1800
+REDIS_CONNECT_TIMEOUT_MS=500
+REDIS_COMMAND_TIMEOUT_MS=200
+REDIS_RECONNECT_MAX_DELAY_MS=5000
+REDIS_MAX_PENDING_COMMANDS=128
+REDIS_MAXMEMORY_MB=256
+```
+
+Start Node with `npm run dev`. Leave the configured STT provider unchanged. The Redis container publishes its port on loopback only, uses LRU eviction, and disables AOF/snapshots. It is a disposable cache; its restart must not lose the persistent Supabase audio. `REDIS_PORT` can override the local published port; also update `REDIS_URL` if changing it. Production requires a private Redis connection reachable from Node, rather than assuming localhost.
+
+Entries are binary compressed chunks, keyed only by session/device/sequence. A duplicate does not overwrite the entry or refresh its TTL. Successful transcript and completion writes delete the entry; transient processing failures retain it for retries; terminal failures remove it with Storage still available. Expired/evicted entries and Redis errors fall back to Storage. A failed cleanup does not retry a completed provider call.
+
+### Automated verification
+
+From `server/`:
+
+```bash
+npm test -- --runInBand src/tests/consultAudio/ --coverage=false
+RUN_REDIS_INTEGRATION=true REDIS_URL=redis://127.0.0.1:6379 npm test -- --runInBand src/tests/consultAudio/audioCache.integration.test.js --coverage=false
+npm test -- --runInBand --coverage=false
+```
+
+Without `RUN_REDIS_INTEGRATION=true`, the real Redis suite is explicitly skipped. It uses synthetic bytes and an isolated prefix, checks binary fidelity/NX/expiry/deletion/reconnection and a blocked-command deadline, and exercises ingest through the worker with real Redis and mocked Supabase/conversion. It does not contact Sarvam, Whisper or a live Supabase project. It never flushes unrelated keys.
+
+### Live Supabase smoke test and restart drill
+
+Use a synthetic test appointment/session and synthetic audio only. The existing fixtures have not been confirmed synthetic, so do not use them by default for this check.
+
+1. Enable the cache and, for a provider-independent test, temporarily set `STT_PROVIDER=fake` on the local backend. Create, consent, ready and start a synthetic consultation through the existing application/API. Obtain its scoped doctor token without putting it in logs or a committed file.
+2. Generate a synthetic 60-second mono WAV in a scratch directory, for example from the repo root:
+
+   ```bash
+   node -e 'const fs=require("node:fs"); const count=16000*60; const b=Buffer.alloc(44+count*2); b.write("RIFF",0); b.writeUInt32LE(b.length-8,4); b.write("WAVEfmt ",8); b.writeUInt32LE(16,16); b.writeUInt16LE(1,20); b.writeUInt16LE(1,22); b.writeUInt32LE(16000,24); b.writeUInt32LE(32000,28); b.writeUInt16LE(2,32); b.writeUInt16LE(16,34); b.write("data",36); b.writeUInt32LE(count*2,40); for(let i=0;i<count;i++) b.writeInt16LE(Math.round(6000*Math.sin(2*Math.PI*220*i/16000)),44+i*2); fs.writeFileSync("/tmp/medbrief-synthetic-cache.wav",b);'
+   ```
+
+3. Set shell variables `CONSULT_TEST_SESSION_ID` and `CONSULT_TEST_DOCTOR_TOKEN` from that synthetic session, then upload through Node:
+
+   ```bash
+   node tools/simulate-device/simulate.js --file=/tmp/medbrief-synthetic-cache.wav --device=doctor --session="$CONSULT_TEST_SESSION_ID" --token="$CONSULT_TEST_DOCTOR_TOKEN" --url=http://localhost:4000
+   ```
+
+4. In the private bucket and database, verify the object count, chunk rows and completed jobs. Worker success logs should contain `audioSource=redis` and `retrievalMs`; do not dump audio or transcript contents. Confirm processed cache keys are absent. Repeat the identical upload to verify no additional chunk/job is created.
+5. To guarantee pending jobs for a restart drill, set `TRANSCRIBE_WORKER_POLL_MS=60000`, restart Node, wait for its first empty polling iteration, and upload a fresh synthetic session within that interval. Restart Redis with `docker compose -f docker-compose.redis.yml restart redis` from `server/` before the next worker poll. The next processing pass should use `audioSource=storage` and finish successfully. Restore the poll setting afterward. If polling timing is uncertain, use the automated forced-miss test instead of claiming a restart result.
+6. Stop Redis with `docker compose -f docker-compose.redis.yml stop redis`; a new synthetic upload must still persist and process through Storage. Start it again with `docker compose -f docker-compose.redis.yml up -d --wait` and verify reconnection on a subsequent cache operation.
+7. Restore the previous provider and polling settings. Cache deletion does not delete the persistent Storage object; the existing retention policy remains separate.
+
+For latency comparison, record per-chunk retrieval source and `retrievalMs`, hit/miss counts, Storage download count and total processing time for equivalent synthetic inputs. Compare cache-enabled hits with cache-disabled Storage reads and report conversion/provider time separately. Do not claim an overall speedup from a Redis-only microbenchmark.
+
+### Rollback and troubleshooting
+
+- Set `CONSULT_AUDIO_CACHE_ENABLED=false` and restart Node to use the existing Storage-only path. Remaining cache keys expire naturally.
+- If Docker reports a missing socket or daemon, start Docker Desktop/the Docker engine and rerun the Compose command. Redis unavailability must not prevent Node from starting or durable uploads from succeeding.
+- Cache timeouts close the unhealthy connection and use a reconnect cooldown. An unusually slow remote Redis connection may require measured timeout adjustments in the config/env settings.
+- A retryable `503` during chunk ingest can indicate failed persistent metadata/job publication. Retrying the same session/device/sequence repairs a missing job without re-uploading its stored audio. Completed, failed and active jobs are not reset by upload retries.

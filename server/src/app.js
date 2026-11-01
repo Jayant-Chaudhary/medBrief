@@ -74,6 +74,7 @@ app.use(errorHandler);
 if (process.env.NODE_ENV !== 'test') {
   const { checkFfmpegInstalled } = require('./utils/audioConverter');
   const transcriptionWorker = require('./services/consultAudio/transcriptionWorker');
+  const audioCache = require('./services/consultAudio/audioCache.service');
 
   process.on('unhandledRejection', (reason) => {
     logger.error('unhandled promise rejection', { err: reason instanceof Error ? reason : new Error(String(reason)) });
@@ -86,6 +87,7 @@ if (process.env.NODE_ENV !== 'test') {
   const gracefulShutdown = () => {
     logger.info('Shutting down server, stopping background workers...');
     transcriptionWorker.stopWorker();
+    audioCache.close();
     server.close(() => {
       logger.info('HTTP server closed');
       process.exit(0);
@@ -106,6 +108,7 @@ if (process.env.NODE_ENV !== 'test') {
     await checkFfmpegInstalled();
 
     // Start background transcription worker
+    void audioCache.start();
     transcriptionWorker.startWorker();
   });
 }

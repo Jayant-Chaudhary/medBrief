@@ -11,6 +11,10 @@ const { spawn, execFile } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
 const logger = require('./logger');
 
+function conversionError(code) {
+  return Object.assign(new Error(code), { code });
+}
+
 /**
  * Checks if ffmpeg is available and executable.
  * @returns {Promise<boolean>}
@@ -28,7 +32,7 @@ async function checkFfmpegInstalled() {
       if (err) {
         logger.error('ffmpeg binary failed health check', {
           scope: 'audio-converter',
-          error: err.message,
+          errorCode: 'ERR_FFMPEG_UNAVAILABLE',
         });
         return resolve(false);
       }
@@ -51,11 +55,11 @@ async function checkFfmpegInstalled() {
 function convertTo16kHzMonoWav(inputBuffer, inputFormatHint = null) {
   return new Promise((resolve, reject) => {
     if (!inputBuffer || !Buffer.isBuffer(inputBuffer) || inputBuffer.length === 0) {
-      return reject(new Error('Invalid or empty audio buffer provided for conversion'));
+      return reject(conversionError('ERR_AUDIO_INPUT_INVALID'));
     }
 
     if (!ffmpegPath) {
-      return reject(new Error('ffmpeg binary is not available'));
+      return reject(conversionError('ERR_FFMPEG_UNAVAILABLE'));
     }
 
     const args = [
@@ -77,37 +81,52 @@ function convertTo16kHzMonoWav(inputBuffer, inputFormatHint = null) {
       'pipe:1'
     );
 
-    const proc = spawn(ffmpegPath, args);
+    let proc;
+    try {
+      proc = spawn(ffmpegPath, args);
+    } catch (_err) {
+      return reject(conversionError('ERR_FFMPEG_START'));
+    }
     const stdoutChunks = [];
-    const stderrChunks = [];
+    let settled = false;
+    const fail = (code) => {
+      if (settled) return;
+      settled = true;
+      stdoutChunks.length = 0;
+      proc.kill();
+      reject(conversionError(code));
+    };
 
-    proc.stdout.on('data', (chunk) => stdoutChunks.push(chunk));
-    proc.stderr.on('data', (chunk) => stderrChunks.push(chunk));
-
-    proc.on('error', (err) => {
-      reject(new Error(`FFmpeg process spawn error: ${err.message}`));
+    proc.stdout.on('data', (chunk) => {
+      if (!settled) stdoutChunks.push(chunk);
     });
+    // Drain diagnostics without retaining or exposing content from the input.
+    proc.stderr.resume();
+
+    proc.on('error', () => fail('ERR_FFMPEG_START'));
+    // ffmpeg can reject a malformed chunk before stdin finishes writing. EPIPE
+    // is asynchronous: try/catch around write() cannot prevent a Node crash.
+    proc.stdin.on('error', () => fail('ERR_AUDIO_CONVERSION'));
 
     proc.on('close', (code) => {
+      if (settled) return;
       if (code !== 0) {
-        const errDetails = Buffer.concat(stderrChunks).toString('utf-8').trim();
-        return reject(
-          new Error(`FFmpeg conversion failed (exit ${code}): ${errDetails || 'unknown'}`)
-        );
+        return fail('ERR_AUDIO_CONVERSION');
       }
       const outputBuffer = Buffer.concat(stdoutChunks);
+      stdoutChunks.length = 0;
       if (outputBuffer.length === 0) {
-        return reject(new Error('FFmpeg conversion produced 0 output bytes'));
+        return fail('ERR_AUDIO_OUTPUT_EMPTY');
       }
+      settled = true;
       resolve(outputBuffer);
     });
 
     // Feed input to ffmpeg stdin
     try {
-      proc.stdin.write(inputBuffer);
-      proc.stdin.end();
-    } catch (writeErr) {
-      reject(new Error(`Failed to write to ffmpeg stdin: ${writeErr.message}`));
+      proc.stdin.end(inputBuffer);
+    } catch (_err) {
+      fail('ERR_AUDIO_CONVERSION');
     }
   });
 }

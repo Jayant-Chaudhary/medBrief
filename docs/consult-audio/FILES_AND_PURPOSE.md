@@ -188,3 +188,26 @@ This document maintains an up-to-date catalog of every file created for the cons
 - **What it is:** Vitest unit tests for the audio chunker.
 - **Why it exists:** Verifies that pause cuts, 25-second hard caps, silence detection, and loudness byte calculations execute with 100% mathematical accuracy on synthetic test arrays.
 
+### `client/src/tests/webRecorder.test.js`
+- **What it is:** Asynchronous recorder and HTTP-ordering regression tests with synthetic recorder events.
+- **Why it exists:** Protects per-recorder buffers, final data flushing, sequence order, repeated Stop calls and error handling at chunk boundaries.
+
+### `server/src/tests/consultAudio/audioConverter.test.js`
+- **What it is:** Real in-memory ffmpeg conversion tests using synthetic data.
+- **Why it exists:** Verifies resampling and controlled failure for malformed input, including the stdin pipe error that could crash Node.
+
+### `docs/consult-audio/CHUNK_BOUNDARY_FIX_WALKTHROUGH.md`
+- **What it is:** Chunk boundary investigation, fix, test evidence and remaining manual verification.
+
+## 10. Optional server-side Redis audio cache (Phase 3 enhancement)
+
+- `server/docker-compose.redis.yml`: local loopback-only Redis with bounded memory, LRU eviction and disk persistence disabled.
+- `server/src/config/redisClient.js`: shared optional connection, binary reply mapping, bounded handshake/commands, reconnect cooldown and shutdown. Redis errors fall back to persistent Storage without exposing raw messages.
+- `server/src/services/consultAudio/audioCache.service.js`: original compressed binary chunks, namespaced by session/device/sequence; atomic expiry without refreshing duplicate entries; validated reads and explicit deletion.
+- `server/src/services/consultAudio/chunkIngest.service.js`: Node uploads the durable copy to Supabase, attempts cache population before publishing the database job, and repairs absent jobs when an upload is retried.
+- `server/src/services/consultAudio/transcriptionWorker.js`: cache-first retrieval, Storage fallback, checked completion and cache cleanup; reports retrieval source and timings without audio/transcript content.
+- `server/src/tests/consultAudio/audioCache.test.js`: binary validation, key isolation, optional-cache failures and a real unresponsive TCP handshake test.
+- `server/src/tests/consultAudio/audioCache.integration.test.js`: opt-in real Redis tests for binary fidelity, expiry, reconnection, command deadlines and ingest-to-worker hit/miss paths with synthetic persistence mocks.
+- `docs/consult-audio/REDIS_CACHE_IMPLEMENTATION_PLAN.md`: approved design, scope and acceptance criteria.
+- `docs/consult-audio/REDIS_CACHE_WALKTHROUGH.md`: executed verification and remaining deployment/manual checks.
+

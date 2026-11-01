@@ -9,8 +9,39 @@ const supabaseAdmin = require('../../config/supabaseAdminClient');
 const config = require('../../config/consultAudio.config');
 const { STATES } = require('./stateMachine');
 const logger = require('../../utils/logger');
+const audioCache = require('./audioCache.service');
 
 const STORAGE_BUCKET = 'consult-audio';
+
+function ingestError(code) {
+  const err = new Error('Audio chunk could not be saved; retry upload');
+  err.code = code;
+  err.status = 503;
+  return err;
+}
+
+async function publishJob(chunk, repair = false) {
+  if (chunk.silent || ['silent', 'transcribed', 'failed', 'transcribing'].includes(chunk.status)) return;
+  try {
+    if (repair) {
+      // Preserve jobs made by older versions, whose IDs were random UUIDs.
+      const { data, error } = await supabaseAdmin.from('transcription_jobs')
+        .select('id').eq('chunk_id', chunk.id).limit(1);
+      if (error) throw ingestError('ERR_CHUNK_JOB_LOOKUP');
+      if (data?.length) return;
+    }
+    // The existing primary key makes concurrent retry repairs idempotent.
+    const { error } = await supabaseAdmin.from('transcription_jobs').insert({
+      id: chunk.id,
+      chunk_id: chunk.id,
+      status: 'queued',
+      attempts: 0,
+    });
+    if (error && error.code !== '23505') throw ingestError('ERR_CHUNK_JOB_PUBLISH');
+  } catch (_err) {
+    throw ingestError('ERR_CHUNK_JOB_PUBLISH');
+  }
+}
 
 /**
  * Maps audio MIME types to file extensions.
@@ -76,7 +107,7 @@ async function ingestChunk({
   }
 
   // 3. Idempotency Check on (session_id, device, seq)
-  const { data: existingChunk } = await supabaseAdmin
+  const { data: existingChunk, error: lookupErr } = await supabaseAdmin
     .from('audio_chunks')
     .select('id, seq, status, silent, storage_path')
     .eq('session_id', sessionId)
@@ -84,7 +115,10 @@ async function ingestChunk({
     .eq('seq', parsedSeq)
     .maybeSingle();
 
+  if (lookupErr) throw ingestError('ERR_CHUNK_LOOKUP');
+
   if (existingChunk) {
+    await publishJob(existingChunk, true);
     logger.debug('Duplicate chunk upload received (idempotent)', {
       scope: 'consult-ingest',
       sessionId,
@@ -122,48 +156,65 @@ async function ingestChunk({
     const ext = getExtensionFromCodec(codec);
     storagePath = `consults/${sessionId}/${device}/${parsedSeq}.${ext}`;
 
-    const { error: uploadErr } = await supabaseAdmin.storage
-      .from(STORAGE_BUCKET)
-      .upload(storagePath, audioBuffer, {
-        contentType: codec,
-        upsert: true,
-      });
-
-    if (uploadErr) {
-      throw new Error(`Failed to store chunk in Supabase Storage: ${uploadErr.message}`);
+    try {
+      const { error: uploadErr } = await supabaseAdmin.storage
+        .from(STORAGE_BUCKET)
+        .upload(storagePath, audioBuffer, {
+          contentType: codec,
+          upsert: true,
+        });
+      if (uploadErr) throw ingestError('ERR_CHUNK_STORAGE');
+    } catch (_err) {
+      throw ingestError('ERR_CHUNK_STORAGE');
     }
+
+    // Finish cache population before a database worker can claim the new job.
+    // This cache is optional; persistent upload remains the acknowledgement gate.
+    await audioCache.put({ sessionId, device, seq: parsedSeq }, audioBuffer);
   }
 
   // 5. Insert audio_chunks metadata row
-  const { data: insertedChunk, error: insErr } = await supabaseAdmin
-    .from('audio_chunks')
-    .insert({
-      session_id: sessionId,
-      device,
-      seq: parsedSeq,
-      start_ms: parsedStartMs,
-      duration_ms: parsedDurationMs,
-      avg_dbfs: parsedDbfs,
-      codec,
-      size_bytes: sizeBytes,
-      silent: silentChunk,
-      storage_path: storagePath,
-      status,
-      is_late: isLate,
-    })
-    .select()
-    .single();
+  let insertedChunk;
+  let insErr;
+  try {
+    ({ data: insertedChunk, error: insErr } = await supabaseAdmin
+      .from('audio_chunks')
+      .insert({
+        session_id: sessionId,
+        device,
+        seq: parsedSeq,
+        start_ms: parsedStartMs,
+        duration_ms: parsedDurationMs,
+        avg_dbfs: parsedDbfs,
+        codec,
+        size_bytes: sizeBytes,
+        silent: silentChunk,
+        storage_path: storagePath,
+        status,
+        is_late: isLate,
+      })
+      .select()
+      .single());
+  } catch (_err) {
+    await audioCache.remove({ sessionId, device, seq: parsedSeq });
+    throw ingestError('ERR_CHUNK_METADATA');
+  }
+
+  if (!insertedChunk && !insErr) insErr = { code: 'ERR_CHUNK_METADATA' };
 
   if (insErr) {
     // If concurrent request inserted the exact same seq, return idempotent duplicate
     if (insErr.code === '23505') {
       const { data: retryChunk } = await supabaseAdmin
         .from('audio_chunks')
-        .select('id, seq, status')
+        .select('id, seq, status, silent, storage_path')
         .eq('session_id', sessionId)
         .eq('device', device)
         .eq('seq', parsedSeq)
         .single();
+
+      if (!retryChunk) throw ingestError('ERR_CHUNK_LOOKUP');
+      await publishJob(retryChunk, true);
 
       return {
         ok: true,
@@ -174,24 +225,13 @@ async function ingestChunk({
         sessionState: currentStatus,
       };
     }
-    throw new Error(`Failed to insert audio_chunks record: ${insErr.message}`);
+    await audioCache.remove({ sessionId, device, seq: parsedSeq });
+    throw ingestError('ERR_CHUNK_METADATA');
   }
 
   // 6. Enqueue transcription job for audio chunks
   if (!silentChunk && insertedChunk) {
-    try {
-      await supabaseAdmin.from('transcription_jobs').insert({
-        chunk_id: insertedChunk.id,
-        status: 'queued',
-        attempts: 0,
-      });
-    } catch (enqueueErr) {
-      logger.warn('Failed to enqueue transcription job', {
-        scope: 'consult-ingest',
-        chunkId: insertedChunk.id,
-        errorCode: enqueueErr.code || 'ENQUEUE_ERR',
-      });
-    }
+    await publishJob(insertedChunk);
   }
 
   logger.info('Audio chunk received and stored', {

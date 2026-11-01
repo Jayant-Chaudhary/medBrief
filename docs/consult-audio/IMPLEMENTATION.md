@@ -247,6 +247,8 @@ Each phase lists: **Goal, Tasks, Do not, Acceptance.**
 
 **Goal:** every received chunk becomes segments.
 
+**Approved Redis cache enhancement (2026-11-01):** devices still upload only to Node. Node saves compressed audio to private Supabase Storage, attempts a temporary Redis cache write, then publishes the existing database job. The worker reads cached bytes first and downloads from Storage only on a miss or Redis failure. Redis is optional and disposable, with bounded connection/command deadlines, no disk persistence, deletion after successful transcript/job completion, and TTL cleanup. Supabase remains the durable audio source; Postgres retains metadata, jobs and transcripts. See `REDIS_CACHE_IMPLEMENTATION_PLAN.md`, `REDIS_CACHE_WALKTHROUGH.md` and the Redis section in `LOCAL_TESTING_GUIDE.md`. No provider API, client upload contract or later phase is changed.
+
 **Tasks**
 - Migration for `transcription_jobs` and `segments`.
 - Job claiming that is safe with several workers (for example a Postgres function using `FOR UPDATE SKIP LOCKED`, or the repo's database client if it supports it).

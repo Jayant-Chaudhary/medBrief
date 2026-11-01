@@ -14,8 +14,37 @@ const config = require('../../config/consultAudio.config');
 const { getProvider } = require('./stt/providerFactory');
 const { convertTo16kHzMonoWav } = require('../../utils/audioConverter');
 const logger = require('../../utils/logger');
+const audioCache = require('./audioCache.service');
 
 const STORAGE_BUCKET = 'consult-audio';
+const SAFE_ERROR_CODES = new Set([
+  'ERR_FILE_NOT_FOUND', 'ERR_LOCAL_STT_UNAVAILABLE', 'ERR_LOCAL_STT_FAILED',
+  'ERR_SARVAM_KEY_MISSING', 'ERR_SARVAM_NETWORK', 'ERR_SARVAM_RATE_LIMITED',
+  'ERR_SARVAM_API_ERROR', 'ERR_STT_SIMULATED_FAILURE', 'ERR_CHUNK_STORAGE_READ',
+  'ERR_SEGMENTS_SAVE', 'ERR_CHUNK_STATUS_SAVE', 'ERR_JOB_STATUS_SAVE',
+  'ERR_AUDIO_INPUT_INVALID', 'ERR_FFMPEG_UNAVAILABLE', 'ERR_FFMPEG_START',
+  'ERR_AUDIO_CONVERSION', 'ERR_AUDIO_OUTPUT_EMPTY',
+]);
+
+function workerError(code) {
+  return Object.assign(new Error(code), { code });
+}
+
+async function checkedUpdate(table, id, payload, code) {
+  const { error } = await supabaseAdmin.from(table).update(payload).eq('id', id);
+  if (error) throw workerError(code);
+}
+
+async function removeCachedAudio(chunk) {
+  try {
+    await audioCache.remove(chunk);
+  } catch (_err) {
+    // Cleanup is best effort. TTL must not turn a completed job into a retry.
+    logger.warn('Audio cache cleanup deferred to expiry', {
+      scope: 'transcription-worker', chunkId: chunk.id, errorCode: 'ERR_AUDIO_CACHE_CLEANUP',
+    });
+  }
+}
 
 let isRunning = false;
 let workerTimer = null;
@@ -159,7 +188,7 @@ async function processJob(job, overrideProvider = null) {
   // 1. Fetch chunk metadata
   const { data: chunk, error: chunkErr } = await supabaseAdmin
     .from('audio_chunks')
-    .select('id, session_id, device, seq, start_ms, duration_ms, storage_path, silent, status')
+    .select('id, session_id, device, seq, start_ms, duration_ms, storage_path, silent, status, size_bytes')
     .eq('id', job.chunk_id)
     .single();
 
@@ -182,34 +211,34 @@ async function processJob(job, overrideProvider = null) {
     .eq('device', chunk.device)
     .maybeSingle();
 
-  // Update chunk status to transcribing
-  await supabaseAdmin
-    .from('audio_chunks')
-    .update({ status: 'transcribing' })
-    .eq('id', chunk.id);
-
-  // 3. Handle silent chunks directly without audio conversion or STT
-  if (chunk.silent || !chunk.storage_path) {
-    await markJobCompleted(job, chunk.id);
-    await supabaseAdmin
-      .from('audio_chunks')
-      .update({ status: 'silent' })
-      .eq('id', chunk.id);
-
-    return { ok: true, segmentsCount: 0, silent: true };
-  }
-
   try {
-    // 4. Download audio bytes from Supabase Storage
-    const { data: fileData, error: downloadErr } = await supabaseAdmin.storage
-      .from(STORAGE_BUCKET)
-      .download(chunk.storage_path);
+    await checkedUpdate('audio_chunks', chunk.id, { status: 'transcribing' }, 'ERR_CHUNK_STATUS_SAVE');
 
-    if (downloadErr || !fileData) {
-      throw new Error(`Storage download failed: ${downloadErr?.message || 'Empty file data'}`);
+    // Only explicitly silent chunks bypass STT. Missing audio is a failure.
+    if (chunk.silent) {
+      await checkedUpdate('audio_chunks', chunk.id, { status: 'silent' }, 'ERR_CHUNK_STATUS_SAVE');
+      await markJobCompleted(job);
+      return { ok: true, segmentsCount: 0, silent: true };
     }
 
-    const rawBuffer = Buffer.from(await fileData.arrayBuffer());
+    // 4. Read compressed bytes from Redis first; Storage is the durable fallback.
+    const retrievalStart = Date.now();
+    let rawBuffer;
+    try {
+      rawBuffer = await audioCache.get(chunk);
+    } catch (_err) {
+      rawBuffer = null;
+    }
+    const audioSource = rawBuffer ? 'redis' : 'storage';
+    if (!rawBuffer) {
+      if (!chunk.storage_path) throw workerError('ERR_CHUNK_STORAGE_READ');
+      const { data: fileData, error: downloadErr } = await supabaseAdmin.storage
+        .from(STORAGE_BUCKET)
+        .download(chunk.storage_path);
+      if (downloadErr || !fileData) throw workerError('ERR_CHUNK_STORAGE_READ');
+      rawBuffer = Buffer.from(await fileData.arrayBuffer());
+    }
+    const retrievalMs = Date.now() - retrievalStart;
 
     // 5. Convert to 16 kHz mono WAV in-memory
     const wavBuffer = await convertTo16kHzMonoWav(rawBuffer);
@@ -268,17 +297,15 @@ async function processJob(job, overrideProvider = null) {
           .insert(segmentRows);
 
         if (insSegErr) {
-          throw new Error(`Failed to insert segments: ${insSegErr.message}`);
+          throw workerError('ERR_SEGMENTS_SAVE');
         }
       }
     }
 
     // 9. Mark Job & Chunk completed
-    await markJobCompleted(job, chunk.id);
-    await supabaseAdmin
-      .from('audio_chunks')
-      .update({ status: 'transcribed' })
-      .eq('id', chunk.id);
+    await checkedUpdate('audio_chunks', chunk.id, { status: 'transcribed' }, 'ERR_CHUNK_STATUS_SAVE');
+    await markJobCompleted(job);
+    await removeCachedAudio(chunk);
 
     const processingMs = Date.now() - startTime;
     logger.info('Chunk successfully transcribed', {
@@ -290,6 +317,8 @@ async function processJob(job, overrideProvider = null) {
       seq: chunk.seq,
       segmentsCount: segments.length,
       processingMs,
+      audioSource,
+      retrievalMs,
     });
 
     return {
@@ -298,19 +327,21 @@ async function processJob(job, overrideProvider = null) {
       chunkId: chunk.id,
       segmentsCount: segments.length,
       processingMs,
+      audioSource,
+      retrievalMs,
     };
   } catch (err) {
-    const errorCode = err.code || 'ERR_TRANSCRIBE_PROCESS';
+    const errorCode = SAFE_ERROR_CODES.has(err.code) ? err.code : 'ERR_TRANSCRIBE_PROCESS';
     logger.error('Transcription job attempt failed', {
       scope: 'transcription-worker',
       jobId: job.id,
       chunkId: chunk.id,
       attempt: job.attempts,
       errorCode,
-      errorMessage: err.message,
     });
 
-    await handleJobError(job, chunk.id, errorCode);
+    const terminal = await handleJobError(job, chunk.id, errorCode);
+    if (terminal) await removeCachedAudio(chunk);
     return { ok: false, error: errorCode };
   }
 }
@@ -318,16 +349,13 @@ async function processJob(job, overrideProvider = null) {
 /**
  * Marks job and chunk completed.
  */
-async function markJobCompleted(job, chunkId) {
+async function markJobCompleted(job) {
   const nowIso = new Date().toISOString();
-  await supabaseAdmin
-    .from('transcription_jobs')
-    .update({
-      status: 'completed',
-      locked_at: null,
-      updated_at: nowIso,
-    })
-    .eq('id', job.id);
+  await checkedUpdate('transcription_jobs', job.id, {
+    status: 'completed',
+    locked_at: null,
+    updated_at: nowIso,
+  }, 'ERR_JOB_STATUS_SAVE');
 }
 
 /**
@@ -339,40 +367,30 @@ async function handleJobError(job, chunkId, errorCode) {
 
   if (job.attempts >= maxAttempts) {
     // Mark failed permanently
-    await supabaseAdmin
-      .from('transcription_jobs')
-      .update({
-        status: 'failed',
-        last_error_code: errorCode,
-        locked_at: null,
-        updated_at: nowIso,
-      })
-      .eq('id', job.id);
+    await checkedUpdate('transcription_jobs', job.id, {
+      status: 'failed',
+      last_error_code: errorCode,
+      locked_at: null,
+      updated_at: nowIso,
+    }, 'ERR_JOB_STATUS_SAVE');
 
-    await supabaseAdmin
-      .from('audio_chunks')
-      .update({ status: 'failed' })
-      .eq('id', chunkId);
+    await checkedUpdate('audio_chunks', chunkId, { status: 'failed' }, 'ERR_CHUNK_STATUS_SAVE');
+    return true;
   } else {
     // Requeue with exponential backoff
     const backoffMs = Math.pow(2, job.attempts) * 1000;
     const nextAttemptAt = new Date(Date.now() + backoffMs).toISOString();
 
-    await supabaseAdmin
-      .from('transcription_jobs')
-      .update({
-        status: 'queued',
-        next_attempt_at: nextAttemptAt,
-        last_error_code: errorCode,
-        locked_at: null,
-        updated_at: nowIso,
-      })
-      .eq('id', job.id);
+    await checkedUpdate('transcription_jobs', job.id, {
+      status: 'queued',
+      next_attempt_at: nextAttemptAt,
+      last_error_code: errorCode,
+      locked_at: null,
+      updated_at: nowIso,
+    }, 'ERR_JOB_STATUS_SAVE');
 
-    await supabaseAdmin
-      .from('audio_chunks')
-      .update({ status: 'queued' })
-      .eq('id', chunkId);
+    await checkedUpdate('audio_chunks', chunkId, { status: 'queued' }, 'ERR_CHUNK_STATUS_SAVE');
+    return false;
   }
 }
 

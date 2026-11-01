@@ -7,6 +7,14 @@
 
 const env = process.env;
 
+function positiveInteger(name, fallback) {
+  const value = Number(env[name] ?? fallback);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`Invalid positive integer configuration: ${name}`);
+  }
+  return value;
+}
+
 module.exports = {
   // Audio Chunking
   chunkMinSec: Number(env.CHUNK_MIN_SEC || 15),
@@ -42,6 +50,15 @@ module.exports = {
   transcribeMaxAttempts: Number(env.TRANSCRIBE_MAX_ATTEMPTS || 3),
   transcribeWorkerPollMs: Number(env.TRANSCRIBE_WORKER_POLL_MS || 1000),
   transcribeJobTimeoutMs: Number(env.TRANSCRIBE_JOB_TIMEOUT_MS || 30000),
+
+  // Optional, disposable audio cache. Supabase remains the durable source.
+  audioCacheEnabled: env.CONSULT_AUDIO_CACHE_ENABLED === 'true',
+  redisUrl: env.REDIS_URL || 'redis://127.0.0.1:6379',
+  audioCacheTtlSec: positiveInteger('AUDIO_CACHE_TTL_SEC', 1800),
+  redisConnectTimeoutMs: positiveInteger('REDIS_CONNECT_TIMEOUT_MS', 500),
+  redisCommandTimeoutMs: positiveInteger('REDIS_COMMAND_TIMEOUT_MS', 200),
+  redisReconnectMaxDelayMs: positiveInteger('REDIS_RECONNECT_MAX_DELAY_MS', 5000),
+  redisMaxPendingCommands: positiveInteger('REDIS_MAX_PENDING_COMMANDS', 128),
 
   // Deduplication & Crosstalk Handling
   dedupeMinOverlap: Number(env.DEDUPE_MIN_OVERLAP || 0.5),
