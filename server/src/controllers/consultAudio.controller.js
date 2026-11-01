@@ -7,6 +7,7 @@
 
 const sessionService = require('../services/consultAudio/session.service');
 const chunkIngestService = require('../services/consultAudio/chunkIngest.service');
+const gapService = require('../services/consultAudio/gap.service');
 const { verifySessionToken } = require('../services/consultAudio/token.service');
 const { convertTo16kHzMonoWav } = require('../utils/audioConverter');
 const providerFactory = require('../services/consultAudio/stt/providerFactory');
@@ -200,7 +201,8 @@ async function recordCaptureStarted(req, res, next) {
 async function getSessionState(req, res, next) {
   try {
     const sessionId = req.params.id;
-    const state = await sessionService.getSessionState(sessionId);
+    const state = await sessionService.getSessionState(sessionId, req.sessionToken?.userId || req.user?.id);
+    res.set('Cache-Control', 'no-store');
     res.status(200).json(state);
   } catch (err) {
     next(err);
@@ -348,6 +350,52 @@ async function testAudioStt(req, res, next) {
   }
 }
 
+/**
+ * POST /api/consults/:id/devices/:device/gaps
+ * Device reports an explicit capture interruption gap.
+ */
+async function recordDeviceGap(req, res, next) {
+  try {
+    const { id: sessionId, device } = req.params;
+    const tokenDevice = req.sessionToken?.device;
+    if (tokenDevice && tokenDevice !== device) {
+      return res.status(403).json({ error: 'Device does not match scoped token device' });
+    }
+
+    const gapId = req.body.gap_id || req.body.gapId;
+    const startMs = req.body.start_ms !== undefined ? req.body.start_ms : req.body.startMs;
+    const durationMs = req.body.duration_ms !== undefined ? req.body.duration_ms : req.body.durationMs;
+    const reasonCode = req.body.reason_code || req.body.reasonCode;
+
+    const result = await gapService.recordGap({
+      sessionId,
+      device,
+      gapId,
+      startMs,
+      durationMs,
+      reasonCode,
+    });
+
+    res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/consults/:id/devices/:device/gaps
+ * Returns capture gaps for a consultation device.
+ */
+async function getDeviceGaps(req, res, next) {
+  try {
+    const { id: sessionId, device } = req.params;
+    const gaps = await gapService.getGaps({ sessionId, device });
+    res.status(200).json({ ok: true, gaps });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createSession,
   joinSession,
@@ -362,5 +410,7 @@ module.exports = {
   getSessionByAppointment,
   uploadChunk,
   recordFinalMarker,
+  recordDeviceGap,
+  getDeviceGaps,
   testAudioStt,
 };

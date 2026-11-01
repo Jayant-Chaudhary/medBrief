@@ -1,6 +1,6 @@
 # Phase 5: Patient Android recorder
 
-Status: proposed; awaiting approval before source-code changes.
+Status: approved by the developer and implemented in the working tree. Automated checks are recorded in `PHASE_5_WALKTHROUGH.md`; native build and phone acceptance remain pending. See `PHASE_5_INFRA_READINESS.md` for the audit performed before continuing the existing draft.
 
 This plan implements only Phase 5 of `IMPLEMENTATION.md`. The existing doctor recorder and Node transcription worker remain the other ends of the pipeline. The recent doctor chunk-boundary fix and Redis work are preserved.
 
@@ -19,7 +19,7 @@ Audio flow remains phone → HTTPS Node endpoint → private Supabase Storage an
 - Chunk identity is `(session_id, device, seq)`. Successful ingestion acknowledges private Storage and metadata persistence before the client may delete its copy.
 - There is no persisted interruption-gap contract. An empty upload is currently treated as silence, which cannot truthfully represent a microphone interruption.
 - Patient join currently overwrites `patient_id` when consuming a code and does not check that the signed-in patient matches the appointment's patient. Add an ownership check and conditional single-use consumption before exposing the mobile join flow.
-- Installed tooling checked: Flutter 3.47.8, Dart 3.13.7; existing Kotlin 2.2.20 and Gradle 8.14. `adb devices -l` returned no attached devices. No Phase 5 tests have been run or claimed yet.
+- Installed tooling checked at planning time: Flutter 3.47.8, Dart 3.13.7; existing Kotlin 2.2.20 and Gradle 8.14. `adb devices -l` returned no attached devices. Executed implementation checks are now recorded separately in `PHASE_5_WALKTHROUGH.md`.
 
 ## Dependencies and compatibility
 

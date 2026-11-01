@@ -120,4 +120,28 @@ describe('audioChunker - Pure Function Boundary & Silence Evaluator', () => {
     expect(activeLoudness.rms).toBeGreaterThan(0.9);
     expect(activeLoudness.dbfs).toBeGreaterThan(-5); // Near 0 dBFS
   });
+
+  describe('Shared Cross-Platform Fixtures (chunker-cases.json)', () => {
+    const fixture = require('../../../tools/simulate-device/fixtures/chunker-cases.json');
+
+    fixture.boundaryCases.forEach((tc) => {
+      it(`boundary: ${tc.name}`, () => {
+        const result = evaluateChunkBoundary({
+          samples: tc.samples,
+          chunkStartMs: tc.chunkStartMs,
+          currentMs: tc.currentMs,
+        });
+        expect(result.shouldCut).toBe(tc.expected.shouldCut);
+        expect(result.reason).toBe(tc.expected.reason);
+        expect(result.cutMs).toBe(tc.expected.cutMs);
+      });
+    });
+
+    fixture.silenceCases.forEach((tc) => {
+      it(`silence: ${tc.name}`, () => {
+        const isSilent = isChunkSilent(tc.samples, tc.silenceDbfs);
+        expect(isSilent).toBe(tc.expectedSilent);
+      });
+    });
+  });
 });

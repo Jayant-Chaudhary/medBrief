@@ -25,6 +25,7 @@ class ApiClient {
        _client = client ?? http.Client();
 
   final String _baseUrl;
+  String get baseUrl => _baseUrl;
   final String? Function() accessToken;
   final http.Client _client;
 
@@ -33,8 +34,11 @@ class ApiClient {
     String method = 'GET',
     Map<String, dynamic>? body,
     bool authenticated = true,
+    String? bearerToken,
+    Map<String, String>? headers,
+    Duration timeout = const Duration(seconds: 25),
   }) async {
-    final token = authenticated ? accessToken() : null;
+    final token = authenticated ? (bearerToken ?? accessToken()) : null;
     if (authenticated && token == null) {
       throw const AppException('Please sign in again.', status: 401);
     }
@@ -42,11 +46,45 @@ class ApiClient {
       final request = http.Request(method, Uri.parse('$_baseUrl$path'));
       request.headers['Content-Type'] = 'application/json';
       if (token != null) request.headers['Authorization'] = 'Bearer $token';
+      if (headers != null) request.headers.addAll(headers);
       if (body != null) request.body = jsonEncode(body);
       final response = await _client
           .send(request)
           .then(http.Response.fromStream)
-          .timeout(const Duration(seconds: 25));
+          .timeout(timeout);
+      return _decodeResponse(response);
+    } on TimeoutException {
+      throw const AppException(
+        'The connection took too long. Please try again.',
+      );
+    } on SocketException {
+      throw const AppException('Check your internet connection and try again.');
+    } on http.ClientException {
+      throw const AppException('Could not connect. Please try again.');
+    }
+  }
+
+  Future<dynamic> uploadBytes(
+    String path, {
+    required List<int> bytes,
+    Map<String, String>? headers,
+    String? bearerToken,
+    bool authenticated = true,
+    Duration timeout = const Duration(seconds: 45),
+  }) async {
+    final token = authenticated ? (bearerToken ?? accessToken()) : null;
+    if (authenticated && token == null) {
+      throw const AppException('Please sign in again.', status: 401);
+    }
+    try {
+      final request = http.Request('POST', Uri.parse('$_baseUrl$path'));
+      if (token != null) request.headers['Authorization'] = 'Bearer $token';
+      if (headers != null) request.headers.addAll(headers);
+      request.bodyBytes = bytes;
+      final response = await _client
+          .send(request)
+          .then(http.Response.fromStream)
+          .timeout(timeout);
       return _decodeResponse(response);
     } on TimeoutException {
       throw const AppException(
@@ -74,16 +112,14 @@ class ApiClient {
       throw const AppException('Please sign in again.', status: 401);
     }
     try {
-      final request = http.MultipartRequest('POST', Uri.parse('$_baseUrl$path'));
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$_baseUrl$path'),
+      );
       if (token != null) request.headers['Authorization'] = 'Bearer $token';
       if (fields != null) request.fields.addAll(fields);
       request.files.add(
-        http.MultipartFile.fromBytes(
-          fieldName,
-          bytes,
-          filename: filename,
-          contentType: contentType == null ? null : MediaType.parse(contentType),
-        ),
+        http.MultipartFile.fromBytes(fieldName, bytes, filename: filename),
       );
       final response = await _client
           .send(request)
@@ -106,9 +142,7 @@ class ApiClient {
     try {
       payload = response.body.isEmpty ? null : jsonDecode(response.body);
     } on FormatException {
-      throw const AppException(
-        'The service returned an unreadable response.',
-      );
+      throw const AppException('The service returned an unreadable response.');
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       // Do not display backend internals or submitted identifiers.

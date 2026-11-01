@@ -106,3 +106,30 @@ android/            standard Flutter Android host
 Reference: [Supabase Flutter password sign-in](https://supabase.com/docs/reference/dart/auth-signinwithpassword),
 [custom session storage](https://pub.dev/documentation/supabase_flutter/latest/),
 [Flutter Android setup](https://docs.flutter.dev/platform-integration/android/setup).
+
+
+## Patient consultation recording (Phase 5)
+
+The Home/account consultation entry joins a doctor-created room using the same
+patient account as the appointment. Complete consent, permissions and the local
+mic check, then wait for the doctor to start. The Android foreground task owns
+recording and transfers; returning to another page does not dispose capture.
+Pending files offer resume or explicit deletion with missing audio flagged.
+
+The app sends AAC chunks to Node, which persists them to private Supabase Storage.
+It never connects directly to Redis or uploads audio through the Supabase SDK.
+Successful acknowledgements remove local files. Pending audio has a configurable
+two-hour retention period while the app runs, with cleanup again at next launch.
+Recovery resumes transfers without automatically activating the microphone.
+
+Copy the nonsecret settings from `config.example.json` into local `config.json`.
+Mobile chunk lengths are in milliseconds; match the server's seconds settings.
+`API_BASE_URL` must be reachable from the phone (USB: `adb reverse tcp:4000 tcp:4000`
+and `http://127.0.0.1:4000` in debug; hosted builds: HTTPS).
+
+See [the infrastructure audit](../docs/consult-audio/PHASE_5_INFRA_READINESS.md)
+and [the implementation walkthrough](../docs/consult-audio/PHASE_5_WALKTHROUGH.md)
+for migration, SDK/NDK setup, executed tests and the required real-phone checklist.
+Native acceptance is pending: the attempted APK build stopped at Android SDK/NDK
+licence setup, and no phone was attached. Do not infer lock-screen or incoming-call
+success from unit tests.

@@ -165,6 +165,8 @@ Authentication: doctor and patient sign in with the app's normal auth. Joining a
 | `POST /api/consults/:id/devices/:device/capture-started` | device | Body `{capture_zero_device_ms}`. |
 | `POST /api/consults/:id/chunks` | device | Body is the audio bytes (or empty if silent). Headers: `x-device`, `x-seq`, `x-start-ms`, `x-duration-ms`, `x-avg-dbfs`, `x-codec`, `x-silent`. Idempotent per (session, device, seq). Reply includes the current session state. |
 | `POST /api/consults/:id/devices/:device/final` | device | Body `{total_chunks}`. The last seq is `total_chunks - 1`. |
+| `POST /api/consults/:id/devices/:device/gaps` | scoped device | Idempotent capture-gap metadata `{gap_id, start_ms, duration_ms, reason_code}`; device must match the token. No audio/transcript in the body. |
+| `GET /api/consults/:id/devices/:device/gaps` | scoped device | Read that device's gaps. Participants can also read the session's gaps through `/state`. |
 | `POST /api/consults/:id/end` | doctor | Sets `ending`, stores `end_deadline_at`. Emits `end_requested`. |
 | `GET /api/consults/:id/state` | any member | Current state, device statuses, chunk counts. |
 | `GET /api/consults/:id/transcript` | doctor | Merged segments with flags. |
@@ -288,6 +290,8 @@ Each phase lists: **Goal, Tasks, Do not, Acceptance.**
 - Manual checklist (developer runs): record 3 minutes with the simulator's server, kill the network for 20 s and restore it, confirm no chunk is missing and the count matches the final marker.
 
 ### Phase 5: Patient Flutter recorder
+
+Implementation is in the working tree. Automated checks and infrastructure findings are documented in [PHASE_5_WALKTHROUGH.md](PHASE_5_WALKTHROUGH.md) and [PHASE_5_INFRA_READINESS.md](PHASE_5_INFRA_READINESS.md). Native build and real-phone acceptance remain pending; Phase 6 has not started.
 
 **Goal:** same behaviour on the patient's Android phone.
 

@@ -51,7 +51,8 @@ function getExtensionFromCodec(codec = '') {
   if (norm.includes('wav')) return 'wav';
   if (norm.includes('webm')) return 'webm';
   if (norm.includes('ogg') || norm.includes('opus')) return 'ogg';
-  if (norm.includes('mp4') || norm.includes('m4a') || norm.includes('aac')) return 'm4a';
+  if (norm.includes('aac')) return 'aac';
+  if (norm.includes('mp4') || norm.includes('m4a')) return 'm4a';
   return 'bin';
 }
 

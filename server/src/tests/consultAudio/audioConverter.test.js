@@ -48,4 +48,36 @@ describe('Real in-memory audio conversion', () => {
   test('invalid input returns a controlled code without including its contents', async () => {
     await expect(convertTo16kHzMonoWav(Buffer.alloc(0))).rejects.toMatchObject({ code: 'ERR_AUDIO_INPUT_INVALID' });
   });
+
+  test('converts independently packaged synthetic ADTS AAC chunk to 16 kHz mono WAV', async () => {
+    const ffmpegPath = require('ffmpeg-static');
+    const { spawnSync } = require('node:child_process');
+    const frameCount = 16000;
+    const pcm = Buffer.alloc(frameCount * 2);
+    for (let i = 0; i < frameCount; i++) {
+      const sample = Math.round(6000 * Math.sin(2 * Math.PI * 440 * i / 16000));
+      pcm.writeInt16LE(sample, i * 2);
+    }
+    const aacRes = spawnSync(ffmpegPath, [
+      '-f', 's16le',
+      '-ar', '16000',
+      '-ac', '1',
+      '-i', 'pipe:0',
+      '-c:a', 'aac',
+      '-f', 'adts',
+      'pipe:1',
+    ], { input: pcm, maxBuffer: 1024 * 1024 });
+
+    expect(aacRes.status).toBe(0);
+    const aacBytes = aacRes.stdout;
+    expect(aacBytes.length).toBeGreaterThan(0);
+    expect(aacBytes[0]).toBe(0xFF);
+    expect((aacBytes[1] & 0xF0)).toBe(0xF0);
+
+    const wav = await convertTo16kHzMonoWav(aacBytes);
+    expect(wav.subarray(0, 4).toString()).toBe('RIFF');
+    expect(wav.readUInt16LE(22)).toBe(1);
+    expect(wav.readUInt32LE(24)).toBe(16000);
+    expect(wav.length).toBeGreaterThan(44);
+  });
 });

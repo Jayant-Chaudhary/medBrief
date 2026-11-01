@@ -113,6 +113,12 @@ function emitNotesReady(sessionId) {
   });
 }
 
+function emitGapRecorded(sessionId, gapPayload) {
+  if (!ioInstance) return;
+  const roomName = `session:${sessionId}`;
+  ioInstance.to(roomName).emit('gap_recorded', gapPayload);
+}
+
 module.exports = {
   initSocketServer,
   getIO,
@@ -121,4 +127,5 @@ module.exports = {
   emitEndRequested,
   emitStatusUpdate,
   emitNotesReady,
+  emitGapRecorded,
 };

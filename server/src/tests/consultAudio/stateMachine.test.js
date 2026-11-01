@@ -152,6 +152,22 @@ describe('Consult Audio State Machine', () => {
       expect(res.valid).toBe(true);
     });
 
+    test.each([STATES.READY, STATES.RECORDING])('requires the patient even when its device has not joined: %s', (toState) => {
+      const result = assertCanTransition({
+        session: {...baseSession, status: toState === STATES.READY ? STATES.WAITING : STATES.READY},
+        consents: [{role:'doctor'}], devices: [{device:'doctor', status:'ready'}], toState,
+      });
+      expect(result.valid).toBe(false);
+      expect(result.error).toMatch(/patient consent/i);
+    });
+
+    test('a patient who joins an optional-device room must also consent', () => {
+      const result = assertCanTransition({session:{...baseSession, patient_required:false},
+        consents:[{role:'doctor'}], devices:[{device:'doctor',status:'ready'},{device:'patient',status:'ready'}],
+        toState:STATES.READY});
+      expect(result.valid).toBe(false);
+    });
+
     test('rejects transition to RECORDING if current state is not READY', () => {
       const sessionInWaiting = { ...baseSession, status: STATES.WAITING };
       const res = assertCanTransition({

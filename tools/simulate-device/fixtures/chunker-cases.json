@@ -1,0 +1,98 @@
+{
+  "boundaryCases": [
+    {
+      "name": "does not cut before min duration even with silence",
+      "chunkStartMs": 0,
+      "currentMs": 7000,
+      "samples": [
+        { "timestampMs": 5000, "dbfs": -60.0 },
+        { "timestampMs": 6000, "dbfs": -60.0 },
+        { "timestampMs": 7000, "dbfs": -60.0 }
+      ],
+      "expected": {
+        "shouldCut": false,
+        "reason": null,
+        "cutMs": null
+      }
+    },
+    {
+      "name": "cuts chunk after 15s on pause of >= 500ms",
+      "chunkStartMs": 0,
+      "currentMs": 15700,
+      "samples": [
+        { "timestampMs": 14000, "dbfs": -20.0 },
+        { "timestampMs": 14500, "dbfs": -20.0 },
+        { "timestampMs": 15000, "dbfs": -20.0 },
+        { "timestampMs": 15200, "dbfs": -60.0 },
+        { "timestampMs": 15400, "dbfs": -60.0 },
+        { "timestampMs": 15700, "dbfs": -60.0 }
+      ],
+      "expected": {
+        "shouldCut": true,
+        "reason": "pause",
+        "cutMs": 15700
+      }
+    },
+    {
+      "name": "does not cut after 15s if pause is shorter than 500ms",
+      "chunkStartMs": 0,
+      "currentMs": 15400,
+      "samples": [
+        { "timestampMs": 14500, "dbfs": -20.0 },
+        { "timestampMs": 15000, "dbfs": -20.0 },
+        { "timestampMs": 15200, "dbfs": -60.0 },
+        { "timestampMs": 15400, "dbfs": -20.0 }
+      ],
+      "expected": {
+        "shouldCut": false,
+        "reason": null,
+        "cutMs": null
+      }
+    },
+    {
+      "name": "cuts chunk at hard cap 25s even when speech is continuous",
+      "chunkStartMs": 0,
+      "currentMs": 25100,
+      "samples": [
+        { "timestampMs": 20000, "dbfs": -15.0 },
+        { "timestampMs": 22000, "dbfs": -15.0 },
+        { "timestampMs": 24000, "dbfs": -15.0 },
+        { "timestampMs": 25100, "dbfs": -15.0 }
+      ],
+      "expected": {
+        "shouldCut": true,
+        "reason": "hard_cap",
+        "cutMs": 25100
+      }
+    }
+  ],
+  "silenceCases": [
+    {
+      "name": "all samples below -45 dBFS classified as silent",
+      "samples": [
+        { "timestampMs": 1000, "dbfs": -55.0 },
+        { "timestampMs": 5000, "dbfs": -60.0 },
+        { "timestampMs": 15000, "dbfs": -52.0 }
+      ],
+      "silenceDbfs": -45.0,
+      "expectedSilent": true
+    },
+    {
+      "name": "empty samples classified as silent",
+      "samples": [],
+      "silenceDbfs": -45.0,
+      "expectedSilent": true
+    },
+    {
+      "name": "peak above -45 dBFS classified as non-silent",
+      "samples": [
+        { "timestampMs": 1000, "dbfs": -55.0 },
+        { "timestampMs": 5000, "dbfs": -18.0 },
+        { "timestampMs": 10000, "dbfs": -22.0 },
+        { "timestampMs": 15000, "dbfs": -52.0 }
+      ],
+      "silenceDbfs": -45.0,
+      "expectedSilent": false
+    }
+  ]
+}

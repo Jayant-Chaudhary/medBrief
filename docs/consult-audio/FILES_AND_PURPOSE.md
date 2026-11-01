@@ -211,3 +211,20 @@ This document maintains an up-to-date catalog of every file created for the cons
 - `docs/consult-audio/REDIS_CACHE_IMPLEMENTATION_PLAN.md`: approved design, scope and acceptance criteria.
 - `docs/consult-audio/REDIS_CACHE_WALKTHROUGH.md`: executed verification and remaining deployment/manual checks.
 
+
+
+## 11. Patient Android recorder (Phase 5)
+
+- `mobile/lib/features/consult_audio/consult_audio_config.dart`: central, build-configurable audio, retention, timeout and retry values.
+- `consult_audio_models.dart`, `audio_chunker.dart`, `adts_chunk_assembler.dart` in that feature directory: typed status/gaps, shared chunk decisions and complete AAC frame assembly.
+- `patient_recorder.dart`: microphone adapter, local level check, encoded duration cuts, final-tail drain and focus interruptions.
+- `pending_audio_store.dart`, `audio_upload_queue.dart`: serialized atomic manifests, short-lived app-private audio, capture/final request recovery, verified acknowledgements, retention and explicit discard.
+- `consult_audio_repository.dart`, `consult_socket.dart`: real HTTP contracts, scoped secure credentials and push-only socket state reconciliation.
+- `consult_foreground_task.dart`: actual Android task entry point owning recording/HTTP work, generic notifications and shutdown handshake.
+- `consult_audio_controller.dart`, `consult_audio_page.dart`: patient consent/permission/readiness flow, foreground status proxy, pending recovery and incomplete capture display.
+- `mobile/test/consult_audio_*.dart`: synthetic chunker, recorder-tail, real ffmpeg, API, queue, privacy and flow regressions.
+- `tools/simulate-device/fixtures/chunker-cases.json`: shared Dart and JavaScript chunker cases.
+- `server/src/services/consultAudio/gap.service.js`: validated, idempotent gap writes and reads. Session state checks participant membership; joins conditionally consume codes and preserve appointment ownership.
+- `server/src/tests/consultAudio/gaps.test.js`, `patientAccess.test.js`: gap contract, access and simultaneous join regressions. `stateMachine.test.js` also covers absent required patients and room consent.
+- `supabase/migrations/20261101000000_consult_audio_gaps.sql`, `20261102000000_consult_audio_gap_recovery.sql`: RLS-enabled gap metadata and recovery/discard reason codes with direct client writes revoked.
+- `PHASE_5_INFRA_READINESS.md`, `PHASE_5_WALKTHROUGH.md`: observed infrastructure, changes, executed evidence and remaining Android/device acceptance.

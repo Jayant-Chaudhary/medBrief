@@ -283,3 +283,17 @@ For latency comparison, record per-chunk retrieval source and `retrievalMs`, hit
 - If Docker reports a missing socket or daemon, start Docker Desktop/the Docker engine and rerun the Compose command. Redis unavailability must not prevent Node from starting or durable uploads from succeeding.
 - Cache timeouts close the unhealthy connection and use a reconnect cooldown. An unusually slow remote Redis connection may require measured timeout adjustments in the config/env settings.
 - A retryable `503` during chunk ingest can indicate failed persistent metadata/job publication. Retrying the same session/device/sequence repairs a missing job without re-uploading its stored audio. Completed, failed and active jobs are not reset by upload retries.
+
+
+## Phase 5: patient Android recorder
+
+Read [the Phase 5 walkthrough](PHASE_5_WALKTHROUGH.md) before running the phone flow.
+It includes the required gap-schema follow-up migration, Android API 36 / NDK
+28.2.13676358 setup and licence steps, USB API routing, and synthetic two-device
+acceptance checks. Native acceptance remains pending until the APK builds and the
+screen-lock, airplane-mode and call-interruption checks pass on a real phone.
+
+Automated commands from `mobile/`: `flutter analyze` and `flutter test`. The real
+AAC conversion test requires Node and the existing `server/node_modules/ffmpeg-static`
+binary. Configure the phone through `--dart-define-from-file=config.json`; the
+complete nonsecret audio settings are listed in `mobile/config.example.json`.

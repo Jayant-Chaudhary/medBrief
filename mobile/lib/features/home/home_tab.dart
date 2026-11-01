@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../core/app_theme.dart';
-import '../auth/auth_widgets.dart';
 import 'appointment_repository.dart';
 import 'appointments_tab.dart';
 import 'home_controller.dart';

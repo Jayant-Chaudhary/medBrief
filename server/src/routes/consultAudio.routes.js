@@ -95,6 +95,9 @@ consultRouter.post('/:id/end', doctorSessionOrAuthGuard, controller.endConsultat
 consultRouter.post('/:id/devices/:device/capture-started', sessionTokenGuard, controller.recordCaptureStarted);
 consultRouter.post('/:id/chunks', sessionTokenGuard, rawAudioParser, controller.uploadChunk);
 consultRouter.post('/:id/devices/:device/final', sessionTokenGuard, controller.recordFinalMarker);
+consultRouter.post('/:id/devices/:device/gaps', sessionTokenGuard, controller.recordDeviceGap);
+consultRouter.get('/:id/devices/:device/gaps', sessionTokenGuard, controller.getDeviceGaps);
+consultRouter.get('/:id/gaps', flexibleSessionAuth, controller.getDeviceGaps);
 consultRouter.get('/:id/state', flexibleSessionAuth, controller.getSessionState);
 consultRouter.get('/:id/transcript', doctorSessionOrAuthGuard, controller.getTranscript);
 consultRouter.get('/by-appointment/:appointmentId', doctorSessionOrAuthGuard, controller.getSessionByAppointment);

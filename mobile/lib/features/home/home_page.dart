@@ -8,6 +8,9 @@ import '../checkin/checkin_repository.dart';
 import '../community/community_page.dart';
 import '../community/community_push.dart';
 import '../community/community_repository.dart';
+import '../consult_audio/consult_audio_controller.dart';
+import '../consult_audio/consult_audio_page.dart';
+import '../consult_audio/consult_audio_repository.dart';
 import '../profile/profile_controller.dart';
 import '../profile/profile_page.dart';
 import '../profile/profile_repository.dart';
@@ -64,6 +67,7 @@ class _HomePageState extends State<HomePage> {
   int _tabIndex = 0;
   bool _communityInboxRequested = false;
   final _communityNavigator = GlobalKey<NavigatorState>();
+  ConsultAudioController? _consultController;
 
   @override
   void initState() {
@@ -120,8 +124,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _openSummary({Appointment? appointment}) {
-    final targetId = appointment?.id ??
-        _homeController.appointments.past.firstOrNull?.id;
+    final targetId =
+        appointment?.id ?? _homeController.appointments.past.firstOrNull?.id;
     if (targetId != null) {
       _summaryController.selectAppointment(targetId);
     }
@@ -184,6 +188,35 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<void> _openConsultation() async {
+    if (widget.api == null) return;
+    if (_consultController?.stage == PatientConsultStage.completed) {
+      _consultController!.dispose();
+      _consultController = null;
+    }
+    final firstOpen = _consultController == null;
+    final controller = _consultController ??= ConsultAudioController(
+      repository: ConsultAudioRepository(api: widget.api!),
+      ownerId: widget.auth.profile!.id,
+    );
+    if (firstOpen) {
+      try {
+        await controller.restoreActive();
+      } catch (_) {
+        controller.setStage(PatientConsultStage.error);
+      }
+    }
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ConsultAudioPage(
+          controller: controller,
+          onFinished: () => _homeController.refresh(),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     widget.push?.inboxRequests.removeListener(_handleInboxRequest);
@@ -191,6 +224,7 @@ class _HomePageState extends State<HomePage> {
     _reportController.dispose();
     _summaryController.dispose();
     _profileController.dispose();
+    _consultController?.dispose();
     super.dispose();
   }
 
@@ -201,8 +235,11 @@ class _HomePageState extends State<HomePage> {
       setState(() => _tabIndex = 2);
     } else if (route == '/community') {
       _openCommunity();
+    } else if (route == '/consult' || route == '/consultation') {
+      _openConsultation();
     } else if (route == '/checkin') {
-      final appt = _homeController.activeAppointment ??
+      final appt =
+          _homeController.activeAppointment ??
           _homeController.appointments.upcoming.firstOrNull;
       if (appt != null) {
         _openCheckin(appt);
@@ -315,6 +352,17 @@ class _HomePageState extends State<HomePage> {
               const PopupMenuDivider(),
               if (widget.api != null)
                 const PopupMenuItem(
+                  value: 'consultation',
+                  child: Row(
+                    children: [
+                      Icon(Icons.meeting_room_outlined, size: 18, color: ink),
+                      SizedBox(width: 10),
+                      Text('Join Consultation'),
+                    ],
+                  ),
+                ),
+              if (widget.api != null)
+                const PopupMenuItem(
                   value: 'community',
                   child: Row(
                     children: [
@@ -352,6 +400,8 @@ class _HomePageState extends State<HomePage> {
                 _openProfile();
               } else if (value == 'community') {
                 _openCommunity();
+              } else if (value == 'consultation') {
+                _openConsultation();
               }
             },
           ),

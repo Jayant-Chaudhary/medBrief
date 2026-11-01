@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'app.dart';
 import 'core/api_client.dart';
@@ -11,9 +14,29 @@ import 'features/auth/auth_controller.dart';
 import 'features/auth/auth_repository.dart';
 import 'features/community/community_push.dart';
 import 'features/community/community_repository.dart';
+import 'features/consult_audio/consult_foreground_task.dart';
+import 'features/consult_audio/pending_audio_store.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final recordingService = FlutterForegroundServiceManager();
+  if (Platform.isAndroid) {
+    await recordingService.init();
+    try {
+      String? activeId;
+      if (await recordingService.isRunning()) {
+        final value = await const FlutterSecureStorage().read(
+          key: 'consult_task_active',
+        );
+        if (value != null) {
+          activeId = (jsonDecode(value) as Map)['sessionId'] as String?;
+        }
+      }
+      await PendingAudioStore.pruneAll(skipSessionId: activeId);
+    } catch (_) {
+      /* Pending recovery reports inaccessible storage in the visit flow. */
+    }
+  }
   const config = AppConfig.fromEnvironment();
   if (!config.isConfigured) {
     runApp(
@@ -54,6 +77,16 @@ Future<void> main() async {
     SupabaseAuthRepository(supabase: supabase, api: api),
   );
   final push = CommunityPush(CommunityRepository(api), auth);
+  final existingSignOut = auth.beforeSignOut;
+  auth.beforeSignOut = () async {
+    await recordingService.shutdown();
+    await existingSignOut?.call();
+  };
+  auth.addListener(() {
+    if (auth.stage == AuthStage.signedOut) {
+      unawaited(recordingService.shutdown().catchError((Object _) {}));
+    }
+  });
   runApp(HealthOnApp(auth: auth, api: api, push: push));
   unawaited(auth.start());
 }

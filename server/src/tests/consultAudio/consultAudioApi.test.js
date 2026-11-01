@@ -336,6 +336,8 @@ describe('Consult Audio HTTP Endpoints', () => {
       mockTables(supabaseAdmin, {
         consult_sessions: ok({
           id: 'sess-100',
+          doctor_id: doctorUser.id,
+          patient_id: patientUser.id,
           status: 'recording',
           patient_required: true,
           language_code: 'hi-IN',
@@ -347,6 +349,7 @@ describe('Consult Audio HTTP Endpoints', () => {
         session_consents: ok([
           { role: 'doctor', accepted_at: new Date().toISOString(), consent_text_version: 'v1.0' },
         ]),
+        consult_audio_gaps: ok([]),
       });
 
       const res = await request(app)

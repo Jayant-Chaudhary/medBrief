@@ -137,8 +137,16 @@ async function joinSessionByRoomCode({ roomCode, patientUser, clientIp = 'unknow
     throw err;
   }
 
-  // Burn room code (single-use)
-  await supabaseAdmin
+  // Check patient ownership: if session has a designated patient, caller must match
+  if (session.patient_id && session.patient_id !== patientUser.id) {
+    recordFailedAttempt(rateLimitKey);
+    const err = new Error('Not authorized: signed-in patient does not match this consultation');
+    err.status = 403;
+    throw err;
+  }
+
+  // Burn room code conditionally (single-use, race-free)
+  const { data: updatedSession, error: updateErr } = await supabaseAdmin
     .from('consult_sessions')
     .update({
       room_code: null,
@@ -146,7 +154,18 @@ async function joinSessionByRoomCode({ roomCode, patientUser, clientIp = 'unknow
       patient_id: patientUser.id,
       status: STATES.WAITING,
     })
-    .eq('id', session.id);
+    .eq('id', session.id)
+    .eq('room_code', normCode)
+    .in('status', [STATES.CREATED, STATES.WAITING])
+    .select('id, status')
+    .maybeSingle();
+
+  if (updateErr || !updatedSession) {
+    recordFailedAttempt(rateLimitKey);
+    const err = new Error('Room code has already been consumed');
+    err.status = 409;
+    throw err;
+  }
 
   clearRateLimit(rateLimitKey);
 
@@ -269,7 +288,7 @@ async function evaluateAndTransitionToReady(sessionId) {
 
   let patientReady = true;
   const patientJoined = deviceList.some((d) => d.device === 'patient');
-  if (patientJoined && session.patient_required) {
+  if (patientJoined || session.patient_required) {
     const patientConsent = consentList.some((c) => c.role === 'patient');
     const patientDevice = deviceList.find((d) => d.device === 'patient');
     patientReady = patientConsent && patientDevice?.status === 'ready';
@@ -391,7 +410,7 @@ async function recordCaptureStarted({ sessionId, device, captureZeroDeviceMs }) 
 /**
  * Fetches current session state, devices, and consents.
  */
-async function getSessionState(sessionId) {
+async function getSessionState(sessionId, callerUserId) {
   const { data: session, error: sErr } = await supabaseAdmin
     .from('consult_sessions')
     .select('*')
@@ -404,6 +423,10 @@ async function getSessionState(sessionId) {
     throw err;
   }
 
+  if (!callerUserId || ![session.doctor_id, session.patient_id].includes(callerUserId)) {
+    throw Object.assign(new Error('Not authorized for this consultation'), { status: 403 });
+  }
+
   const { data: devices } = await supabaseAdmin
     .from('session_devices')
     .select('*')
@@ -413,6 +436,12 @@ async function getSessionState(sessionId) {
     .from('session_consents')
     .select('role, accepted_at, consent_text_version')
     .eq('session_id', sessionId);
+
+  const { data: gaps, error: gapError } = await supabaseAdmin
+    .from('consult_audio_gaps')
+    .select('device, gap_id, start_ms, duration_ms, reason_code')
+    .eq('session_id', sessionId);
+  if (gapError) throw Object.assign(new Error('ERR_GAP_READ'), { status: 503 });
 
   return {
     session: {
@@ -440,6 +469,7 @@ async function getSessionState(sessionId) {
       rtt_ms: d.rtt_ms,
     })),
     consents: consents || [],
+    gaps: gaps || [],
   };
 }
 
