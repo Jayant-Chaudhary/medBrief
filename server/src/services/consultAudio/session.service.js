@@ -216,13 +216,13 @@ async function recordSessionConsent({ sessionId, role, userId, consentTextVersio
 async function markDeviceReady({ sessionId, device, offsetMs = 0, rttMs = 0 }) {
   const { data: updatedDevice, error } = await supabaseAdmin
     .from('session_devices')
-    .update({
+    .upsert({
+      session_id: sessionId,
+      device,
       status: 'ready',
       offset_ms: offsetMs,
       rtt_ms: rttMs,
-    })
-    .eq('session_id', sessionId)
-    .eq('device', device)
+    }, { onConflict: 'session_id,device' })
     .select()
     .single();
 
@@ -304,6 +304,11 @@ async function startConsultation({ sessionId, doctorUserId }) {
     const err = new Error('Not authorized: only the session doctor can start consultation');
     err.status = 403;
     throw err;
+  }
+
+  // If session is still in CREATED or WAITING, evaluate if it can transition to READY first
+  if ([STATES.CREATED, STATES.WAITING].includes(session.status)) {
+    await evaluateAndTransitionToReady(sessionId);
   }
 
   const nowServerMs = Date.now();

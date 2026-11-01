@@ -313,6 +313,11 @@ export function DoctorConsultationModal({
 
   // Start Active Consultation Recording
   const handleStartRecording = async () => {
+    if (!consentAccepted) {
+      setError('Doctor and patient consent is required before recording.');
+      return;
+    }
+
     const sessionId = getSessionId();
     const token = getDoctorToken();
 
@@ -325,6 +330,18 @@ export function DoctorConsultationModal({
     setError(null);
 
     try {
+      // 1. Ensure doctor consent and ready state are committed first
+      await recordDoctorConsent({ sessionId, token });
+      await setDoctorReady({
+        sessionId,
+        token,
+        offsetMs: offsetInfo?.offset_ms || 0,
+        rttMs: offsetInfo?.rtt_ms || 0,
+        captureZeroDeviceMs: Date.now(),
+      });
+      setDoctorReadyState(true);
+
+      // 2. Start consultation on server
       await startConsultation({ sessionId, token });
 
       if (recorderRef.current) {
