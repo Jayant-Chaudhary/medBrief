@@ -67,6 +67,40 @@ async function recoverStuckJobs() {
     });
   }
 
+  // Also re-queue any jobs that previously failed due to missing Sarvam key or connection error
+  try {
+    const { data: misconfiguredJobs } = await supabaseAdmin
+      .from('transcription_jobs')
+      .select('id, chunk_id')
+      .eq('status', 'failed')
+      .in('last_error_code', ['ERR_SARVAM_KEY_MISSING', 'ERR_LOCAL_STT_UNAVAILABLE']);
+
+    if (misconfiguredJobs && misconfiguredJobs.length > 0) {
+      for (const job of misconfiguredJobs) {
+        await supabaseAdmin
+          .from('transcription_jobs')
+          .update({
+            status: 'queued',
+            attempts: 0,
+            locked_at: null,
+            next_attempt_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', job.id);
+
+        if (job.chunk_id) {
+          await supabaseAdmin
+            .from('audio_chunks')
+            .update({ status: 'queued' })
+            .eq('id', job.chunk_id);
+        }
+        recovered++;
+      }
+    }
+  } catch (_e) {
+    // Ignore query error in test environments
+  }
+
   return recovered;
 }
 

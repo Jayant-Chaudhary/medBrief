@@ -214,6 +214,7 @@ async function getTranscript(req, res, next) {
     const sessionId = req.params.id;
     const doctorUserId = req.user?.id || req.sessionToken?.userId;
     const result = await sessionService.getSessionTranscript(sessionId, doctorUserId);
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.status(200).json(result);
   } catch (err) {
     next(err);

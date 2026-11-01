@@ -181,12 +181,14 @@ export function DoctorConsultationModal({
 
   // Polling hook for transcript processing progress
   useEffect(() => {
-    const isTranscribing = transcriptData?.isProcessing;
+    const isTranscribing = transcriptData ? transcriptData.isProcessing : true;
     const sessId = getSessionId();
 
     if ((activeTab === 'TRANSCRIPT' || step === 'DONE') && sessId && isTranscribing) {
-      if (pollingRef.current) clearInterval(pollingRef.current);
+      // Immediate fetch once upon entering tab
+      loadTranscript(sessId, getDoctorToken());
 
+      if (pollingRef.current) clearInterval(pollingRef.current);
       pollingRef.current = setInterval(() => {
         loadTranscript(sessId, getDoctorToken());
       }, 2500);

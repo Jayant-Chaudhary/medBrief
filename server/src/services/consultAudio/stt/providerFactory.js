@@ -11,7 +11,12 @@ const LocalProvider = require('./localProvider');
 const SarvamProvider = require('./sarvamProvider');
 
 function getProvider(providerName = null) {
-  const chosen = (providerName || config.sttProvider || 'fake').toLowerCase();
+  let chosen = (providerName || config.sttProvider || 'local').toLowerCase();
+
+  // If sarvam is requested but no API key is provided, gracefully fall back to local Whisper
+  if (chosen === 'sarvam' && !config.sarvamApiKey) {
+    chosen = 'local';
+  }
 
   switch (chosen) {
     case 'local':
