@@ -283,3 +283,101 @@ export async function testSpeechToText({ audioBlob, sessionId, token }) {
   return res.json();
 }
 
+/**
+ * Fetches the clinical notes draft generated for a consultation session.
+ */
+export async function getConsultationDraft({ sessionId, token } = {}) {
+  if (!sessionId) {
+    throw new Error('Valid sessionId is required to fetch draft');
+  }
+
+  if (token) {
+    const res = await fetch(`${BASE_URL}/api/consults/${sessionId}/draft`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to fetch draft (${res.status})`);
+    }
+    return res.json();
+  }
+
+  return request(`/api/consults/${sessionId}/draft`);
+}
+
+/**
+ * Doctor reviews and approves or rejects the AI clinical draft.
+ * Approving commits the formatted notes directly to consultation_notes.
+ */
+export async function reviewConsultationDraft({
+  sessionId,
+  token,
+  action = 'approve',
+  editedDoctorNotes = null,
+  rejectionReason = null,
+} = {}) {
+  if (!sessionId) {
+    throw new Error('Valid sessionId is required to review draft');
+  }
+
+  const payload = {
+    action,
+    edited_doctor_notes: editedDoctorNotes,
+    rejection_reason: rejectionReason,
+  };
+
+  if (token) {
+    const res = await fetch(`${BASE_URL}/api/consults/${sessionId}/draft/review`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to review draft (${res.status})`);
+    }
+    return res.json();
+  }
+
+  return request(`/api/consults/${sessionId}/draft/review`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Explicitly triggers or regenerates a draft using the configured provider.
+ */
+export async function generateConsultationDraft({ sessionId, token, provider = null } = {}) {
+  if (!sessionId) {
+    throw new Error('Valid sessionId is required to generate draft');
+  }
+
+  const payload = { provider };
+
+  if (token) {
+    const res = await fetch(`${BASE_URL}/api/consults/${sessionId}/draft/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to generate draft (${res.status})`);
+    }
+    return res.json();
+  }
+
+  return request(`/api/consults/${sessionId}/draft/generate`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+

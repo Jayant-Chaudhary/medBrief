@@ -205,11 +205,22 @@ function mergeSegments(doctorSegments = [], patientSegments = [], options = {}) 
       if (overlapRatio >= dedupeMinOverlap) {
         const similarity = calculateTextSimilarity(dSeg.text, pSeg.text);
 
-        if (similarity >= dedupeMinSimilarity) {
-          // Acoustic echo / crosstalk duplicate: retain the louder one
-          const dLoudness = dSeg.avg_dbfs ?? -100;
-          const pLoudness = pSeg.avg_dbfs ?? -100;
+        const dLoudness = dSeg.avg_dbfs ?? -100;
+        const pLoudness = pSeg.avg_dbfs ?? -100;
+        const loudnessDiff = Math.abs(dLoudness - pLoudness);
 
+        // Acoustic bleed / echo detection:
+        // 1. Text is very similar (>= dedupeMinSimilarity), OR
+        // 2. Partial text similarity (>= 0.25) AND noticeable loudness difference (>= 6 dBFS), OR
+        // 3. Substantial loudness difference (>= 10 dBFS) during high overlap (>= 0.5) where the quieter mic
+        //    picked up muffled acoustic bleed from the other device in the same room.
+        const isAcousticBleed =
+          similarity >= dedupeMinSimilarity ||
+          (similarity >= 0.25 && loudnessDiff >= 6) ||
+          (loudnessDiff >= 10 && overlapRatio >= 0.5);
+
+        if (isAcousticBleed) {
+          // Acoustic echo / crosstalk duplicate: retain the louder device's clearer recording
           if (dLoudness >= pLoudness) {
             // Doctor device was louder; drop quieter patient echo
             removedIds.add(pSeg.id);

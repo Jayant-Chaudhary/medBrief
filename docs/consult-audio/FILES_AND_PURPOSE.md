@@ -261,3 +261,23 @@ This document maintains an up-to-date catalog of every file created for the cons
 - `server/src/tests/consultAudio/draftService.test.js`: Integration tests for draft generation, review approval, rejection, and access control.
 - `docs/consult-audio/PHASE_8_IMPLEMENTATION_PLAN.md`: Approved implementation plan for Phase 8.
 - `docs/consult-audio/PHASE_8_WALKTHROUGH.md`: Detailed walkthrough, benchmark turnaround timing, test evidence, and known gaps.
+
+## 15. Local Whisper STT Provider (Phase 10)
+
+- `whisper-service/main.py`: FastAPI microservice running `faster-whisper` and CTranslate2 with automatic CUDA GPU acceleration and CPU `int8` fallback, Silero VAD silence filtering, `/health`, and `/transcribe` endpoints.
+- `whisper-service/run.sh`: Startup launcher exporting NVIDIA CUDA library paths and running uvicorn.
+- `whisper-service/test_gpu.py`: Standalone GPU verification benchmark.
+- `server/src/services/consultAudio/stt/localProvider.js`: Node.js `LocalProvider` client invoking the Whisper microservice, returning standardized segments with timestamps and confidence scores.
+- `server/src/tests/consultAudio/localProvider.test.js`: Unit tests for `LocalProvider` and `providerFactory` resolution.
+- `tools/test-whisper.js`: Audio conversion and transcription CLI for local Whisper testing.
+- `docs/consult-audio/PHASE_10_WALKTHROUGH.md`: Detailed walkthrough, provider capability comparison, and test evidence.
+
+## 16. Hardening and Demo Rehearsal (Phase 11)
+
+- `server/src/tests/consultAudio/logScrub.test.js`: Automated zero-PII test suite verifying that no patient names, raw audio, transcript text, or clinical numbers leak into logs across chunk ingestion, STT, merge, or drafting.
+- `server/src/tests/consultAudio/failureDrills.test.js`: Automated resilience test suite verifying upload network drops with idempotent retry, missing patient device fallback, and server restart recovery during ending state.
+- `tools/verify-render-deployment.js`: Deployment pre-flight script checking static ffmpeg binary execution, production environment keys, and Render endpoint health.
+- `tools/simulate-device/rehearsal-e2e.js`: End-to-end automated dual-device rehearsal tool simulating complete consultations and measuring End-to-`notes_ready` latency against SLA budgets.
+- `docs/consult-audio/DEMO.md`: Rehearsal manual, live presentation steps, talking points ("flags and prioritizes, never diagnoses"), and contingency troubleshooting playbook.
+- `docs/consult-audio/PHASE_11_IMPLEMENTATION_PLAN.md`: Approved implementation plan for Phase 11.
+- `docs/consult-audio/PHASE_11_WALKTHROUGH.md`: Walkthrough, latency benchmark evidence, and checklist.
