@@ -11,6 +11,7 @@ const { generateRoomCode, getRoomCodeExpiry, checkRateLimit, recordFailedAttempt
 const { signSessionToken } = require('./token.service');
 const { STATES, transitionSession } = require('./stateMachine');
 const socketService = require('./socket.service');
+const orchestratorService = require('./orchestrator.service');
 const logger = require('../../utils/logger');
 
 /**
@@ -381,6 +382,7 @@ async function endConsultation({ sessionId, doctorUserId }) {
   });
 
   socketService.emitEndRequested(sessionId, endDeadlineAt);
+  orchestratorService.registerEndingSession(sessionId, endDeadlineAt);
 
   return updatedSession;
 }
@@ -459,6 +461,10 @@ async function getSessionState(sessionId, callerUserId) {
       ended_at: session.ended_at,
       endDeadlineAt: session.end_deadline_at,
       end_deadline_at: session.end_deadline_at,
+      incompleteSides: session.incomplete_sides || [],
+      incomplete_sides: session.incomplete_sides || [],
+      draftOutdated: session.draft_outdated || false,
+      draft_outdated: session.draft_outdated || false,
     },
     devices: (devices || []).map((d) => ({
       device: d.device,
@@ -479,7 +485,7 @@ async function getSessionState(sessionId, callerUserId) {
 async function getSessionTranscript(sessionId, doctorUserId = null) {
   const { data: session, error: sErr } = await supabaseAdmin
     .from('consult_sessions')
-    .select('id, doctor_id, status')
+    .select('id, doctor_id, status, incomplete_sides, draft_outdated')
     .eq('id', sessionId)
     .single();
 
@@ -530,6 +536,10 @@ async function getSessionTranscript(sessionId, doctorUserId = null) {
   return {
     sessionId,
     status: session.status,
+    incompleteSides: session.incomplete_sides || [],
+    incomplete_sides: session.incomplete_sides || [],
+    draftOutdated: session.draft_outdated || false,
+    draft_outdated: session.draft_outdated || false,
     totalChunks,
     transcribedChunks,
     isProcessing,

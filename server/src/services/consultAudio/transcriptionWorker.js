@@ -15,6 +15,7 @@ const { getProvider } = require('./stt/providerFactory');
 const { convertTo16kHzMonoWav } = require('../../utils/audioConverter');
 const logger = require('../../utils/logger');
 const audioCache = require('./audioCache.service');
+const orchestratorService = require('./orchestrator.service');
 
 const STORAGE_BUCKET = 'consult-audio';
 const SAFE_ERROR_CODES = new Set([
@@ -306,6 +307,13 @@ async function processJob(job, overrideProvider = null) {
     await checkedUpdate('audio_chunks', chunk.id, { status: 'transcribed' }, 'ERR_CHUNK_STATUS_SAVE');
     await markJobCompleted(job);
     await removeCachedAudio(chunk);
+
+    // 10. Notify orchestrator: check completeness if ending, or flag draft_outdated if late
+    if (chunk.is_late) {
+      void orchestratorService.handleLateChunkTranscribed(chunk).catch(() => {});
+    } else {
+      void orchestratorService.checkCompleteness(chunk.session_id).catch(() => {});
+    }
 
     const processingMs = Date.now() - startTime;
     logger.info('Chunk successfully transcribed', {

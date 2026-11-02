@@ -28,6 +28,7 @@ module.exports = {
   roomCodeLength: Number(env.ROOM_CODE_LENGTH || 6),
   maxJoinAttempts: Number(env.MAX_JOIN_ATTEMPTS || 5),
   endDeadlineSec: Number(env.END_DEADLINE_SEC || 15),
+  orchestratorPollMs: Number(env.ORCHESTRATOR_POLL_MS || 1000),
 
   // Scoped Session Tokens
   sessionTokenSecret: env.SESSION_TOKEN_SECRET || 'dev-consult-session-secret-change-in-prod',

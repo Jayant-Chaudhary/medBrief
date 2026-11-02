@@ -8,6 +8,11 @@ import 'package:health_on_patient/features/consult_audio/patient_recorder.dart';
 import 'package:health_on_patient/features/consult_audio/consult_audio_config.dart';
 import 'consult_audio_test_helpers.dart';
 
+class ActivitylessPermissionSource extends SyntheticRecorderSource {
+  @override
+  Future<bool> hasPermission({bool request = true}) async => false;
+}
+
 void main() {
   test('ADTS headers and frames split across callbacks retain every byte', () {
     final assembler = AdtsChunkAssembler();
@@ -196,5 +201,23 @@ void main() {
       }
     },
     timeout: const Timeout(Duration(seconds: 30)),
+  );
+  test(
+    'service capture does not use the Activity-only permission helper',
+    () async {
+      final source = ActivitylessPermissionSource()
+        ..tail = syntheticAdtsFrame();
+      final chunks = <PreparedChunkData>[];
+      final recorder = PatientRecorder(
+        source: source,
+        onChunkReady: (chunk) async {
+          chunks.add(chunk);
+        },
+      );
+      await recorder.startRecording(initialTimelineMs: 0);
+      await recorder.stopRecording();
+      expect(chunks.single.frameCount, 1);
+      await recorder.dispose();
+    },
   );
 }

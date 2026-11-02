@@ -49,6 +49,7 @@ class SyntheticRecorderSource implements RecorderSource {
   Future<bool> isEncoderSupported(AudioEncoder encoder) async => true;
   @override
   Future<Stream<List<int>>> startStream(RecordConfig config) async {
+    if (!allowed) throw StateError('ERR_AUDIO_PERMISSION');
     starts++;
     bytes = StreamController<List<int>>();
     await startGate?.future;

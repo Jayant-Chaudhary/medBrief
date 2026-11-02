@@ -20,6 +20,10 @@ android {
 
     defaultConfig {
         applicationId = "com.healthon.health_on_patient"
+        // Synthetic native acceptance runs alongside the signed-in patient app.
+        if (providers.gradleProperty("medbriefEmulatorTest").orNull == "true") {
+            applicationIdSuffix = ".emulator_test"
+        }
         minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

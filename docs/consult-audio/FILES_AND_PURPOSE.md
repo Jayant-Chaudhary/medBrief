@@ -228,3 +228,11 @@ This document maintains an up-to-date catalog of every file created for the cons
 - `server/src/tests/consultAudio/gaps.test.js`, `patientAccess.test.js`: gap contract, access and simultaneous join regressions. `stateMachine.test.js` also covers absent required patients and room consent.
 - `supabase/migrations/20261101000000_consult_audio_gaps.sql`, `20261102000000_consult_audio_gap_recovery.sql`: RLS-enabled gap metadata and recovery/discard reason codes with direct client writes revoked.
 - `PHASE_5_INFRA_READINESS.md`, `PHASE_5_WALKTHROUGH.md`: observed infrastructure, changes, executed evidence and remaining Android/device acceptance.
+
+## 12. End-of-Visit Orchestrator (Phase 6)
+
+- `server/src/services/consultAudio/orchestrator.service.js`: Coordinates the reliable, time-boxed conclusion of consultation sessions (`recording` $\rightarrow$ `ending` $\rightarrow$ `processing`). Manages persistent deadline timers, detects missing sequence numbers, logs gaps, flags incomplete sides, handles doctor-only mode, and updates transcripts for late-arriving chunks.
+- `server/src/tests/consultAudio/orchestrator.test.js`: Unit and acceptance tests verifying slow device timeout, missing sequence gap creation, server restart resumption, early completion fast-path, doctor-only mode, late chunk updates with `draft_outdated`, and strict privacy compliance.
+- `supabase/migrations/20261102000001_consult_audio_orchestration.sql`: Adds `incomplete_sides` and `draft_outdated` to `consult_sessions`, an index on ending deadlines, and the `'missing_chunk'` reason code in `consult_audio_gaps`.
+- `docs/consult-audio/PHASE_6_IMPLEMENTATION_PLAN.md`: Approved implementation plan for Phase 6.
+- `docs/consult-audio/PHASE_6_WALKTHROUGH.md`: Detailed walkthrough, test evidence across backend, client, and mobile, and known gaps.
