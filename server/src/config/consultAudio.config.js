@@ -64,6 +64,15 @@ module.exports = {
   // Deduplication & Crosstalk Handling
   dedupeMinOverlap: Number(env.DEDUPE_MIN_OVERLAP || 0.5),
   dedupeMinSimilarity: Number(env.DEDUPE_MIN_SIMILARITY || 0.8),
+  lowConfidenceThreshold: Number(env.LOW_CONFIDENCE_THRESHOLD || 0.65),
+
+  // Clinical Notes Drafting (Phase 8)
+  draftModelProvider: env.DRAFT_MODEL_PROVIDER || 'gemini', // 'gemini' | 'local' | 'fake'
+  geminiDraftModel: env.GEMINI_DRAFT_MODEL || 'gemini-1.5-flash',
+  geminiApiKey: env.GEMINI_API_KEY || '',
+  localLlmUrl: env.LOCAL_LLM_URL || 'http://localhost:11434/api/chat',
+  localLlmModel: env.LOCAL_LLM_MODEL || 'qwen3:8b',
+  draftTimeoutMs: Number(env.DRAFT_TIMEOUT_MS || 25000),
 
   // Audio Retention
   audioRetentionAfterReviewHours: Number(env.AUDIO_RETENTION_AFTER_REVIEW_HOURS || 0),

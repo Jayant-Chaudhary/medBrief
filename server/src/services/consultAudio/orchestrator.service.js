@@ -259,7 +259,7 @@ async function checkCompleteness(sessionId) {
  * Finalizes an ending session, records missing chunk gaps, flags incomplete sides,
  * and transitions session state to 'processing'.
  */
-async function finalizeEndingSession(sessionId, { isOverdue = false } = {}) {
+async function finalizeEndingSession(sessionId, { isOverdue = false, autoDraft = (process.env.NODE_ENV !== 'test') } = {}) {
   if (!sessionId || finalizingSessions.has(sessionId)) return null;
 
   finalizingSessions.add(sessionId);
@@ -377,6 +377,21 @@ async function finalizeEndingSession(sessionId, { isOverdue = false } = {}) {
       isOverdue,
       incompleteSidesCount: incompleteSides.length,
     });
+
+    if (autoDraft) {
+      try {
+        const draftService = require('./draft.service');
+        draftService.generateDraftForSession(sessionId).catch((err) => {
+          logger.warn('Auto draft generation deferred or encountered error', {
+            scope: 'consult-orchestrator',
+            sessionId,
+            errorCode: 'ERR_AUTO_DRAFT',
+          });
+        });
+      } catch (_err) {
+        // Safe fallback in test environments
+      }
+    }
 
     return updatedSession;
   } catch (err) {

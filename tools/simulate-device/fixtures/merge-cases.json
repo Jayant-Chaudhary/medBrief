@@ -1,0 +1,137 @@
+[
+  {
+    "description": "Quiet duplicate removal: same utterance on both devices, quieter device dropped",
+    "doctorSegments": [
+      {
+        "id": "doc-seg-1",
+        "device": "doctor",
+        "speaker": "doctor",
+        "start_ms": 1000,
+        "end_ms": 5000,
+        "text": "Good morning, how has your blood pressure been this week?",
+        "avg_dbfs": -18.5,
+        "confidence": 0.94,
+        "flags": []
+      }
+    ],
+    "patientSegments": [
+      {
+        "id": "pat-seg-1",
+        "device": "patient",
+        "speaker": "patient",
+        "start_ms": 1200,
+        "end_ms": 5100,
+        "text": "Good morning how has your blood pressure been this week",
+        "avg_dbfs": -36.2,
+        "confidence": 0.88,
+        "flags": []
+      }
+    ],
+    "expectedRetainedIds": ["doc-seg-1"],
+    "expectedDuplicateCount": 1
+  },
+  {
+    "description": "Simultaneous speech: overlapping time intervals but different text, both retained and marked overlap",
+    "doctorSegments": [
+      {
+        "id": "doc-seg-2",
+        "device": "doctor",
+        "speaker": "doctor",
+        "start_ms": 8000,
+        "end_ms": 11000,
+        "text": "Let me check your previous lab reports from Tuesday.",
+        "avg_dbfs": -20.0,
+        "confidence": 0.92,
+        "flags": []
+      }
+    ],
+    "patientSegments": [
+      {
+        "id": "pat-seg-2",
+        "device": "patient",
+        "speaker": "patient",
+        "start_ms": 8500,
+        "end_ms": 11500,
+        "text": "I felt slightly dizzy yesterday morning after breakfast.",
+        "avg_dbfs": -21.5,
+        "confidence": 0.91,
+        "flags": []
+      }
+    ],
+    "expectedRetainedIds": ["doc-seg-2", "pat-seg-2"],
+    "expectedOverlapFlags": ["doc-seg-2", "pat-seg-2"]
+  },
+  {
+    "description": "Devanagari crosstalk duplicate: Hindi consultation phrase with danda punctuation",
+    "doctorSegments": [
+      {
+        "id": "doc-seg-3",
+        "device": "doctor",
+        "speaker": "doctor",
+        "start_ms": 14000,
+        "end_ms": 17000,
+        "text": "दवा खाने के बाद लेना है।",
+        "avg_dbfs": -19.0,
+        "confidence": 0.95,
+        "flags": []
+      }
+    ],
+    "patientSegments": [
+      {
+        "id": "pat-seg-3",
+        "device": "patient",
+        "speaker": "patient",
+        "start_ms": 14200,
+        "end_ms": 17100,
+        "text": "दवा खाने के बाद लेना है",
+        "avg_dbfs": -34.0,
+        "confidence": 0.87,
+        "flags": []
+      }
+    ],
+    "expectedRetainedIds": ["doc-seg-3"],
+    "expectedDuplicateCount": 1
+  },
+  {
+    "description": "Low confidence tagging and explicit gap inclusion in timeline",
+    "doctorSegments": [
+      {
+        "id": "doc-seg-4",
+        "device": "doctor",
+        "speaker": "doctor",
+        "start_ms": 20000,
+        "end_ms": 23000,
+        "text": "Are you taking the iron supplements daily?",
+        "avg_dbfs": -20.0,
+        "confidence": 0.93,
+        "flags": []
+      }
+    ],
+    "patientSegments": [
+      {
+        "id": "pat-seg-4",
+        "device": "patient",
+        "speaker": "patient",
+        "start_ms": 24000,
+        "end_ms": 26000,
+        "text": "sometimes around noon",
+        "avg_dbfs": -25.0,
+        "confidence": 0.45,
+        "flags": []
+      }
+    ],
+    "gaps": [
+      {
+        "gap_id": "gap-case-1",
+        "device": "patient",
+        "start_ms": 27000,
+        "duration_ms": 4000,
+        "reason_code": "phone_call"
+      }
+    ],
+    "expectedFlags": {
+      "pat-seg-4": ["low_confidence"],
+      "gap-gap-case-1": ["gap", "phone_call"]
+    }
+  }
+]

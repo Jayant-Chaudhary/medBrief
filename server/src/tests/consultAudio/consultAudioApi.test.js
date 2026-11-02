@@ -512,6 +512,82 @@ describe('Consult Audio HTTP Endpoints', () => {
       expect(res.body.segments).toHaveLength(1);
       expect(res.body.segments[0].text).toBe('Good morning.');
     });
+
+    test('deduplicates crosstalk echo and includes explicit gaps in returned merged timeline', async () => {
+      const doctorToken = signSessionToken({
+        sessionId: 'sess-100',
+        device: 'doctor',
+        role: 'doctor',
+        userId: doctorUser.id,
+      });
+
+      const mockSession = {
+        id: 'sess-100',
+        doctor_id: doctorUser.id,
+        status: 'processing',
+      };
+
+      const mockSegments = [
+        {
+          id: 'seg-doc-1',
+          session_id: 'sess-100',
+          chunk_id: 'chk-doc-1',
+          device: 'doctor',
+          speaker: 'doctor',
+          start_ms: 1000,
+          end_ms: 4000,
+          text: 'Are you taking your vitamins?',
+          flags: [],
+        },
+        {
+          id: 'seg-pat-1',
+          session_id: 'sess-100',
+          chunk_id: 'chk-pat-1',
+          device: 'patient',
+          speaker: 'patient',
+          start_ms: 1100,
+          end_ms: 4100,
+          text: 'Are you taking your vitamins', // Echo captured by patient mic
+          flags: [],
+        },
+      ];
+
+      const mockChunks = [
+        { id: 'chk-doc-1', session_id: 'sess-100', status: 'transcribed', device: 'doctor', avg_dbfs: -18.0 }, // Louder
+        { id: 'chk-pat-1', session_id: 'sess-100', status: 'transcribed', device: 'patient', avg_dbfs: -36.0 }, // Quieter
+      ];
+
+      const mockGaps = [
+        {
+          id: 'gap-1',
+          gap_id: 'gap-uuid-1',
+          session_id: 'sess-100',
+          device: 'patient',
+          start_ms: 6000,
+          duration_ms: 3000,
+          reason_code: 'phone_call',
+        },
+      ];
+
+      mockTables(supabaseAdmin, {
+        consult_sessions: ok(mockSession),
+        segments: ok(mockSegments),
+        audio_chunks: ok(mockChunks),
+        consult_audio_gaps: ok(mockGaps),
+      });
+
+      const res = await request(app)
+        .get('/api/consults/sess-100/transcript')
+        .set('Authorization', `Bearer ${doctorToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.segments).toHaveLength(2); // 1 deduplicated speech segment + 1 gap entry
+      expect(res.body.segments[0].id).toBe('seg-doc-1');
+      expect(res.body.segments[0].device).toBe('doctor');
+      expect(res.body.segments[1].type).toBe('gap');
+      expect(res.body.segments[1].reason_code).toBe('phone_call');
+      expect(res.body.stats.duplicateCount).toBe(1);
+    });
   });
 
   describe('POST /api/consults/test-stt (Pre-Flight STT Verification)', () => {
@@ -560,6 +636,146 @@ describe('Consult Audio HTTP Endpoints', () => {
       expect(res.body).toHaveProperty('text');
       expect(res.body).toHaveProperty('latencyMs');
       expect(res.body).toHaveProperty('provider');
+    });
+  });
+
+  describe('Clinical Notes Drafting Endpoints (Phase 8)', () => {
+    test('GET /api/consults/:id/draft returns latest reviewable draft', async () => {
+      const doctorToken = signSessionToken({
+        sessionId: 'sess-100',
+        userId: doctorUser.id,
+        role: 'doctor',
+        device: 'doctor',
+      });
+
+      const mockSession = {
+        id: 'sess-100',
+        doctor_id: doctorUser.id,
+        patient_id: patientUser.id,
+      };
+
+      const mockDraft = {
+        id: 'draft-100',
+        session_id: 'sess-100',
+        status: 'needs_review',
+        doctor_notes: {
+          assessment: 'Stable progress.',
+          plan_and_recommendations: [],
+        },
+        patient_summary: {
+          summary_text: 'Checkup went well.',
+        },
+        clinical_flags: [],
+      };
+
+      mockTables(supabaseAdmin, {
+        consult_sessions: ok(mockSession),
+        consult_drafts: ok(mockDraft),
+      });
+
+      const res = await request(app)
+        .get('/api/consults/sess-100/draft')
+        .set('Authorization', `Bearer ${doctorToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe('draft-100');
+      expect(res.body.status).toBe('needs_review');
+    });
+
+    test('POST /api/consults/:id/draft/review approves draft and commits notes', async () => {
+      const doctorToken = signSessionToken({
+        sessionId: 'sess-100',
+        userId: doctorUser.id,
+        role: 'doctor',
+        device: 'doctor',
+      });
+
+      const mockSession = {
+        id: 'sess-100',
+        appointment_id: 'appt-100',
+        doctor_id: doctorUser.id,
+      };
+
+      const existingDraft = {
+        id: 'draft-100',
+        session_id: 'sess-100',
+        status: 'needs_review',
+        doctor_notes: {
+          chief_complaint: 'Routine review',
+          vitals_observed: 'Normal',
+          assessment: 'Healthy second trimester',
+          plan_and_recommendations: [{ recommendation: 'Hydrate well.', cited_segment_ids: ['seg-1'] }],
+        },
+      };
+
+      const approvedDraft = {
+        ...existingDraft,
+        status: 'approved',
+      };
+
+      mockTables(supabaseAdmin, {
+        consult_sessions: ok(mockSession),
+        consult_drafts: [ok(existingDraft), ok(approvedDraft)],
+        consultation_notes: ok({ id: 'note-1', appointment_id: 'appt-100' }),
+      });
+
+      const res = await request(app)
+        .post('/api/consults/sess-100/draft/review')
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send({ action: 'approve' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('approved');
+    });
+
+    test('POST /api/consults/:id/draft/generate creates new draft on demand', async () => {
+      const doctorToken = signSessionToken({
+        sessionId: 'sess-100',
+        userId: doctorUser.id,
+        role: 'doctor',
+        device: 'doctor',
+      });
+
+      const mockSession = {
+        id: 'sess-100',
+        appointment_id: 'appt-100',
+        doctor_id: doctorUser.id,
+        patient_id: patientUser.id,
+        status: 'processing',
+      };
+
+      const mockSegments = [
+        { id: 'seg-1', segment_id: 'seg-1', device: 'doctor', start_ms: 1000, end_ms: 3000, text: 'Hello.' },
+      ];
+
+      const savedDraft = {
+        id: 'draft-new',
+        session_id: 'sess-100',
+        status: 'needs_review',
+        provider: 'fake',
+      };
+
+      mockTables(supabaseAdmin, {
+        consult_sessions: ok(mockSession),
+        segments: ok(mockSegments),
+        audio_chunks: ok([]),
+        consult_audio_gaps: ok([]),
+        questionnaire_responses: ok([]),
+        pregnancy_episodes: ok(null),
+        lab_reports: ok([]),
+        consult_drafts: ok(savedDraft),
+        session_consents: ok([]),
+        session_devices: ok([]),
+      });
+
+      const res = await request(app)
+        .post('/api/consults/sess-100/draft/generate')
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send({ provider: 'fake', providerOptions: { simulatedLatencyMs: 0 } });
+
+      expect(res.status).toBe(201);
+      expect(res.body.id).toBe('draft-new');
+      expect(res.body.status).toBe('needs_review');
     });
   });
 });

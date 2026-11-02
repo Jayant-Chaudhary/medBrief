@@ -236,3 +236,28 @@ This document maintains an up-to-date catalog of every file created for the cons
 - `supabase/migrations/20261102000001_consult_audio_orchestration.sql`: Adds `incomplete_sides` and `draft_outdated` to `consult_sessions`, an index on ending deadlines, and the `'missing_chunk'` reason code in `consult_audio_gaps`.
 - `docs/consult-audio/PHASE_6_IMPLEMENTATION_PLAN.md`: Approved implementation plan for Phase 6.
 - `docs/consult-audio/PHASE_6_WALKTHROUGH.md`: Detailed walkthrough, test evidence across backend, client, and mobile, and known gaps.
+
+## 13. Merge and Crosstalk Handling (Phase 7)
+
+- `server/src/services/consultAudio/mergeSegments.js`: Pure, deterministic merger function that unifies doctor and patient segments into a single chronological timeline. Computes temporal overlap ratios relative to the shorter segment, measures text similarity via token Dice and character bigrams (supporting both Devanagari and Latin), removes quieter acoustic echo duplicates based on chunk `avg_dbfs`, flags simultaneous speech overlaps (`'overlap'`), tags low-confidence utterances (`'low_confidence'`), embeds explicit gaps (`consult_audio_gaps` and failed chunks) so gaps are never silent holes, and computes duplicate rate statistics.
+- `tools/simulate-device/fixtures/merge-cases.json`: Shared synthetic cross-platform test fixtures covering quiet duplicate removal, simultaneous speech overlap, Devanagari consultation phrases, low confidence tagging, and gap embedding.
+- `server/src/tests/consultAudio/mergeSegments.test.js`: Comprehensive unit tests covering pure normalization, similarity math, temporal overlap calculations, quiet duplicate removal, simultaneous speech flags, gap embedding, fixture validation, and duplicate rate reporting.
+- `docs/consult-audio/PHASE_7_IMPLEMENTATION_PLAN.md`: Approved implementation plan for Phase 7.
+- `docs/consult-audio/PHASE_7_WALKTHROUGH.md`: Detailed walkthrough, duplicate rate metrics, test evidence, and known gaps.
+
+## 14. Notes Drafting (Interface and Checks) (Phase 8)
+
+- `supabase/migrations/20261102000002_consult_drafts.sql`: Creates `consult_drafts` table with `status in ('needs_review', 'approved', 'rejected')`, `doctor_notes`, `patient_summary`, `clinical_flags`, `tracers_used`, `review_reasons`, and Row Level Security policies matching session participants.
+- `server/src/services/consultAudio/drafting/draftSchemas.js`: Zod and Gemini OpenAPI JSON response schemas for Doctor Notes, Patient Summary, and Clinical Flags.
+- `server/src/services/consultAudio/drafting/tracerVerification.js`: Context builder querying structured records (`lab_report_metrics`, `pregnancy_investigations`, `pregnancy_ultrasounds`, `vitals_logs`, `antenatal_visits`, `questionnaire_responses`), tracer catalog generator, and deterministic post-check engine enforcing citation integrity and numeric claim verification.
+- `server/src/services/consultAudio/drafting/draftProvider.interface.js`: Interface defining `generateDoctorNotes`, `generatePatientSummary`, `generateClinicalFlags`, and parallel `generateDraft`.
+- `server/src/services/consultAudio/drafting/geminiDraftProvider.js`: Google Gemini Flash REST API provider with schema-enforced JSON output.
+- `server/src/services/consultAudio/drafting/localDraftProvider.js`: Local LLM provider for `qwen3:8b` (Ollama or OpenAI-compatible format) for local offline testing.
+- `server/src/services/consultAudio/drafting/fakeDraftProvider.js`: Deterministic zero-network provider using actual segment IDs and tracers for test suites.
+- `server/src/services/consultAudio/drafting/draftProviderFactory.js`: Factory resolving provider by config (`'gemini'` | `'local'` | `'fake'`).
+- `server/src/services/consultAudio/draft.service.js`: Orchestrates transcript retrieval, structured context & tracer building, parallel drafting, post-checks, `consult_drafts` persistence, state transition to `draft_ready`, `notes_ready` socket emission, and clinician review/approval committed to `consultation_notes`.
+- `server/src/tests/consultAudio/tracerVerification.test.js`: Unit tests for tracer generation, citation integrity, and unverified number auditing.
+- `server/src/tests/consultAudio/draftProviders.test.js`: Unit tests for `FakeDraftProvider`, `GeminiDraftProvider`, `LocalDraftProvider`, and factory.
+- `server/src/tests/consultAudio/draftService.test.js`: Integration tests for draft generation, review approval, rejection, and access control.
+- `docs/consult-audio/PHASE_8_IMPLEMENTATION_PLAN.md`: Approved implementation plan for Phase 8.
+- `docs/consult-audio/PHASE_8_WALKTHROUGH.md`: Detailed walkthrough, benchmark turnaround timing, test evidence, and known gaps.
