@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Sidebar } from '../../components/layout/Sidebar.jsx';
 import { Avatar } from '../../components/common/Avatar.jsx';
 import { Icon } from '../../components/common/Icon.jsx';
@@ -14,7 +14,13 @@ export function ClinicianPatients() {
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [query, setQuery] = useState('');
+  // The assistant passes a name to search for as navigation state, never in the URL.
+  const assistantQuery = useLocation().state?.assistantQuery;
+  const [query, setQuery] = useState(assistantQuery ?? '');
+
+  useEffect(() => {
+    if (assistantQuery) setQuery(assistantQuery);
+  }, [assistantQuery]);
 
   useEffect(() => {
     fetchMyPatients()

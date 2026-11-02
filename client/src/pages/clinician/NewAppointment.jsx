@@ -11,10 +11,19 @@ import { Sidebar } from '../../components/layout/Sidebar.jsx';
 import { SectionCard } from '../../components/common/SectionCard.jsx';
 import { Button } from '../../components/common/Button.jsx';
 import { formatDate } from '../../utils/format.js';
+import { useAssistantControls } from '../../components/assistant/AssistantBridge.jsx';
 
 const EMPTY_FORM = { patientFullName: '', patientEmail: '', scheduledAt: '' };
 
 const TYPE_LABEL = { yes_no: 'Yes / No', text: 'Written answer' };
+
+const WHEN_FMT = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' };
+
+/** "t…@example.com": enough to recognise the address on a confirmation card. */
+function maskEmail(email) {
+  const [local, domain] = String(email || '').split('@');
+  return domain ? `${local.slice(0, 1)}…@${domain}` : '—';
+}
 
 /**
  * Schedule a visit and invite the patient to it.
@@ -50,6 +59,43 @@ export default function NewAppointment() {
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // The assistant may use these once patients have loaded. Ids match the
+  // server's controls registry. It only presses Create visit and invite after
+  // the clinician confirms the summary below.
+  const [loaded, setLoaded] = useState(false);
+  const setText = (key) => (value) => setForm((f) => ({ ...f, [key]: String(value) }));
+  const setNewPatient = (key) => (value) => {
+    // A name or email means someone not in the list, so the form switches to entering them.
+    setChosenPatient(null);
+    setMode('manual');
+    setText(key)(value);
+  };
+  useAssistantControls('new_appointment', {
+    // Which returning patient is chosen, so a fill meant for one patient never lands on another.
+    context: () => ({ patientId: mode === 'search' ? chosenPatient?.id ?? null : null }),
+    controls: {
+      scheduledAt: { get: () => form.scheduledAt, set: setText('scheduledAt') },
+      patientFullName: { get: () => form.patientFullName, set: setNewPatient('patientFullName') },
+      patientEmail: { get: () => form.patientEmail, set: setNewPatient('patientEmail') },
+      newQuestion: { get: () => draftQuestion, set: (value) => setDraftQuestion(String(value)) },
+      newQuestionType: { get: () => draftType, set: (value) => TYPE_LABEL[value] && setDraftType(value) },
+      saveQuestionToLibrary: { get: () => saveDraftToLibrary, set: (value) => setSaveDraftToLibrary(value === true) },
+    },
+    buttons: {
+      add_question: { run: () => Boolean(addDraftQuestion()) },
+      create_visit: {
+        available: () => patientReady && Boolean(form.scheduledAt) && !saving,
+        run: submitAppointment,
+        summary: () => [
+          { label: 'Patient', value: (mode === 'search' ? chosenPatient?.fullName : form.patientFullName.trim()) || '—' },
+          { label: 'Invite to', value: maskEmail(mode === 'search' ? chosenPatient?.email : form.patientEmail.trim()) },
+          { label: 'Date and time', value: formatDate(form.scheduledAt, WHEN_FMT) },
+          { label: 'Pre-visit questions', value: String(selectedQuestionIds.size + newQuestions.length) },
+        ],
+      },
+    },
+  }, { ready: loaded });
+
   useEffect(() => {
     Promise.all([fetchMyPatients(), getQuestionnaireTemplates()])
       .then(([patientRows, questionRows]) => {
@@ -63,6 +109,7 @@ export default function NewAppointment() {
         if (preselect) setChosenPatient(preselect);
         // With no returning patients there is nothing to search.
         if (patientRows.length === 0) setMode('manual');
+        setLoaded(true);
       })
       .catch((err) => showToast(err.message || 'Could not load your patients and questions.', 'error'));
   }, [searchParams, showToast]);
@@ -91,23 +138,34 @@ export default function NewAppointment() {
     });
   }
 
+  /** @returns {boolean} whether a question was added */
   function addDraftQuestion() {
     const text = draftQuestion.trim();
-    if (!text) return;
+    if (!text) return false;
     setNewQuestions((current) => [
       ...current,
       { key: `${Date.now()}`, text, responseType: draftType, saveToList: saveDraftToLibrary },
     ]);
     setDraftQuestion('');
     setSaveDraftToLibrary(false);
+    return true;
   }
 
   const patientReady =
     mode === 'search' ? Boolean(chosenPatient?.email) : Boolean(form.patientFullName.trim() && form.patientEmail.trim());
 
-  async function handleSubmit(event) {
+  function handleSubmit(event) {
     event.preventDefault();
-    if (!patientReady || !form.scheduledAt) return;
+    submitAppointment();
+  }
+
+  /**
+   * Creates the visit and sends the invite. The form's button and the
+   * assistant (after the clinician confirms) both call this.
+   * @returns {Promise<boolean>} whether the visit was created
+   */
+  async function submitAppointment() {
+    if (!patientReady || !form.scheduledAt || saving) return false;
 
     setSaving(true);
     setResult(null);
@@ -136,8 +194,10 @@ export default function NewAppointment() {
           ? 'Appointment added to the existing patient record.'
           : 'Appointment created and invite sent.'
       );
+      return true;
     } catch (err) {
       showToast(err.message || 'Could not create the appointment.', 'error');
+      return false;
     } finally {
       setSaving(false);
     }
@@ -261,7 +321,14 @@ export default function NewAppointment() {
                     <label htmlFor="patient-name" className="mb-1.5 block text-label-md text-ink-2">
                       Patient name
                     </label>
-                    <input id="patient-name" value={form.patientFullName} onChange={set('patientFullName')} className="field h-10" required />
+                    <input
+                      id="patient-name"
+                      data-assistant-id="patientFullName"
+                      value={form.patientFullName}
+                      onChange={set('patientFullName')}
+                      className="field h-10"
+                      required
+                    />
                   </div>
                   <div>
                     <label htmlFor="patient-email" className="mb-1.5 block text-label-md text-ink-2">
@@ -269,6 +336,7 @@ export default function NewAppointment() {
                     </label>
                     <input
                       id="patient-email"
+                      data-assistant-id="patientEmail"
                       type="email"
                       value={form.patientEmail}
                       onChange={set('patientEmail')}
@@ -291,6 +359,7 @@ export default function NewAppointment() {
             <SectionCard icon="calendar" title="Date and time" bodyClassName="p-5">
               <input
                 id="scheduled-at"
+                data-assistant-id="scheduledAt"
                 aria-label="Date and time"
                 type="datetime-local"
                 value={form.scheduledAt}
@@ -381,6 +450,7 @@ export default function NewAppointment() {
                   }}
                   placeholder="Write a question for this patient…"
                   aria-label="New question"
+                  data-assistant-id="newQuestion"
                   className="field h-10"
                 />
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -388,12 +458,13 @@ export default function NewAppointment() {
                     value={draftType}
                     onChange={(e) => setDraftType(e.target.value)}
                     aria-label="How the patient answers"
+                    data-assistant-id="newQuestionType"
                     className="field h-8 w-auto"
                   >
                     <option value="yes_no">{TYPE_LABEL.yes_no}</option>
                     <option value="text">{TYPE_LABEL.text}</option>
                   </select>
-                  <label className="flex cursor-pointer items-center gap-2 text-body-sm text-ink-2">
+                  <label data-assistant-id="saveQuestionToLibrary" className="flex cursor-pointer items-center gap-2 rounded-md text-body-sm text-ink-2">
                     <input
                       type="checkbox"
                       checked={saveDraftToLibrary}

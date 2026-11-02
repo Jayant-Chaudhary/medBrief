@@ -1,0 +1,43 @@
+/**
+ * The pages the assistant may open, per role. This list is the only source of
+ * routes: the model picks an id, never a URL.
+ *
+ * Aliases are plain names for each page in English, Hindi and Hinglish. They
+ * let common requests skip the model entirely (see intentRules.js). They name
+ * pages, not symptoms or conditions, so a health statement never matches.
+ */
+
+const PAGES = {
+  patient: [
+    { id: 'home', path: '/', label: 'Home', description: 'Overview with upcoming appointments', aliases: ['home', 'home page', 'main page', 'homepage', 'होम'] },
+    { id: 'reports', path: '/reports', label: 'Lab reports', description: 'Upload, view and share lab reports', aliases: ['report', 'reports', 'lab report', 'lab reports', 'riport', 'riports', 'रिपोर्ट', 'रिपोर्ट्स'] },
+    { id: 'summary', path: '/summary', label: 'Visit summary', description: 'Notes, prescriptions and next steps from past visits', aliases: ['summary', 'visit summary', 'visit summaries', 'prescription', 'prescriptions', 'parchi', 'parcha', 'पर्ची'] },
+    { id: 'checkin', path: '/checkin/symptoms', label: 'Pre-visit check-in', description: 'Answer the questions before an appointment', aliases: ['check in', 'checkin', 'pre visit', 'previsit', 'questionnaire', 'चेक इन'] },
+    { id: 'profile', path: '/profile', label: 'Profile', description: 'Your personal details', aliases: ['profile', 'my details', 'account', 'प्रोफाइल', 'प्रोफ़ाइल'] },
+  ],
+  clinician: [
+    { id: 'dashboard', path: '/clinician', label: 'Dashboard', description: "Today's patients and open visits", aliases: ['dashboard', 'home', 'home page', 'main page', 'डैशबोर्ड'] },
+    { id: 'schedule', path: '/clinician/schedule', label: 'Schedule', description: 'Calendar of appointments', aliases: ['schedule', 'calendar', 'appointments', 'todays schedule', 'agenda', 'शेड्यूल'] },
+    { id: 'patients', path: '/clinician/patients', label: 'Patients', description: 'List of your patients', aliases: ['patients', 'patient list', 'my patients', 'मरीज'] },
+    { id: 'new_appointment', path: '/clinician/appointments/new', label: 'New appointment', description: 'Book an appointment and invite a patient', aliases: ['new appointment', 'book appointment', 'create appointment', 'add appointment'] },
+    { id: 'maternity', path: '/clinician/maternity', label: 'Maternity card', description: 'Antenatal and delivery record', aliases: ['maternity', 'maternity card', 'antenatal card', 'antenatal record', 'antenatal', 'anc card', 'mcp card'] },
+    { id: 'checklists', path: '/clinician/checklists', label: 'Checklists', description: 'Visit checklist templates', aliases: ['checklist', 'checklists', 'check list', 'check lists'] },
+    { id: 'profile', path: '/clinician/profile', label: 'Profile', description: 'Your clinician details', aliases: ['profile', 'my profile', 'account', 'प्रोफाइल'] },
+  ],
+};
+
+function pagesFor(role) {
+  return PAGES[role] || [];
+}
+
+function findPage(role, id) {
+  return pagesFor(role).find((page) => page.id === id) || null;
+}
+
+/** The page id the user is on, from the browser's path (query string ignored), or null. */
+function pageAt(role, currentPath) {
+  const path = String(currentPath || '').split(/[?#]/)[0].replace(/(.)\/+$/, '$1');
+  return pagesFor(role).find((page) => page.path === path)?.id || null;
+}
+
+module.exports = { PAGES, pagesFor, findPage, pageAt };
