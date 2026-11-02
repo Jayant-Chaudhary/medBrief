@@ -39,7 +39,7 @@ class LocalProvider extends SttProvider {
     const formData = new FormData();
     formData.append('file', blob, fileName);
 
-    if (options.languageCode) {
+    if (options.languageCode && options.languageCode !== 'auto') {
       formData.append('language', options.languageCode);
     }
     formData.append('vad_filter', options.vadFilter === false ? 'false' : 'true');

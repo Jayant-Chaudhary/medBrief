@@ -50,6 +50,30 @@ const FullDraftSchema = z.object({
   clinical_flags: z.array(ClinicalFlagItemSchema),
 });
 
+/**
+ * Model output sometimes contains a flag with no supporting segment. One such
+ * item must not fail the whole draft, so uncited flags are removed and counted
+ * (the count becomes a review reason; flag text is never logged).
+ */
+function dropUncitedFlags(raw) {
+  const flags = Array.isArray(raw) ? raw : raw?.flags;
+  if (!Array.isArray(flags)) return { raw, dropped: 0 };
+  const kept = flags.filter(
+    (f) => Array.isArray(f?.cited_segment_ids) && f.cited_segment_ids.length > 0
+  );
+  return { raw: { ...(Array.isArray(raw) ? {} : raw), flags: kept }, dropped: flags.length - kept.length };
+}
+
+/** Same rule for doctor-note plan items: no cited segment, no item (counted, never logged). */
+function dropUncitedRecommendations(raw) {
+  const items = raw?.plan_and_recommendations;
+  if (!Array.isArray(items)) return { raw, dropped: 0 };
+  const kept = items.filter(
+    (r) => Array.isArray(r?.cited_segment_ids) && r.cited_segment_ids.length > 0
+  );
+  return { raw: { ...raw, plan_and_recommendations: kept }, dropped: items.length - kept.length };
+}
+
 // 2. Gemini Response Schemas (OpenAPI subset supported by Google Generative AI)
 
 const GEMINI_DOCTOR_NOTES_SCHEMA = {
@@ -146,6 +170,8 @@ module.exports = {
   PatientSummarySchema,
   ClinicalFlagItemSchema,
   ClinicalFlagsSchema,
+  dropUncitedFlags,
+  dropUncitedRecommendations,
   FullDraftSchema,
   GEMINI_DOCTOR_NOTES_SCHEMA,
   GEMINI_PATIENT_SUMMARY_SCHEMA,

@@ -52,6 +52,8 @@ class DraftProviderInterface {
       doctorNotes: docRes.data,
       patientSummary: patRes.data,
       clinicalFlags: flagRes.data?.flags || (Array.isArray(flagRes.data) ? flagRes.data : []),
+      droppedUncitedFlags: flagRes.droppedUncited || 0,
+      droppedUncitedRecommendations: docRes.droppedUncited || 0,
       latencyMs: totalLatencyMs,
       provider: this.name,
       modelVersion: this.modelVersion,

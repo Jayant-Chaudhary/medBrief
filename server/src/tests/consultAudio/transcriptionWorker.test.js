@@ -215,6 +215,7 @@ describe('Consult Audio — Transcription Worker', () => {
         }
         if (table === 'segments') {
           return {
+            delete: jest.fn(() => ({ eq: jest.fn(() => ({ eq: jest.fn().mockResolvedValue({ error: null }) })) })),
             insert: jest.fn().mockImplementation((rows) => {
               insertedSegments = rows;
               return Promise.resolve({ data: rows, error: null });
@@ -447,6 +448,7 @@ describe('Consult Audio — Transcription Worker', () => {
             events.push(payload.status);
             return { error: payload.status === 'completed' ? completionError : null };
           }) })),
+          delete: jest.fn(() => ({ eq: jest.fn(() => ({ eq: jest.fn(async () => ({ error: null })) })) })),
           insert,
         };
         return query;

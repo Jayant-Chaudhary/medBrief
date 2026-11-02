@@ -312,10 +312,30 @@ describe('Timeline Merging and Crosstalk Handling (Phase 7)', () => {
         totalInputSegments: 4,
         retainedSegments: 3,
         duplicateCount: 1,
+        noiseSuppressedCount: 0,
         overlapCount: 0,
         gapCount: 0,
         duplicateRate: 0.25, // 1 duplicate out of 4 total input segments = 25%
       });
+    });
+  });
+
+  describe('noise confidence floor', () => {
+    it('leaves near-certain noise out of the timeline and counts it', () => {
+      const doctor = [
+        { id: 'd1', start_ms: 0, end_ms: 2000, text: 'synthetic clear sentence', confidence: 0.8 },
+        { id: 'd2', start_ms: 3000, end_ms: 5000, text: 'synthetic garbled sentence', confidence: 0.17 },
+      ];
+      const merged = mergeSegments(doctor, [], { noiseConfidenceFloor: 0.25 });
+      expect(merged.map((s) => s.id)).toEqual(['d1']);
+      expect(merged.stats.noiseSuppressedCount).toBe(1);
+      expect(merged.stats.totalInputSegments).toBe(2);
+    });
+
+    it('keeps segments with unknown confidence', () => {
+      const merged = mergeSegments([{ id: 'd1', start_ms: 0, end_ms: 1000, text: 'synthetic' }], []);
+      expect(merged).toHaveLength(1);
+      expect(merged.stats.noiseSuppressedCount).toBe(0);
     });
   });
 });

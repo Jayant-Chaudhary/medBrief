@@ -14,6 +14,8 @@ const {
   DoctorNotesSchema,
   PatientSummarySchema,
   ClinicalFlagsSchema,
+  dropUncitedFlags,
+  dropUncitedRecommendations,
 } = require('./draftSchemas');
 const logger = require('../../../utils/logger');
 
@@ -51,6 +53,7 @@ class LocalDraftProvider extends DraftProviderInterface {
         ],
         format: 'json',
         stream: false,
+        think: Boolean(config.localLlmThink),
         options: {
           temperature: 0.2,
         },
@@ -132,8 +135,9 @@ ${JSON.stringify(transcript.map((s) => ({ segment_id: s.id || s.segment_id, spea
 `;
 
     const rawData = await this._callLocalLlm(systemPrompt, userPrompt);
-    const validated = DoctorNotesSchema.parse(rawData);
-    return { data: validated, latencyMs: Date.now() - start };
+    const { raw, dropped } = dropUncitedRecommendations(rawData);
+    const validated = DoctorNotesSchema.parse(raw);
+    return { data: validated, droppedUncited: dropped, latencyMs: Date.now() - start };
   }
 
   async generatePatientSummary({ transcript, structuredContext, tracerCatalog }) {
@@ -194,8 +198,9 @@ ${JSON.stringify(transcript.map((s) => ({ segment_id: s.id || s.segment_id, spea
 `;
 
     const rawData = await this._callLocalLlm(systemPrompt, userPrompt);
-    const validated = ClinicalFlagsSchema.parse(rawData);
-    return { data: validated, latencyMs: Date.now() - start };
+    const { raw, dropped } = dropUncitedFlags(rawData);
+    const validated = ClinicalFlagsSchema.parse(raw);
+    return { data: validated, droppedUncited: dropped, latencyMs: Date.now() - start };
   }
 }
 

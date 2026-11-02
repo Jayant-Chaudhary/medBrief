@@ -6,6 +6,7 @@ using CTranslate2 and Whisper models (default: large-v3-turbo).
 """
 
 import os
+import re
 import tempfile
 import logging
 from typing import Optional, List
@@ -24,6 +25,38 @@ DEFAULT_DEVICE = os.getenv("WHISPER_DEVICE", "cuda" if has_cuda else "cpu")
 DEFAULT_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "float16" if DEFAULT_DEVICE == "cuda" else "int8")
 
 logger.info(f"Targeting device: {DEFAULT_DEVICE}, compute_type: {DEFAULT_COMPUTE_TYPE}, model: {MODEL_NAME}")
+
+# Anti-hallucination tunables (env-overridable; no audio or text is ever logged).
+NO_SPEECH_THRESHOLD = float(os.getenv("WHISPER_NO_SPEECH_THRESHOLD", "0.6"))
+LOG_PROB_THRESHOLD = float(os.getenv("WHISPER_LOG_PROB_THRESHOLD", "-1.0"))
+COMPRESSION_RATIO_THRESHOLD = float(os.getenv("WHISPER_COMPRESSION_RATIO_THRESHOLD", "2.4"))
+VAD_THRESHOLD = float(os.getenv("WHISPER_VAD_THRESHOLD", "0.6"))
+VAD_MIN_SPEECH_MS = int(os.getenv("WHISPER_VAD_MIN_SPEECH_MS", "250"))
+VAD_MIN_SILENCE_MS = int(os.getenv("WHISPER_VAD_MIN_SILENCE_MS", "500"))
+REPEAT_UNIT_MAX_LEN = int(os.getenv("WHISPER_REPEAT_UNIT_MAX_LEN", "6"))
+REPEAT_MIN_COUNT = int(os.getenv("WHISPER_REPEAT_MIN_COUNT", "6"))
+ALLOWED_LANGUAGES = [
+    l.strip() for l in os.getenv("WHISPER_ALLOWED_LANGUAGES", "en,hi").split(",") if l.strip()
+]
+
+_REPEAT_RE = re.compile(r"(.{1,%d}?)\1{%d,}" % (REPEAT_UNIT_MAX_LEN, REPEAT_MIN_COUNT - 1), re.DOTALL)
+
+
+def is_hallucination(seg) -> bool:
+    """True for segments that look like noise decoded as text."""
+    text = seg.text.strip()
+    if not text:
+        return True
+    if getattr(seg, "compression_ratio", 0) > COMPRESSION_RATIO_THRESHOLD:
+        return True
+    if (
+        getattr(seg, "no_speech_prob", 0) > NO_SPEECH_THRESHOLD
+        and getattr(seg, "avg_logprob", 0) < LOG_PROB_THRESHOLD
+    ):
+        return True
+    # Repetition loops such as "aajijijiji..." score high logprob, so check the text itself.
+    return bool(_REPEAT_RE.search(text))
+
 
 model = None
 
@@ -52,6 +85,7 @@ class TranscribeResponse(BaseModel):
     language: str
     language_probability: float
     duration_sec: float
+    dropped_count: int = 0
     segments: List[SegmentResult]
 
 @app.get("/health")
@@ -81,32 +115,56 @@ async def transcribe_audio(
         tmp.write(content)
 
     try:
-        segments_gen, info = whisper.transcribe(
-            tmp_path,
-            language=language if language and language != "auto" else None,
-            vad_filter=vad_filter,
-            vad_parameters=dict(min_silence_duration_ms=500),
-        )
+        requested = language if language and language != "auto" else None
+
+        def run(lang):
+            gen, inf = whisper.transcribe(
+                tmp_path,
+                language=lang,
+                vad_filter=vad_filter,
+                vad_parameters=dict(
+                    threshold=VAD_THRESHOLD,
+                    min_speech_duration_ms=VAD_MIN_SPEECH_MS,
+                    min_silence_duration_ms=VAD_MIN_SILENCE_MS,
+                ),
+                condition_on_previous_text=False,
+                no_speech_threshold=NO_SPEECH_THRESHOLD,
+                log_prob_threshold=LOG_PROB_THRESHOLD,
+                compression_ratio_threshold=COMPRESSION_RATIO_THRESHOLD,
+            )
+            return list(gen), inf
+
+        raw_segments, info = run(requested)
+        # Auto-detect on noisy chunks can land on an unrelated language; pin to an allowed one.
+        if requested is None and ALLOWED_LANGUAGES and info.language not in ALLOWED_LANGUAGES:
+            raw_segments, info = run(ALLOWED_LANGUAGES[0])
 
         segments_list = []
         full_text_parts = []
+        dropped = 0
 
-        for seg in segments_gen:
+        for seg in raw_segments:
+            if is_hallucination(seg):
+                dropped += 1
+                continue
             clean_text = seg.text.strip()
-            if clean_text:
-                full_text_parts.append(clean_text)
-                segments_list.append(SegmentResult(
-                    start_ms=int(round(seg.start * 1000)),
-                    end_ms=int(round(seg.end * 1000)),
-                    text=clean_text,
-                    confidence=round(float(seg.avg_logprob), 3) if hasattr(seg, 'avg_logprob') else None,
-                ))
+            full_text_parts.append(clean_text)
+            segments_list.append(SegmentResult(
+                start_ms=int(round(seg.start * 1000)),
+                end_ms=int(round(seg.end * 1000)),
+                text=clean_text,
+                confidence=round(float(seg.avg_logprob), 3) if hasattr(seg, 'avg_logprob') else None,
+            ))
+
+        if dropped:
+            logger.info(f"Dropped {dropped} low-quality segment(s) from chunk")
 
         return TranscribeResponse(
             text=" ".join(full_text_parts),
             language=info.language,
             language_probability=round(float(info.language_probability), 3),
             duration_sec=round(float(info.duration), 2),
+            dropped_count=dropped,
             segments=segments_list,
         )
     except Exception as e:

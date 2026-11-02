@@ -17,6 +17,7 @@ import { Spinner } from '../../components/common/Spinner.jsx';
 import { usePatientDashboard } from '../../hooks/usePatientDashboard.js';
 import { Plus, ArrowLeft, Clock, User, CheckCircle, NotebookPen, CircleStop, BadgeCheck, UserCheck, Mic, FileAudio } from 'lucide-react';
 import { DoctorConsultationModal } from '../../components/consultAudio/DoctorConsultationModal.jsx';
+import { useConsultDraft } from '../../hooks/useConsultDraft.js';
 import { buildFlowsheet } from '../../utils/flowsheet.js';
 import {
   fetchPatients,
@@ -110,6 +111,7 @@ export function ClinicianDashboard() {
 
   const { data, loading, error, patch } = usePatientDashboard(selected?.id, selected?.appointmentId);
   const appointmentId = data?.appointment?.id;
+  const consultDraft = useConsultDraft(appointmentId, Boolean(selected));
 
   const handleSaveNotes = useCallback(
     async (text) => {
@@ -457,6 +459,14 @@ export function ClinicianDashboard() {
             checkedItems={data.consultationItems}
             onCheckItem={handleCheckConsultation}
             onUncheckItem={handleUncheckConsultation}
+            draft={consultDraft.draft}
+            draftBusy={consultDraft.busy}
+            draftError={consultDraft.error}
+            draftStalled={consultDraft.stalled}
+            draftWaiting={consultDraft.waiting}
+            onGenerateDraft={consultDraft.generate}
+            onApproveDraft={consultDraft.approve}
+            onRejectDraft={consultDraft.reject}
           />
           <ActionChecklist
             templates={data.actionTemplates}

@@ -44,6 +44,8 @@ module.exports = {
 
   // Speech-to-Text & Transcription
   sttProvider: env.STT_PROVIDER || 'sarvam', // 'sarvam' | 'fake' | 'local'
+  // 'auto' lets the provider detect the language; otherwise a code such as 'en' or 'hi'.
+  sttDefaultLanguage: env.STT_DEFAULT_LANGUAGE || 'auto',
   whisperServiceUrl: env.WHISPER_SERVICE_URL || 'http://localhost:8001',
   sarvamApiKey: env.SARVAM_API_KEY || '',
   sarvamModel: env.SARVAM_MODEL || 'saarika:v2',
@@ -65,6 +67,12 @@ module.exports = {
   dedupeMinOverlap: Number(env.DEDUPE_MIN_OVERLAP || 0.5),
   dedupeMinSimilarity: Number(env.DEDUPE_MIN_SIMILARITY || 0.8),
   lowConfidenceThreshold: Number(env.LOW_CONFIDENCE_THRESHOLD || 0.65),
+  // Segments below this confidence are treated as noise and left out of the merged timeline (counted in stats).
+  noiseConfidenceFloor: Number(env.NOISE_CONFIDENCE_FLOOR || 0.25),
+  // Acoustic bleed between two mics in one room.
+  crosstalkPartialSimilarity: Number(env.CROSSTALK_PARTIAL_SIMILARITY || 0.25),
+  crosstalkPartialLoudnessDb: Number(env.CROSSTALK_PARTIAL_LOUDNESS_DB || 6),
+  crosstalkDominantLoudnessDb: Number(env.CROSSTALK_DOMINANT_LOUDNESS_DB || 10),
 
   // Clinical Notes Drafting (Phase 8)
   draftModelProvider: env.DRAFT_MODEL_PROVIDER || 'gemini', // 'gemini' | 'local' | 'fake'
@@ -72,6 +80,8 @@ module.exports = {
   geminiApiKey: env.GEMINI_API_KEY || '',
   localLlmUrl: env.LOCAL_LLM_URL || 'http://localhost:11434/api/chat',
   localLlmModel: env.LOCAL_LLM_MODEL || 'qwen3:8b',
+  // Qwen3 'thinking' mode is slow for structured notes; off by default (Ollama /api/chat only).
+  localLlmThink: env.LOCAL_LLM_THINK === 'true',
   draftTimeoutMs: Number(env.DRAFT_TIMEOUT_MS || 25000),
 
   // Audio Retention

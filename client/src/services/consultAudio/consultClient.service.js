@@ -247,7 +247,9 @@ export async function getConsultationTranscript({ sessionId, token } = {}) {
  */
 export async function getSessionByAppointment(appointmentId) {
   if (!appointmentId) return null;
-  return request(`/api/consults/by-appointment/${appointmentId}`);
+  const res = await request(`/api/consults/by-appointment/${appointmentId}`);
+  // The server wraps the session as { ok, session }; session is null when none exists yet.
+  return res && 'session' in res ? res.session : res;
 }
 
 /**
@@ -344,7 +346,7 @@ export async function reviewConsultationDraft({
 
   return request(`/api/consults/${sessionId}/draft/review`, {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: payload,
   });
 }
 
@@ -376,7 +378,7 @@ export async function generateConsultationDraft({ sessionId, token, provider = n
 
   return request(`/api/consults/${sessionId}/draft/generate`, {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: payload,
   });
 }
 

@@ -425,7 +425,9 @@ async function reviewDraft(req, res, next) {
   try {
     const { id: sessionId } = req.params;
     const doctorUserId = req.user?.id || req.sessionToken?.userId;
-    const { action, editedDoctorNotes, rejectionReason } = req.body;
+    const { action } = req.body;
+    const editedDoctorNotes = req.body.editedDoctorNotes ?? req.body.edited_doctor_notes ?? null;
+    const rejectionReason = req.body.rejectionReason ?? req.body.rejection_reason ?? null;
 
     if (!action) {
       return res.status(400).json({ error: 'action ("approve" or "reject") is required' });

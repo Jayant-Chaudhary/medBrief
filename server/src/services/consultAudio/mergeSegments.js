@@ -175,13 +175,23 @@ function mergeSegments(doctorSegments = [], patientSegments = [], options = {}) 
   const dedupeMinOverlap = options.dedupeMinOverlap ?? config.dedupeMinOverlap ?? 0.5;
   const dedupeMinSimilarity = options.dedupeMinSimilarity ?? config.dedupeMinSimilarity ?? 0.8;
   const lowConfidenceThreshold = options.lowConfidenceThreshold ?? config.lowConfidenceThreshold ?? 0.65;
+  const noiseConfidenceFloor = options.noiseConfidenceFloor ?? config.noiseConfidenceFloor ?? 0.25;
+  const partialSimilarity = options.crosstalkPartialSimilarity ?? config.crosstalkPartialSimilarity ?? 0.25;
+  const partialLoudnessDb = options.crosstalkPartialLoudnessDb ?? config.crosstalkPartialLoudnessDb ?? 6;
+  const dominantLoudnessDb = options.crosstalkDominantLoudnessDb ?? config.crosstalkDominantLoudnessDb ?? 10;
   const gaps = options.gaps || [];
   const failedChunks = options.failedChunks || [];
 
-  const normDoctor = (doctorSegments || []).map((s) => normalizeSegment(s, 'doctor'));
-  const normPatient = (patientSegments || []).map((s) => normalizeSegment(s, 'patient'));
+  const allDoctor = (doctorSegments || []).map((s) => normalizeSegment(s, 'doctor'));
+  const allPatient = (patientSegments || []).map((s) => normalizeSegment(s, 'patient'));
 
-  const totalInputSegments = normDoctor.length + normPatient.length;
+  const totalInputSegments = allDoctor.length + allPatient.length;
+
+  // 0. Leave out segments the recogniser itself was almost certain were noise.
+  const isNoise = (seg) => seg.confidence !== null && seg.confidence < noiseConfidenceFloor;
+  const normDoctor = allDoctor.filter((s) => !isNoise(s));
+  const normPatient = allPatient.filter((s) => !isNoise(s));
+  const noiseSuppressedCount = totalInputSegments - normDoctor.length - normPatient.length;
 
   // 1. Tag low-confidence segments
   for (const seg of [...normDoctor, ...normPatient]) {
@@ -216,8 +226,8 @@ function mergeSegments(doctorSegments = [], patientSegments = [], options = {}) 
         //    picked up muffled acoustic bleed from the other device in the same room.
         const isAcousticBleed =
           similarity >= dedupeMinSimilarity ||
-          (similarity >= 0.25 && loudnessDiff >= 6) ||
-          (loudnessDiff >= 10 && overlapRatio >= 0.5);
+          (similarity >= partialSimilarity && loudnessDiff >= partialLoudnessDb) ||
+          (loudnessDiff >= dominantLoudnessDb && overlapRatio >= dedupeMinOverlap);
 
         if (isAcousticBleed) {
           // Acoustic echo / crosstalk duplicate: retain the louder device's clearer recording
@@ -317,6 +327,7 @@ function mergeSegments(doctorSegments = [], patientSegments = [], options = {}) 
     totalInputSegments,
     retainedSegments: mergedTimeline.filter((item) => item.type !== 'gap').length,
     duplicateCount,
+    noiseSuppressedCount,
     overlapCount,
     gapCount: gaps.length + failedChunks.length,
     duplicateRate: Number(duplicateRate.toFixed(4)),

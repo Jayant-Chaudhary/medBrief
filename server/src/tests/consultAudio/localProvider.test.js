@@ -97,6 +97,7 @@ describe('LocalProvider STT (Phase 10)', () => {
       expect(req.method).toBe('POST');
       expect(req.body).toBeInstanceOf(FormData);
 
+      expect(req.body.get('language')).toBe('en');
       expect(segments).toHaveLength(2);
       expect(segments[0]).toEqual({
         start_ms: 100,
@@ -219,5 +220,16 @@ describe('LocalProvider STT (Phase 10)', () => {
       expect(provider).toBeInstanceOf(LocalProvider);
       expect(provider.name).toBe('local');
     });
+  });
+
+  it("omits the language field when the language is 'auto'", async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ text: 'synthetic', language: 'en', duration_sec: 1, segments: [] }),
+    });
+    const provider = new LocalProvider('http://localhost:8001');
+    await provider.transcribe(Buffer.from('RIFFfakeaudiobuffer'), { languageCode: 'auto' });
+    const [, req] = global.fetch.mock.calls[0];
+    expect(req.body.has('language')).toBe(false);
   });
 });

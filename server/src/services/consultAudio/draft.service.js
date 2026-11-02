@@ -101,7 +101,11 @@ async function generateDraftForSession(sessionId, options = {}) {
     patient_summary: draftResult.patientSummary,
     clinical_flags: draftResult.clinicalFlags,
     tracers_used: postCheck.tracersUsed || [],
-    review_reasons: postCheck.reviewReasons || [],
+    review_reasons: [
+      ...(postCheck.reviewReasons || []),
+      ...(draftResult.droppedUncitedFlags > 0 ? ['uncited_flag_dropped'] : []),
+      ...(draftResult.droppedUncitedRecommendations > 0 ? ['uncited_recommendation_dropped'] : []),
+    ],
     latency_ms: draftResult.latencyMs || 0,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -146,7 +150,7 @@ async function generateDraftForSession(sessionId, options = {}) {
     sessionId,
     provider: draftResult.provider,
     latencyMs: draftResult.latencyMs,
-    reviewReasonsCount: postCheck.reviewReasons.length,
+    reviewReasonsCount: draftPayload.review_reasons.length,
   });
 
   return savedDraft;

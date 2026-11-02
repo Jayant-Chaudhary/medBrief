@@ -16,6 +16,8 @@ const {
   DoctorNotesSchema,
   PatientSummarySchema,
   ClinicalFlagsSchema,
+  dropUncitedFlags,
+  dropUncitedRecommendations,
   GEMINI_DOCTOR_NOTES_SCHEMA,
   GEMINI_PATIENT_SUMMARY_SCHEMA,
   GEMINI_CLINICAL_FLAGS_SCHEMA,
@@ -111,8 +113,9 @@ ${JSON.stringify(transcript.map((s) => ({ segment_id: s.id || s.segment_id, spea
 `;
 
     const rawData = await this._callGeminiApi(prompt, GEMINI_DOCTOR_NOTES_SCHEMA);
-    const validated = DoctorNotesSchema.parse(rawData);
-    return { data: validated, latencyMs: Date.now() - start };
+    const { raw, dropped } = dropUncitedRecommendations(rawData);
+    const validated = DoctorNotesSchema.parse(raw);
+    return { data: validated, droppedUncited: dropped, latencyMs: Date.now() - start };
   }
 
   async generatePatientSummary({ transcript, structuredContext, tracerCatalog }) {
@@ -157,8 +160,9 @@ ${JSON.stringify(transcript.map((s) => ({ segment_id: s.id || s.segment_id, spea
 `;
 
     const rawData = await this._callGeminiApi(prompt, GEMINI_CLINICAL_FLAGS_SCHEMA);
-    const validated = ClinicalFlagsSchema.parse(rawData);
-    return { data: validated, latencyMs: Date.now() - start };
+    const { raw, dropped } = dropUncitedFlags(rawData);
+    const validated = ClinicalFlagsSchema.parse(raw);
+    return { data: validated, droppedUncited: dropped, latencyMs: Date.now() - start };
   }
 }
 
