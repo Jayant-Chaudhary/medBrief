@@ -2,6 +2,7 @@ const request = require('supertest');
 const app = require('../app');
 const supabaseAdmin = require('../config/supabaseAdminClient');
 const { ok, mockTables, profileRow } = require('./helpers/supabaseMock');
+const { maxDisplayedCandidates } = require('../config/medicationDecision.config');
 
 jest.mock('../config/supabaseAdminClient', () => ({
   auth: { getUser: jest.fn() },
@@ -61,5 +62,39 @@ describe('Medication decision support persistence API', () => {
     const response = await send('put', '/api/decision-support/appointments/appointment-1/allergies').send({ status: 'none_known', allergies: [] });
     expect(response.status).toBe(403);
     expect(supabaseAdmin.rpc).not.toHaveBeenCalled();
+  });
+
+  const displayedRow = index => ({ id: `example-template-${index}`, score: Math.max(0, 90 - index),
+    method: 'gower', coverage: 1, compared: 3, featureCount: 3 });
+  function mockEvaluation() {
+    const candidates = Array.from({ length: maxDisplayedCandidates + 1 }, (_, i) => ({ id: `example-template-${i}`, version: 1 }));
+    return mockTables(supabaseAdmin, {
+      profiles: profileRow('clinician'),
+      appointments: ok({ id: 'appointment-1', clinician_id: clinician.id, patient_id: 'patient-1' }),
+      medication_recommendation_events: ok({ id: 'event-1', candidates }),
+    });
+  }
+
+  it('records the expanded autocomplete list in display order with model scores', async () => {
+    const chains = mockEvaluation();
+    const displayed = Array.from({ length: maxDisplayedCandidates }, (_, i) => displayedRow(i));
+    const response = await send('put', '/api/decision-support/appointments/appointment-1/evaluations/event-1/displayed').send({ displayed });
+    expect(response.status).toBe(200);
+    const update = chains.medication_recommendation_events[1].update.mock.calls[0][0];
+    expect(update.candidates.map(row => row.id)).toEqual(displayed.map(row => row.id));
+    const { id, ...expectedScore } = displayedRow(0);
+    expect(update.candidates[0].displayed).toMatchObject(expectedScore);
+  });
+
+  it.each(['too many', 'ineligible', 'duplicate'])('rejects %s autocomplete results before writing', async scenario => {
+    const chains = mockEvaluation();
+    const displayed = scenario === 'too many'
+      ? Array.from({ length: maxDisplayedCandidates + 1 }, (_, i) => displayedRow(i))
+      : scenario === 'ineligible' ? [{ ...displayedRow(0), id: 'not-in-evaluation' }]
+        : [displayedRow(0), displayedRow(0)];
+    const response = await send('put', '/api/decision-support/appointments/appointment-1/evaluations/event-1/displayed').send({ displayed });
+    expect(response.status).toBe(400);
+    expect(chains.medication_recommendation_events).toHaveLength(1);
+    expect(chains.medication_recommendation_events[0].update).not.toHaveBeenCalled();
   });
 });
