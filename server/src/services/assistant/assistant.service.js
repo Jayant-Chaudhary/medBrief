@@ -594,10 +594,25 @@ async function runAgentLoop({
     activeChecklist = await planChecklist(message, { provider, settings });
   }
 
+  if (activeChecklist.length === 0) {
+    return {
+      type: 'unsupported',
+      message: (settings && settings.unsupportedMessage) || config.unsupportedMessage,
+      checklist: [],
+      steps: [],
+      source: 'agent',
+      attempts: 1,
+    };
+  }
+
   if (results && results.length > 0) {
-    const okCount = results.filter((r) => r.result === 'ok').length;
+    const terminalResults = results.filter((r) => {
+      if (r.result !== 'ok') return false;
+      if (r.op === 'go' || r.ref === 'r_notes_btn') return false;
+      return true;
+    });
     let ticked = 0;
-    for (let i = 0; i < activeChecklist.length && ticked < okCount; i += 1) {
+    for (let i = 0; i < activeChecklist.length && ticked < terminalResults.length; i += 1) {
       if (!activeChecklist[i].done) {
         activeChecklist[i] = { ...activeChecklist[i], done: true };
         ticked += 1;
@@ -729,15 +744,9 @@ async function runAgentLoop({
     });
   }
 
-  if (validated.pageActions.length > 0 || validated.navigationSteps.length > 0) {
-    const firstUnticked = activeChecklist.findIndex((c) => !c.done);
-    if (firstUnticked >= 0) {
-      activeChecklist[firstUnticked] = { ...activeChecklist[firstUnticked], done: true };
-    }
-  }
-
+  const hasPendingItems = activeChecklist.some((c) => !c.done);
   const shouldContinue = Boolean(
-    nav.status === 'continue' &&
+    (nav.status === 'continue' || hasPendingItems) &&
     moreRounds &&
     (validated.cut || validated.pageActions.length > 0 || validated.navigationSteps.length > 0)
   );
@@ -801,14 +810,21 @@ async function handleStep({
     );
   }
 
+  const isPhase6Agent = Boolean(
+    settings.agentLoop === true ||
+    (Array.isArray(checklist) && checklist.length > 0) ||
+    (Array.isArray(results) && results.length > 0) ||
+    (typeof note === 'string' && note.length > 0)
+  );
+
   // 1. Fast path: Page phrase rules
-  if (seen) {
+  if (seen && !isPhase6Agent) {
     const ruledPage = pageRules(message, seen, { role, onPage, round, progress, settings });
     if (ruledPage) return { ...ruledPage, source: 'rules', attempts: 0 };
   }
 
   // 2. Fast path: Single patient search
-  if (role === 'clinician' && round === 0 && !checklist?.length) {
+  if (role === 'clinician' && round === 0 && !isPhase6Agent) {
     const find = FIND_IN_PATIENTS.exec(message);
     if (find) {
       const plan = { action: 'run', steps: [{ do: 'find_patient', page: 'none', patient: find[1], which: 'none', when: '', fields: [], press: 'none' }], options: [], more: false };
@@ -818,14 +834,7 @@ async function handleStep({
   }
 
   // 3. Clinician agent loop routing (when agent loop state is active or configured)
-  const useAgent = Boolean(
-    settings.agentLoop === true ||
-    (Array.isArray(checklist) && checklist.length > 0) ||
-    (Array.isArray(results) && results.length > 0) ||
-    (typeof note === 'string' && note.length > 0)
-  );
-
-  if (role === 'clinician' && useAgent) {
+  if (role === 'clinician' && isPhase6Agent) {
     return runAgentLoop({
       message,
       role,

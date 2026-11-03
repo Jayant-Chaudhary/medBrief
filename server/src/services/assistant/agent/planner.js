@@ -92,6 +92,8 @@ const PLANNER_EXAMPLES = [
 
 const LEADING_FILLER = /^(?:and\s+then|then|after\s+that|afterwards|lastly|finally|also|aur|phir)\b,?\s*/i;
 
+const FORBIDDEN_WORDS = /\b(delete|remove all|discard|clear all|archive|sign ?out|log ?out|reset database|diagnos\w*|safe\s+(?:\w+\s+)?(?:dose|dosage)|dosage|safe to take|treat\w*|cure)\b/i;
+
 /**
  * Generates an ordered checklist from the user request at Round 0.
  *
@@ -101,7 +103,7 @@ const LEADING_FILLER = /^(?:and\s+then|then|after\s+that|afterwards|lastly|final
  */
 async function planChecklist(message, { provider, settings = config } = {}) {
   const text = String(message || '').trim();
-  if (!text) return [];
+  if (!text || FORBIDDEN_WORDS.test(text)) return [];
 
   // Single short commands don't need a heavy multi-step split
   if (!/\b(and|then|also|phir|aur|after\s+that|afterwards|lastly|finally)\b|[,;]/i.test(text) && text.length < 50) {
