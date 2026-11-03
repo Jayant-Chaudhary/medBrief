@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useId } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Search, X, Copy, Archive, Check, ArrowRight, BookOpen, Pencil, ChevronRight, FileText, SlidersHorizontal } from 'lucide-react';
+import { Plus, Search, X, Copy, Archive, Check, ArrowRight, BookOpen, Pencil, ChevronRight, ChevronDown, ChevronUp, FileText, SlidersHorizontal, Pill, CheckCircle2, Layers } from 'lucide-react';
 import { useAuthContext } from '../../context/AuthContext.jsx';
 import { Sidebar } from '../layout/Sidebar.jsx';
 import { blankDraft, blankMedication, blankTemplate, templateFromDraft, evaluateTemplate, buildPatientContext, rankTemplates, allergyReview, storageKeys, readLocal, validDraft, validLibrary } from './templateModel.js';
@@ -82,6 +82,69 @@ function Field({ label, value, onChange, multiline = false, ...props }) {
 }
 const medicationSummary = row => [row.strength, row.dose, row.route, row.frequency, row.duration].filter(Boolean).join(' · ');
 const typeLabel = row => ({ injection: 'Injection', vaccination: 'Vaccination' }[row.kind] || 'Medicine');
+
+const ROUTINE_PROPHYLAXIS_BUNDLES = [
+  {
+    id: 'bundle-folic-acid',
+    badge: '1st Trimester',
+    title: 'Folic Acid (400 mcg)',
+    subtitle: 'Neural tube defect prevention (90 days)',
+    items: [
+      {
+        name: 'Folic Acid',
+        strength: '400 mcg',
+        dose: '1 tablet',
+        route: 'Oral',
+        frequency: 'Once daily',
+        duration: '90 days',
+        kind: 'medicine',
+      },
+    ],
+  },
+  {
+    id: 'bundle-ifa-calcium',
+    badge: '2nd & 3rd Trimester',
+    title: 'IFA + Calcium',
+    subtitle: 'Standard maternal micronutrient prophylaxis (180 days)',
+    items: [
+      {
+        name: 'Iron + Folic Acid (IFA)',
+        strength: '100 mg elemental iron + 500 mcg folic acid',
+        dose: '1 tablet',
+        route: 'Oral',
+        frequency: 'Once daily (after food)',
+        duration: '180 days',
+        kind: 'medicine',
+      },
+      {
+        name: 'Calcium carbonate + Vit D3',
+        strength: '500 mg elemental calcium + 250 IU Vit D3',
+        dose: '1 tablet',
+        route: 'Oral',
+        frequency: 'Twice daily (separated from iron)',
+        duration: '180 days',
+        kind: 'medicine',
+      },
+    ],
+  },
+  {
+    id: 'bundle-deworming',
+    badge: '2nd Trimester',
+    title: 'Albendazole (400 mg)',
+    subtitle: 'Single-dose deworming prophylaxis (stat)',
+    items: [
+      {
+        name: 'Albendazole',
+        strength: '400 mg',
+        dose: '1 tablet (chewable)',
+        route: 'Oral',
+        frequency: 'Single dose (stat)',
+        duration: '1 day',
+        kind: 'medicine',
+      },
+    ],
+  },
+];
 function IngredientCatalogPicker({ value, onSelect }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -104,43 +167,439 @@ function IngredientCatalogPicker({ value, onSelect }) {
     {value && <small className="rx-muted">Catalog key: {value}</small>}
   </div>;
 }
+
+function BundleEditorDialog({ initial, bundles = [], draftMedications = [], onSave, onClose }) {
+  const [selectedBundleId, setSelectedBundleId] = useState(initial?.id || 'new');
+  const [title, setTitle] = useState(initial?.title || '');
+  const [badge, setBadge] = useState(initial?.badge || 'Custom');
+  const [subtitle, setSubtitle] = useState(initial?.subtitle || '');
+  const [items, setItems] = useState(initial?.items?.length ? initial.items.map(it => ({ ...blankMedication(), ...it })) : [blankMedication()]);
+
+  function switchBundle(bundleId) {
+    setSelectedBundleId(bundleId);
+    if (bundleId === 'new') {
+      setTitle('');
+      setBadge('Custom');
+      setSubtitle('');
+      setItems([blankMedication()]);
+    } else {
+      const found = bundles.find(b => b.id === bundleId);
+      if (found) {
+        setTitle(found.title);
+        setBadge(found.badge);
+        setSubtitle(found.subtitle || '');
+        setItems(found.items.map(it => ({ ...blankMedication(), ...it })));
+      }
+    }
+  }
+
+  function fillFromVisitDraft() {
+    if (!draftMedications.length) return;
+    setItems(draftMedications.map(it => ({ ...blankMedication(), ...it })));
+    if (!title) setTitle('Current Visit Regimen');
+    if (badge === 'Custom') setBadge('Visit Meds');
+  }
+
+  function updateItem(index, field, val) {
+    setItems(curr => curr.map((item, i) => i === index ? { ...item, [field]: val } : item));
+  }
+
+  function addItem() {
+    setItems(curr => [...curr, blankMedication()]);
+  }
+
+  function removeItem(index) {
+    setItems(curr => curr.filter((_, i) => i !== index));
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!title.trim()) return;
+    const cleanItems = items.filter(it => it.name && it.name.trim());
+    if (!cleanItems.length) return;
+    const bundleToSave = {
+      id: selectedBundleId !== 'new' ? selectedBundleId : (initial?.id || `bundle-custom-${crypto.randomUUID()}`),
+      title: title.trim(),
+      badge: badge.trim() || 'Custom',
+      subtitle: subtitle.trim() || `${cleanItems.length} items`,
+      items: cleanItems,
+    };
+    onSave(bundleToSave);
+    onClose();
+  }
+
+  return (
+    <Dialog title={selectedBundleId !== 'new' ? 'Configure Routine Bundle' : 'Add Routine Bundle'} subtitle="Add or configure medicines in reusable 1-click bundles" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="rx-stack">
+        {bundles.length > 0 && (
+          <label className="rx-field">
+            <span>Bundle to Configure</span>
+            <select value={selectedBundleId} onChange={e => switchBundle(e.target.value)}>
+              <option value="new">+ Create New Routine Bundle</option>
+              <optgroup label="Existing Routine Bundles (Add / Edit Medicines)">
+                {bundles.map(b => (
+                  <option key={b.id} value={b.id}>
+                    {b.title} ({b.items?.length || 0} medicines)
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+          </label>
+        )}
+        <div className="rx-fields">
+          <label className="rx-field">
+            <span>Bundle Name</span>
+            <input required value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. 1st Trimester Hyperemesis Bundle" />
+          </label>
+          <label className="rx-field">
+            <span>Trimester / Category Badge</span>
+            <input value={badge} onChange={e => setBadge(e.target.value)} placeholder="e.g. 1st Trimester, High Risk, Postnatal" />
+          </label>
+        </div>
+        <label className="rx-field">
+          <span>Clinical Subtitle / Indication (optional)</span>
+          <input value={subtitle} onChange={e => setSubtitle(e.target.value)} placeholder="e.g. Standard morning sickness and hydration regimen" />
+        </label>
+
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <strong style={{ fontSize: '12px', color: '#1e293b' }}>Medicines in this bundle ({items.length})</strong>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {draftMedications.length > 0 && (
+                <button type="button" className="rx-button" style={{ padding: '3px 8px', fontSize: '11px', minHeight: '26px' }} onClick={fillFromVisitDraft}>
+                  Use visit draft meds ({draftMedications.length})
+                </button>
+              )}
+              <button type="button" className="rx-button rx-primary" style={{ padding: '3px 8px', fontSize: '11px', minHeight: '26px' }} onClick={addItem}>
+                <Plus size={12} /> Add medicine
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '280px', overflowY: 'auto', paddingRight: '4px' }}>
+            {items.map((item, idx) => (
+              <div key={item.id || idx} style={{ padding: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#334155' }}>Medicine #{idx + 1}</span>
+                  {items.length > 1 && (
+                    <button type="button" style={{ color: '#be123c', fontSize: '11px', cursor: 'pointer', background: 'none', border: 'none' }} onClick={() => removeItem(idx)}>
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '6px' }}>
+                  <label className="rx-field">
+                    <span>Medicine name</span>
+                    <input required value={item.name || ''} onChange={e => updateItem(idx, 'name', e.target.value)} placeholder="e.g. Doxylamine + Pyridoxine" />
+                  </label>
+                  <label className="rx-field">
+                    <span>Strength</span>
+                    <input value={item.strength || ''} onChange={e => updateItem(idx, 'strength', e.target.value)} placeholder="e.g. 10 mg + 10 mg" />
+                  </label>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                  <label className="rx-field">
+                    <span>Dose</span>
+                    <input value={item.dose || ''} onChange={e => updateItem(idx, 'dose', e.target.value)} placeholder="1 tablet" />
+                  </label>
+                  <label className="rx-field">
+                    <span>Frequency</span>
+                    <input value={item.frequency || ''} onChange={e => updateItem(idx, 'frequency', e.target.value)} placeholder="At bedtime" />
+                  </label>
+                  <label className="rx-field">
+                    <span>Duration</span>
+                    <input value={item.duration || ''} onChange={e => updateItem(idx, 'duration', e.target.value)} placeholder="14 days" />
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rx-footer">
+          <button type="button" className="rx-button" onClick={onClose}>Cancel</button>
+          <button type="submit" className="rx-button rx-primary">Save Bundle</button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
 function MedicationEditor({ rows, onChange, selectedIds, inlineTemplates = [], allergyItems = [] }) {
   const previewRow = useRef(null);
   if (!previewRow.current) previewRow.current = blankMedication();
   const displayRows = rows.length ? rows : inlineTemplates.length ? [previewRow.current] : [];
+
+  // Track expanded cards. Start with 1 row expanded or all collapsed if multiple exist
+  const [expandedIds, setExpandedIds] = useState(() => new Set(rows.length === 1 ? [rows[0].id] : []));
+
+  // Automatically expand newly added items so doctor can immediately type without extra clicks
+  const previousRowIds = useRef(new Set(rows.map(r => r.id)));
+  useEffect(() => {
+    const prev = previousRowIds.current;
+    const current = new Set(rows.map(r => r.id));
+    const added = rows.filter(r => !prev.has(r.id)).map(r => r.id);
+    if (added.length > 0) {
+      setExpandedIds(curr => {
+        const next = new Set(curr);
+        added.forEach(id => next.add(id));
+        return next;
+      });
+    }
+    previousRowIds.current = current;
+  }, [rows]);
+
+  function toggleExpand(id) {
+    setExpandedIds(curr => {
+      const next = new Set(curr);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function expandAll() {
+    setExpandedIds(new Set(displayRows.map(r => r.id)));
+  }
+
+  function collapseAll() {
+    setExpandedIds(new Set());
+  }
+
   function update(id, key, value, suggestion) {
     onChange(displayRows.map(row => row.id === id ? { ...row, [key]: value,
       ...(suggestion && !row.source ? { source: { id: suggestion.template.id, version: suggestion.template.version, name: suggestion.template.name, preserveOnTemplateSwitch: true } } : {}),
     } : row));
   }
-  return <div className="rx-stack">
-    {displayRows.map((row, index) => { const suggestion = medicineCompletion(inlineTemplates, row, displayRows); return <fieldset className="rx-medication" key={row.id}>
-      <legend>{typeLabel(row)} {index + 1}</legend>
-      <div className="rx-med-head">
-        <span className="rx-muted">{row.source ? `From ${row.source.name} · v${row.source.version}` : 'Prescription item'}</span>
-        <button type="button" className="rx-text" onClick={() => onChange(rows.filter(item => item.id !== row.id))} aria-label={`Remove item ${index + 1}`}>Remove</button>
-      </div>
-      {allergyItems.find(item => item.medicationId === row.id)?.matches.length > 0 && <p className="rx-allergy-tag">Recorded medicine–allergy association. Review patient allergies before completing this prescription.</p>}
-      <InlineGhostField label="Name" value={row.name} suggestedValue={suggestion?.medication.name}
-        onChange={value => update(row.id, 'name', value)} onAccept={value => update(row.id, 'name', value, suggestion)}
-        placeholder="Medicine, injection or vaccine" required={!selectedIds || selectedIds.includes(row.id)}/>
-      <div className="rx-fields rx-three">
-        {['dose', 'frequency', 'duration'].map(key => <InlineGhostField key={key} label={key[0].toUpperCase() + key.slice(1)} value={row[key]}
-          suggestedValue={suggestion?.medication[key]} onChange={value => update(row.id, key, value)} onAccept={value => update(row.id, key, value, suggestion)}/>)}
-      </div>
-      <details className="rx-details"><summary>Strength, route & instructions</summary>
-        <div className="rx-fields">
-          <IngredientCatalogPicker value={row.ingredientKey} onSelect={value => update(row.id, 'ingredientKey', value)}/>
-          <Field label="Strength" value={row.strength} onChange={value => update(row.id, 'strength', value)}/>
-          <Field label="Route" value={row.route} onChange={value => update(row.id, 'route', value)}/>
-          <label className="rx-field"><span>Item type</span><select value={row.kind || 'medicine'} onChange={event => update(row.id, 'kind', event.target.value)}><option value="medicine">Medicine</option><option value="injection">Injection</option><option value="vaccination">Vaccination</option></select></label>
-          <Field label="Instructions" multiline value={row.instructions} onChange={value => update(row.id, 'instructions', value)}/>
+
+  const allExpanded = displayRows.length > 0 && displayRows.every(r => expandedIds.has(r.id));
+
+  return (
+    <div className="rx-stack">
+      {/* Regimen Management Toolbar */}
+      <div className="rx-med-toolbar">
+        <div className="rx-med-toolbar-left">
+          <span className="rx-med-toolbar-title">Prescription Items</span>
+          <span className="rx-med-count-pill">
+            {displayRows.length} {displayRows.length === 1 ? 'medicine' : 'medicines'}
+          </span>
         </div>
-      </details>
-    </fieldset>; })}
-    <button type="button" className="rx-button" onClick={() => onChange([...rows, blankMedication()])}><Plus size={15}/> Add medicine</button>
-  </div>;
+        <div className="rx-med-toolbar-right">
+          {displayRows.length > 1 && (
+            <button
+              type="button"
+              className="rx-med-toolbar-btn"
+              onClick={allExpanded ? collapseAll : expandAll}
+              title={allExpanded ? 'Collapse into compact table view' : 'Expand all detailed forms'}
+            >
+              {allExpanded ? (
+                <>
+                  <ChevronUp size={13} /> Compact Table View
+                </>
+              ) : (
+                <>
+                  <ChevronDown size={13} /> Expand All ({displayRows.length})
+                </>
+              )}
+            </button>
+          )}
+          <button
+            type="button"
+            className="rx-button rx-primary"
+            style={{ minHeight: '30px', padding: '4px 10px', fontSize: '11.5px' }}
+            onClick={() => onChange([...rows, blankMedication()])}
+          >
+            <Plus size={14} /> Add medicine
+          </button>
+        </div>
+      </div>
+
+      {displayRows.length === 0 ? (
+        <div className="rx-meds-empty">
+          <p>No medicines added yet. Choose a 1-click routine prophylaxis bundle above or click <strong>+ Add medicine</strong>.</p>
+        </div>
+      ) : (
+        <div className="rx-med-list">
+          {displayRows.map((row, index) => {
+            const suggestion = medicineCompletion(inlineTemplates, row, displayRows);
+            const isExpanded = expandedIds.has(row.id);
+            const allergyMatch = allergyItems.find(item => item.medicationId === row.id)?.matches.length > 0;
+            const summaryText = medicationSummary(row);
+
+            if (!isExpanded) {
+              // Compact Table / Strip Row View: All medicines visible simultaneously without scrolling
+              return (
+                <div
+                  key={row.id}
+                  className={`rx-med-summary-row ${allergyMatch ? 'rx-med-summary-allergy' : ''}`}
+                  onClick={() => toggleExpand(row.id)}
+                  title="Click to expand and edit dosage details"
+                >
+                  <div className="rx-med-summary-left">
+                    <span className="rx-med-num">#{index + 1}</span>
+                    <span className={`rx-med-kind-badge rx-kind-${row.kind || 'medicine'}`}>
+                      {typeLabel(row)}
+                    </span>
+                    <strong className="rx-med-name">
+                      {row.name ? row.name : <em className="rx-unnamed">Enter medicine name…</em>}
+                    </strong>
+                    {summaryText && (
+                      <span className="rx-med-regimen-pill">
+                        {summaryText}
+                      </span>
+                    )}
+                    {row.source?.name && (
+                      <span className="rx-med-source-tag">
+                        {row.source.name}
+                      </span>
+                    )}
+                    {allergyMatch && (
+                      <span className="rx-med-allergy-flag" title="Recorded medicine-allergy association">
+                        ⚠️ Allergy Flag
+                      </span>
+                    )}
+                  </div>
+                  <div className="rx-med-summary-right" onClick={e => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      className="rx-med-btn rx-med-btn-edit"
+                      onClick={() => toggleExpand(row.id)}
+                      title="Edit regimen details"
+                    >
+                      <Pencil size={12} /> Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="rx-med-btn rx-med-btn-remove"
+                      onClick={() => onChange(rows.filter(item => item.id !== row.id))}
+                      aria-label={`Remove item ${index + 1}`}
+                      title="Remove medicine"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+
+            // Expanded Full Editor View
+            return (
+              <fieldset className="rx-medication" key={row.id}>
+                <div className="rx-med-head">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="rx-med-num">#{index + 1}</span>
+                    <span className={`rx-med-kind-badge rx-kind-${row.kind || 'medicine'}`}>
+                      {typeLabel(row)}
+                    </span>
+                    <span className="rx-muted">
+                      {row.source ? `From ${row.source.name} · v${row.source.version}` : 'Prescription item'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="rx-text"
+                      onClick={() => toggleExpand(row.id)}
+                      title="Collapse into compact row"
+                    >
+                      <ChevronUp size={13} /> Collapse
+                    </button>
+                    <button
+                      type="button"
+                      className="rx-text"
+                      style={{ color: '#be123c' }}
+                      onClick={() => onChange(rows.filter(item => item.id !== row.id))}
+                      aria-label={`Remove item ${index + 1}`}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+
+                {allergyMatch && (
+                  <p className="rx-allergy-tag">
+                    ⚠️ Recorded medicine–allergy association. Review patient allergies before completing this prescription.
+                  </p>
+                )}
+
+                <InlineGhostField
+                  label="Name"
+                  value={row.name}
+                  suggestedValue={suggestion?.medication.name}
+                  onChange={value => update(row.id, 'name', value)}
+                  onAccept={value => update(row.id, 'name', value, suggestion)}
+                  placeholder="Medicine, injection or vaccine"
+                  required={!selectedIds || selectedIds.includes(row.id)}
+                />
+
+                <div className="rx-fields rx-three">
+                  {['dose', 'frequency', 'duration'].map(key => (
+                    <InlineGhostField
+                      key={key}
+                      label={key[0].toUpperCase() + key.slice(1)}
+                      value={row[key]}
+                      suggestedValue={suggestion?.medication[key]}
+                      onChange={value => update(row.id, key, value)}
+                      onAccept={value => update(row.id, key, value, suggestion)}
+                    />
+                  ))}
+                </div>
+
+                <details className="rx-details">
+                  <summary>Strength, route & instructions</summary>
+                  <div className="rx-fields">
+                    <IngredientCatalogPicker
+                      value={row.ingredientKey}
+                      onSelect={value => update(row.id, 'ingredientKey', value)}
+                    />
+                    <Field
+                      label="Strength"
+                      value={row.strength}
+                      onChange={value => update(row.id, 'strength', value)}
+                    />
+                    <Field
+                      label="Route"
+                      value={row.route}
+                      onChange={value => update(row.id, 'route', value)}
+                    />
+                    <label className="rx-field">
+                      <span>Item type</span>
+                      <select
+                        value={row.kind || 'medicine'}
+                        onChange={event => update(row.id, 'kind', event.target.value)}
+                      >
+                        <option value="medicine">Medicine</option>
+                        <option value="injection">Injection</option>
+                        <option value="vaccination">Vaccination</option>
+                      </select>
+                    </label>
+                    <Field
+                      label="Instructions"
+                      multiline
+                      value={row.instructions}
+                      onChange={value => update(row.id, 'instructions', value)}
+                    />
+                  </div>
+                </details>
+
+                <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="rx-med-done-btn"
+                    onClick={() => toggleExpand(row.id)}
+                  >
+                    Done editing
+                  </button>
+                </div>
+              </fieldset>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
+
 function MatchingRules({ value, setValue, definitions }) {
   const change = key => next => setValue({ ...value, [key]: next });
   return <><FactorRuleEditor rules={value.factorRules || []} definitions={definitions} onChange={factorRules => setValue({ ...value, factorRules })}/><details className="rx-details"><summary>General criteria / existing tag rules</summary><div className="rx-fields">
@@ -301,7 +760,7 @@ export function MedicationTemplateLibraryPage() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [query, setQuery] = useState('');
-  const [showArchived, setShowArchived] = useState(false);
+  const [filterTab, setFilterTab] = useState('all');
 
   useEffect(() => {
     if (!user?.id) return undefined;
@@ -337,15 +796,264 @@ export function MedicationTemplateLibraryPage() {
     } catch { setError('Could not update this template.'); }
   }
 
-  const visible = templates.filter(template => Boolean(template.archived) === showArchived && `${template.name} ${template.purpose} ${template.required} ${template.optional}`.toLowerCase().includes(query.toLowerCase()));
-  return <div className="flex h-screen overflow-hidden bg-canvas"><Sidebar collapsed={collapsed} onToggle={() => setCollapsed(value => !value)}/><main className="flex-1 overflow-y-auto px-5 py-6 md:px-8"><div className="mx-auto max-w-5xl">
-    <header className="mb-6 flex flex-wrap items-start justify-between gap-4"><div><h1 className="font-display text-head-lg text-ink">Medication template library</h1><p className="mt-1 max-w-2xl text-body-md text-ink-2">Create and maintain reusable medicine regimens independently of a patient or consultation. Use ailment tags and factor rules to describe when a template may be relevant.</p></div><button type="button" className="rx-button rx-primary" onClick={() => setDialog({ type: 'edit', value: blankTemplate() })}><Plus size={15}/> Create template</button></header>
-    <section className="rx-template-library"><div className="rx-browse-tools"><label className="rx-search"><Search size={15}/><input aria-label="Search templates" value={query} placeholder="Search names, ailments, or tags…" onChange={event => setQuery(event.target.value)}/></label><label className="rx-check"><input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)}/> Show archived</label></div>
-      {message && <p role="status" className="rx-success">{message}</p>}{error && <p role="alert" className="rx-error">{error}</p>}
-      {loading ? <p className="rx-muted">Loading templates…</p> : visible.length ? <div className="rx-template-library-list">{visible.map(template => <article className="rx-template-library-card" key={template.id}><div className="rx-template-library-main"><div><h2>{template.name}</h2><p>{template.medications.length} medicine item(s) · v{template.version} · {template.status === 'active' && !template.archived ? 'Clinician approved' : template.archived ? 'Archived' : 'Draft'}</p>{template.purpose && <p><strong>Ailment tags:</strong> {template.purpose}</p>}{template.factorRules?.length > 0 && <p><strong>Applicability:</strong> {template.factorRules.map(rule => `${rule.label} ${({equals:'=',min:'≥',max:'≤'})[rule.operator]} ${rule.value}${rule.unit ? ` ${rule.unit}` : ''}`).join(' · ')}</p>}</div><div className="rx-template-library-actions"><button type="button" className="rx-text" onClick={() => setDialog({ type: 'edit', value: structuredClone(template) })}><Pencil size={13}/> Edit</button><button type="button" className="rx-text" onClick={() => setDialog({ type: 'edit', value: { ...structuredClone(template), id: crypto.randomUUID(), name: `${template.name} (copy)`, version: 1, archived: false } })}><Copy size={13}/> Duplicate</button><button type="button" className="rx-text" onClick={() => archive(template)}><Archive size={13}/>{template.archived ? 'Restore' : 'Archive'}</button></div></div>{template.medications.map(item => <div className="rx-template-library-med" key={item.id}><strong>{item.name}</strong><span>{medicationSummary(item) || 'Regimen details not specified'}</span></div>)}</article>)}</div> : <div className="rx-quiet-empty"><FileText size={22}/><div><strong>{query ? 'No templates match this search' : showArchived ? 'No archived templates' : 'No reusable templates yet'}</strong><p>Create a clinician-approved regimen here. It can later be suggested during any visit with matching recorded factors.</p></div></div>}
-    </section>
-    {dialog?.type === 'edit' && <TemplateEditor definitions={definitions} initial={dialog.value} onClose={() => setDialog(null)} onSave={save}/>}
-  </div></main></div>;
+  const approvedCount = templates.filter(t => !t.archived && t.status === 'active').length;
+  const draftCount = templates.filter(t => !t.archived && t.status !== 'active').length;
+  const archivedCount = templates.filter(t => Boolean(t.archived)).length;
+  const activeCount = approvedCount + draftCount;
+
+  const visible = templates.filter(template => {
+    if (filterTab === 'approved') {
+      if (template.archived || template.status !== 'active') return false;
+    } else if (filterTab === 'draft') {
+      if (template.archived || template.status === 'active') return false;
+    } else if (filterTab === 'archived') {
+      if (!template.archived) return false;
+    } else {
+      if (template.archived) return false;
+    }
+    if (!query.trim()) return true;
+    const needle = query.toLowerCase();
+    return `${template.name} ${template.purpose} ${template.required} ${template.optional}`.toLowerCase().includes(needle);
+  });
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-canvas">
+      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(value => !value)} />
+      <main className="flex-1 overflow-y-auto px-5 py-6 md:px-8">
+        <div className="mx-auto max-w-5xl">
+          {/* Header */}
+          <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+                  <Pill size={18} />
+                </span>
+                <h1 className="font-display text-head-lg text-ink">Medication Template Library</h1>
+              </div>
+              <p className="mt-1.5 max-w-2xl text-body-md text-ink-2">
+                Create and maintain reusable medicine regimens independently of a patient or consultation. Use ailment tags and clinical factor rules to trigger instant smart recommendations during patient visits.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm transition"
+              onClick={() => setDialog({ type: 'edit', value: blankTemplate() })}
+            >
+              <Plus size={16} /> Create template
+            </button>
+          </header>
+
+          {/* Quick Metrics Bar */}
+          <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Active Regimens</span>
+              <p className="mt-1 font-display text-2xl font-bold text-slate-800 tabular-nums">{activeCount}</p>
+            </div>
+            <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3.5 shadow-2xs">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-blue-700">Clinician Approved</span>
+              <p className="mt-1 font-display text-2xl font-bold text-blue-800 tabular-nums">{approvedCount}</p>
+            </div>
+            <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-3.5 shadow-2xs">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-700">Draft Templates</span>
+              <p className="mt-1 font-display text-2xl font-bold text-amber-800 tabular-nums">{draftCount}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 shadow-2xs">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">Archived Library</span>
+              <p className="mt-1 font-display text-2xl font-bold text-slate-700 tabular-nums">{archivedCount}</p>
+            </div>
+          </div>
+
+          {/* Browse Controls & Filter Tabs */}
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
+              {/* Category Filter Pills */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[
+                  { id: 'all', label: 'All Regimens', count: activeCount },
+                  { id: 'approved', label: 'Approved', count: approvedCount },
+                  { id: 'draft', label: 'Drafts', count: draftCount },
+                  { id: 'archived', label: 'Archived', count: archivedCount },
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setFilterTab(tab.id)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                      filterTab === tab.id
+                        ? 'bg-indigo-600 text-white shadow-2xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                      filterTab === tab.id ? 'bg-indigo-700 text-white' : 'bg-slate-200 text-slate-700'
+                    }`}>
+                      {tab.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Search input */}
+              <div className="relative min-w-[240px] flex-1 sm:max-w-xs">
+                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  aria-label="Search templates"
+                  value={query}
+                  placeholder="Search names, ailments, tags…"
+                  onChange={event => setQuery(event.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50/50 py-1.5 pl-8 pr-3 text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:border-indigo-500 focus:outline-none transition"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {message && <p role="status" className="mt-3 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg">{message}</p>}
+            {error && <p role="alert" className="mt-3 text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-lg">{error}</p>}
+
+            {loading ? (
+              <div className="py-12 text-center text-xs text-slate-500">Loading medication templates…</div>
+            ) : visible.length ? (
+              <div className="mt-4 flex flex-col gap-3.5">
+                {visible.map(template => (
+                  <article key={template.id} className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-2xs hover:border-slate-300 transition">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h2 className="text-[14px] font-bold text-slate-900">{template.name}</h2>
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                            v{template.version}
+                          </span>
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                            template.archived
+                              ? 'bg-slate-100 text-slate-600 border border-slate-200'
+                              : template.status === 'active'
+                              ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                              : 'bg-amber-100 text-amber-800 border border-amber-200'
+                          }`}>
+                            {template.archived ? 'Archived' : template.status === 'active' ? 'Clinician Approved' : 'Draft'}
+                          </span>
+                          <span className="text-[11px] text-slate-400">
+                            {template.medications.length} {template.medications.length === 1 ? 'medicine' : 'medicines'}
+                          </span>
+                        </div>
+
+                        {template.purpose && (
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            <span className="text-[11px] font-semibold text-slate-500">Ailment tags:</span>
+                            {template.purpose.split(',').map((tag, idx) => (
+                              <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded-md text-[10.5px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200/70">
+                                {tag.trim()}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {template.factorRules?.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <span className="text-[11px] font-semibold text-slate-500">Trigger factors:</span>
+                            {template.factorRules.map((rule, idx) => (
+                              <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded-md text-[10.5px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                                {rule.label} {({ equals: '=', min: '≥', max: '≤' })[rule.operator]} {rule.value}{rule.unit ? ` ${rule.unit}` : ''}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-2xs transition"
+                          onClick={() => setDialog({ type: 'edit', value: structuredClone(template) })}
+                        >
+                          <Pencil size={12} className="text-slate-500" /> Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-2xs transition"
+                          onClick={() => setDialog({
+                            type: 'edit',
+                            value: {
+                              ...structuredClone(template),
+                              id: crypto.randomUUID(),
+                              name: `${template.name} (copy)`,
+                              version: 1,
+                              archived: false
+                            }
+                          })}
+                        >
+                          <Copy size={12} className="text-slate-500" /> Duplicate
+                        </button>
+                        <button
+                          type="button"
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg border shadow-2xs transition ${
+                            template.archived
+                              ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200'
+                              : 'text-slate-600 bg-white hover:bg-slate-50 border-slate-200'
+                          }`}
+                          onClick={() => archive(template)}
+                        >
+                          <Archive size={12} /> {template.archived ? 'Restore' : 'Archive'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Medicine Regimen Items */}
+                    <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-1.5">
+                      {template.medications.map(item => (
+                        <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50/80 border border-slate-100 text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-wider bg-slate-200 text-slate-700">
+                              {typeLabel(item)}
+                            </span>
+                            <strong className="text-slate-900 font-semibold">{item.name}</strong>
+                          </div>
+                          <span className="text-slate-600 text-[11.5px]">
+                            {medicationSummary(item) || 'Regimen details not specified'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="py-14 text-center">
+                <FileText size={32} className="mx-auto text-slate-300" />
+                <p className="mt-2 text-sm font-semibold text-slate-800">
+                  {query ? 'No templates match this search query' : filterTab === 'archived' ? 'No archived templates' : 'No reusable templates in this category'}
+                </p>
+                <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
+                  Create a clinician-approved regimen here to enable automatic matching recommendations during visits.
+                </p>
+                <button
+                  type="button"
+                  className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition"
+                  onClick={() => setDialog({ type: 'edit', value: blankTemplate() })}
+                >
+                  <Plus size={13} /> Create template
+                </button>
+              </div>
+            )}
+          </section>
+
+          {dialog?.type === 'edit' && (
+            <TemplateEditor definitions={definitions} initial={dialog.value} onClose={() => setDialog(null)} onSave={save} />
+          )}
+        </div>
+      </main>
+    </div>
+  );
 }
 
 function Workspace({ ownerId, patient, appointment, appointmentId, reports }) {
@@ -502,34 +1210,170 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports }) {
     await submitMedicationFeedback(feedback);
     setMessage(`Recorded the ${feedback.action} decision for this suggestion.`);
   }
+  const BUNDLE_STORAGE_KEY = 'medbrief.rx.custom_bundles.v1';
+  const [customBundles, setCustomBundles] = useState(() => {
+    try {
+      const stored = localStorage.getItem(BUNDLE_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length) return parsed;
+      }
+    } catch {
+      // fallback
+    }
+    return ROUTINE_PROPHYLAXIS_BUNDLES;
+  });
+
+  function handleSaveBundle(savedBundle) {
+    setCustomBundles(prev => {
+      const exists = prev.some(b => b.id === savedBundle.id);
+      const next = exists ? prev.map(b => b.id === savedBundle.id ? savedBundle : b) : [...prev, savedBundle];
+      try {
+        localStorage.setItem(BUNDLE_STORAGE_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    setMessage(`Bundle "${savedBundle.title}" saved with ${savedBundle.items.length} medicine(s).`);
+  }
+
+  function applyProphylaxisBundle(bundle) {
+    const current = draftRef.current;
+    const existingNames = new Set((current.medications || []).map(m => (m.name || '').trim().toLowerCase()));
+    const newItems = bundle.items
+      .filter(item => !existingNames.has(item.name.toLowerCase()))
+      .map(item => ({
+        ...blankMedication(),
+        ...item,
+        id: crypto.randomUUID(),
+      }));
+
+    if (!newItems.length) {
+      setMessage(`${bundle.title} items are already in this prescription draft.`);
+      return;
+    }
+
+    const nextDraft = {
+      ...current,
+      medications: [...(current.medications || []), ...newItems],
+    };
+    saveDraft(nextDraft);
+    setMessage(`Added ${bundle.title} (${bundle.badge}) to prescription.`);
+  }
   if (!dataReady) return <section className="rx-workspace rx-inline" aria-label="Prescription suggestions and draft">
     {loadError ? <div className="rx-note" role="alert"><p>{loadError}</p><button type="button" className="rx-button" onClick={() => setReloadToken(value => value + 1)}>Retry loading</button></div> : <p className="rx-muted">Loading saved prescription data…</p>}
   </section>;
   return <section className="rx-workspace rx-inline" aria-label="Prescription suggestions and draft">
-    <div className="rx-section-top"><span className="rx-overline">CURRENT VISIT</span><button type="button" className="rx-text" onClick={() => setDialog({ type: 'browse' })}><BookOpen size={14}/> Templates{activeCount ? ` (${activeCount})` : ''}</button></div>
+    <div className="rx-section-top">
+      <div className="flex items-center gap-2">
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+          Current Visit
+        </span>
+        <span className="text-xs text-slate-500 font-medium">Prescription Draft</span>
+      </div>
+      <button type="button" className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition shadow-2xs" onClick={() => setDialog({ type: 'browse' })}>
+        <BookOpen size={13} className="text-indigo-600"/> Templates{activeCount ? ` (${activeCount})` : ''}
+      </button>
+    </div>
     <div className="rx-factors-area" aria-label="Factors">
-      <div className="rx-section-label"><div><h3>Factors</h3><p className="rx-muted">{populatedFactors.length} available / {activeFactors.length} fields</p></div><div className="rx-inline-actions"><button type="button" className="rx-button" onClick={() => setDialog({ type: 'allergies' })}>Patient allergies</button><button type="button" className="rx-button" onClick={() => setDialog({ type: 'factors' })}>Edit / add factors</button></div></div>
-      <div className="rx-factor-chips">{populatedFactors.slice(0, 4).map(definition => <span key={definition.id}>{definition.label}: {factors.records[definition.id].value} {definition.unit}</span>)}</div>
-      <p className="rx-muted">Shared report values are reused when available. Missing details stay unknown.</p>
-      {factors.maternity.loading && <p className="rx-muted">Loading maternity card values...</p>}
-      {factors.maternity.error && <p className="rx-amber">{factors.maternity.error}</p>}
-      {factors.error && <p className="rx-error" role="alert">{factors.error}</p>}
+      <div className="rx-section-label">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-slate-800 text-[13px]">Clinical Factors & Biomarkers</h3>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+              {populatedFactors.length} of {activeFactors.length} fields
+            </span>
+          </div>
+          <p className="rx-muted">Shared report values are reused when available. Missing details stay unknown.</p>
+        </div>
+        <div className="rx-inline-actions">
+          <button type="button" className="rx-button" onClick={() => setDialog({ type: 'allergies' })}>
+            {serverContext.allergies?.length > 0 ? (
+              <span className="text-rose-700 font-semibold inline-flex items-center gap-1">⚠️ Allergies ({serverContext.allergies.length})</span>
+            ) : (
+              'Patient allergies'
+            )}
+          </button>
+          <button type="button" className="rx-button" onClick={() => setDialog({ type: 'factors' })}>Edit / add factors</button>
+        </div>
+      </div>
+      <div className="rx-factor-chips">
+        {populatedFactors.slice(0, 5).map(definition => (
+          <span key={definition.id} className="rx-factor-chip-item">
+            <strong className="text-slate-600">{definition.label}:</strong> <span className="font-semibold text-slate-900">{factors.records[definition.id].value}</span> {definition.unit}
+          </span>
+        ))}
+      </div>
+      {factors.maternity.loading && <p className="rx-muted text-xs">Loading maternity card values...</p>}
+      {factors.maternity.error && <p className="rx-amber text-xs">{factors.maternity.error}</p>}
+      {factors.error && <p className="rx-error text-xs" role="alert">{factors.error}</p>}
     </div>
     {error && <p className="rx-error rx-note" role="alert">{error}</p>}
     {message && <p className="rx-success" role="status">{message}</p>}
     <div className="rx-draft-summary rx-direct-editor">
       <div className="rx-section-label"><h3>Medicines & duration</h3><span className="rx-chip">Saved to visit</span></div>
+      {/* 1-Click Routine Maternal Prophylaxis Bundles */}
+      <div className="rx-prophylaxis-box">
+        <div className="rx-prophylaxis-head">
+          <span className="rx-prophylaxis-title">💊 Routine Prophylaxis Bundles (1-Click)</span>
+          <span className="rx-prophylaxis-caption">WHO / MoHFW Antenatal Guidelines</span>
+        </div>
+        <div className="rx-prophylaxis-chips">
+          {customBundles.map(bundle => (
+            <button
+              key={bundle.id}
+              type="button"
+              className="rx-prophylaxis-chip"
+              title={`${bundle.subtitle || ''}\nMedicines: ${bundle.items.map(i => i.name).join(', ')}`}
+              onClick={() => applyProphylaxisBundle(bundle)}
+            >
+              <span className="rx-prophylaxis-badge">{bundle.badge}</span>
+              <span className="rx-prophylaxis-name">{bundle.title}</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            className="rx-prophylaxis-chip border-dashed border-indigo-300 text-indigo-700 hover:bg-indigo-50/70"
+            onClick={() => setDialog({
+              type: 'bundle',
+              value: {
+                id: `bundle-custom-${crypto.randomUUID()}`,
+                title: '',
+                badge: 'Custom',
+                subtitle: '',
+                items: [blankMedication()],
+              }
+            })}
+            title="Add bundle or configure medicines"
+          >
+            <Plus size={11} /> Add
+          </button>
+        </div>
+      </div>
       <TemplateAutocomplete query={templateQuery} onQueryChange={setTemplateQuery}
         onStart={() => setTemplateSearchStarted(true)} matches={confirmedSuggestions}
         loading={templateSearch.loading} error={templateSearch.error} onRetry={templateSearch.retry}
         onSelect={selectTemplate} onPreview={showPreview} selecting={selectingTemplate}/>
       {!searchReady && <p className="rx-amber">Templates remain available to browse. Patient factors need attention before similarity suggestions can be checked.</p>}
       <MedicationEditor rows={draft.medications} onChange={medications => saveDraft({ ...draft, medications }, false)} inlineTemplates={confirmedSuggestions} allergyItems={draftAllergies.items}/>
-      <details className="rx-details" open={Boolean(draft.instructions || draft.followUp)}>
-        <summary>Patient instructions & follow-up</summary>
-        <div className="rx-stack">
-          <Field label="Patient instructions" multiline value={draft.instructions} onChange={instructions => saveDraft({ ...draft, instructions }, false)}/>
-          <Field label="Follow-up / investigations" multiline value={draft.followUp} onChange={followUp => saveDraft({ ...draft, followUp }, false)}/>
+      <details className="rx-details rx-instructions-panel" open={Boolean(draft.instructions || draft.followUp)}>
+        <summary className="font-semibold text-slate-800 text-xs">
+          📋 Patient Instructions & Follow-up Advice
+        </summary>
+        <div className="rx-stack pt-2">
+          <Field
+            label="Patient instructions / counseling"
+            multiline
+            value={draft.instructions}
+            placeholder="e.g. Take iron tablets after food with citrus water; separate from calcium by 2 hours. Maintain adequate hydration."
+            onChange={instructions => saveDraft({ ...draft, instructions }, false)}
+          />
+          <Field
+            label="Follow-up advice / recommended investigations"
+            multiline
+            value={draft.followUp}
+            placeholder="e.g. Review in 4 weeks for routine antenatal checkup. Bring repeat CBC and Urine reports."
+            onChange={followUp => saveDraft({ ...draft, followUp }, false)}
+          />
         </div>
       </details>
       <p className="rx-muted" role="status">Visit prescriptions stay in the visit draft. Save a clinician-reviewed regimen as a template for future suggestions.</p>
@@ -542,6 +1386,7 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports }) {
     {dialog?.type === 'allergies' && <AllergyEditor context={serverContext} appointmentId={appointmentId} onClose={close} onSaved={async () => { const updated = await fetchMedicationContext(appointmentId); setServerContext({ allergyReview: updated?.allergyReview || { status: 'not_assessed' }, allergies: updated?.allergies || [] }); }}/ >}
     {dialog?.type === 'browse' && <BrowseTemplates ranked={ranked} onClose={close} onPreview={showPreview} onEdit={value => setDialog({ type: 'template', value })} onArchive={archive} onCreate={() => setDialog({ type: 'template', value: blankTemplate() })}/>}
     {dialog?.type === 'template' && <TemplateEditor definitions={factors.definitions} key={dialog.value.id} initial={dialog.value} onClose={close} onSave={storeTemplate}/>}
+    {dialog?.type === 'bundle' && <BundleEditorDialog initial={dialog.value} bundles={customBundles} draftMedications={draft.medications || []} onSave={handleSaveBundle} onClose={close}/>}
     {dialog?.type === 'feedback' && <FeedbackHistory onClose={close}/>}
     {dialog?.type === 'preview' && <TemplatePreview template={dialog.value} eventId={dialog.eventId} onFeedback={recordFeedback} similarityMatch={dialog.similarityMatch} copyBlocked={Boolean(confirmedSuggestions.find(row => row.template.id === dialog.value.id)?.reviewOnly)} context={context} patientName={patient.name} onClose={close} onApply={applyTemplateSelection}/>}
   </section>;

@@ -37,6 +37,94 @@ function formatValue(value) {
 }
 
 /**
+ * Objective guideline reference bands for maternal laboratory tests.
+ * FLAGS AND PRIORITISES ONLY; NEVER DIAGNOSES.
+ * Highlighting reflects standardized laboratory ranges from clinical guidelines.
+ */
+function getClinicalBand(standardKey, number, rawValue) {
+  if (number == null || !Number.isFinite(number)) {
+    if (typeof rawValue === 'string') {
+      const lower = rawValue.toLowerCase();
+      if (lower.includes('positive') || lower.includes('reactive') || lower.includes('+++') || lower.includes('++')) {
+        return 'critical';
+      }
+      if (lower.includes('+')) return 'warning';
+    }
+    return 'normal';
+  }
+
+  const key = String(standardKey || '').toLowerCase();
+
+  // Fasting Blood Glucose (mg/dL) - NICE NG3: >= 92 elevated, >= 126 diabetes threshold
+  if (key.includes('glucose_fasting') || key.includes('fbs') || key.includes('fasting_blood_sugar')) {
+    if (number >= 126) return 'critical';
+    if (number >= 92) return 'warning';
+    return 'normal';
+  }
+
+  // Postprandial or Random Blood Glucose (mg/dL) - WHO/ADA: >= 140 elevated, >= 200 severe
+  if (key.includes('glucose') || key.includes('rbs') || key.includes('ppbs')) {
+    if (number >= 200) return 'critical';
+    if (number >= 140) return 'warning';
+    return 'normal';
+  }
+
+  // Hemoglobin (g/dL) - WHO maternal: normal >= 11, mild/mod anemia 7.0-10.9, severe < 7.0
+  if (key.includes('hemoglobin') || key === 'hb') {
+    if (number < 7.0) return 'critical';
+    if (number < 11.0) return 'warning';
+    return 'normal';
+  }
+
+  // Blood Pressure Systolic (mmHg) - NICE NG133: >= 160 severe, >= 140 elevated
+  if (key.includes('bp_systolic') || key.includes('systolic')) {
+    if (number >= 160) return 'critical';
+    if (number >= 140) return 'warning';
+    return 'normal';
+  }
+
+  // Blood Pressure Diastolic (mmHg) - NICE NG133: >= 110 severe, >= 90 elevated
+  if (key.includes('bp_diastolic') || key.includes('diastolic')) {
+    if (number >= 110) return 'critical';
+    if (number >= 90) return 'warning';
+    return 'normal';
+  }
+
+  // TSH (uIU/mL) - Maternal 1st trimester <= 2.5, 2nd/3rd <= 3.0
+  if (key.includes('tsh') || key.includes('thyroid')) {
+    if (number > 10.0 || number < 0.1) return 'critical';
+    if (number > 3.0) return 'warning';
+    return 'normal';
+  }
+
+  // Platelet Count (x10^3/uL) - normal 150-450, < 100 thrombocytopenia
+  if (key.includes('platelet')) {
+    if (number < 100) return 'critical';
+    if (number < 150) return 'warning';
+    return 'normal';
+  }
+
+  return 'normal';
+}
+
+function getGroupStyle(groupId) {
+  const id = String(groupId || '').toLowerCase();
+  if (id.includes('blood') || id.includes('cbc') || id.includes('hematology')) {
+    return 'border-l-4 border-l-rose-500 bg-rose-50/40';
+  }
+  if (id.includes('glucose') || id.includes('sugar') || id.includes('metabolic') || id.includes('diabetes')) {
+    return 'border-l-4 border-l-amber-500 bg-amber-50/40';
+  }
+  if (id.includes('thyroid')) {
+    return 'border-l-4 border-l-violet-500 bg-violet-50/40';
+  }
+  if (id.includes('urine') || id.includes('renal') || id.includes('kidney')) {
+    return 'border-l-4 border-l-sky-500 bg-sky-50/40';
+  }
+  return 'border-l-4 border-l-teal-600 bg-teal-50/30';
+}
+
+/**
  * The clinician's history grid: tests down the side, report dates across the
  * top, so every earlier reading sits next to the latest one without a click.
  *
@@ -97,15 +185,15 @@ export function HistoryGrid({ flowsheet, patientId, onResolve }) {
   const colSpan = shown.length + 1;
 
   return (
-    <section className="card flex min-h-0 flex-col">
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-line px-5 py-4">
+    <section className="card flex min-h-0 flex-col border border-slate-200/90 shadow-sm bg-white overflow-hidden">
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-slate-200 px-5 py-4">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-subcanvas text-cypress">
+          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 border border-teal-200">
             <Icon name="chart" size={16} />
           </span>
           <div className="min-w-0">
-            <h2 className="font-display text-head-sm text-ink">Clinical data</h2>
-            <p className="mt-0.5 text-body-sm text-ink-3">
+            <h2 className="font-display text-head-sm font-semibold text-ink">Clinical data flowsheet</h2>
+            <p className="mt-0.5 text-body-sm text-slate-500">
               {columns.length} report date{columns.length === 1 ? '' : 's'} · {rowCount} test{rowCount === 1 ? '' : 's'} ·
               select a test for its full chart
             </p>
@@ -119,16 +207,26 @@ export function HistoryGrid({ flowsheet, patientId, onResolve }) {
               type="button"
               onClick={() => setFilter(id)}
               aria-pressed={filter === id}
-              className={`rounded-full border px-3 py-1 text-label-md transition-colors ${
+              className={`rounded-full px-3 py-1 text-label-md transition-colors ${
                 filter === id
-                  ? id === 'review'
-                    ? 'border-terracotta-border bg-terracotta-surface text-terracotta'
-                    : 'border-cypress bg-cypress text-white'
-                  : 'border-line text-ink-2 hover:bg-subcanvas'
+                  ? 'bg-slate-900 text-white font-semibold shadow-xs'
+                  : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
               }`}
             >
               {label}
-              {id !== 'all' && <span className="ml-1 tabular opacity-80">{counts[id]}</span>}
+              {id !== 'all' && (
+                <span
+                  className={`ml-1.5 tabular rounded-full px-1.5 py-0.2 text-xs font-semibold ${
+                    filter === id
+                      ? 'bg-white/20 text-white'
+                      : id === 'review'
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  {counts[id]}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -184,8 +282,16 @@ export function HistoryGrid({ flowsheet, patientId, onResolve }) {
                   className={`${i === shown.length - 1 ? 'pl-2 pr-5' : 'px-2'} py-2.5 text-right font-semibold`}
                   title={formatDate(column.date)}
                 >
-                  <span className="block tabular text-ink-2">{shortDate(column.date)}</span>
-                  <span className="block text-[11px] font-normal text-ink-3">
+                  {column.isCurrentVisit ? (
+                    <span className="inline-block rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-800 shadow-2xs">
+                      {shortDate(column.date)}
+                    </span>
+                  ) : (
+                    <span className="inline-block rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-700 tabular shadow-2xs">
+                      {shortDate(column.date)}
+                    </span>
+                  )}
+                  <span className="block mt-0.5 text-[11px] font-normal text-slate-500">
                     {column.isCurrentVisit ? 'this visit' : `${column.reportIds.length} report${column.reportIds.length === 1 ? '' : 's'}`}
                   </span>
                 </th>
@@ -200,7 +306,7 @@ export function HistoryGrid({ flowsheet, patientId, onResolve }) {
               const changed = group.rows.filter((row) => row.change.direction !== 'flat').length;
               return (
                 <Fragment key={group.id}>
-                  <tr className="border-t border-line bg-subcanvas">
+                  <tr className={`border-t border-slate-200 transition-colors ${getGroupStyle(group.id)}`}>
                     <td colSpan={colSpan} className="p-0">
                       <button
                         type="button"
@@ -212,20 +318,24 @@ export function HistoryGrid({ flowsheet, patientId, onResolve }) {
                         <Icon
                           name="chevronDown"
                           size={14}
-                          className={`text-ink-3 transition-transform ${open ? '' : '-rotate-90'}`}
+                          className={`text-slate-500 transition-transform ${open ? '' : '-rotate-90'}`}
                         />
-                        <span className="font-display text-label-lg text-ink">{group.label}</span>
-                        <span className="text-body-sm text-ink-3">
+                        <span className="font-display text-label-lg font-bold text-slate-900">{group.label}</span>
+                        <span className="text-body-sm text-slate-500">
                           · {group.rows.length} test{group.rows.length === 1 ? '' : 's'}
                         </span>
                         {flagged > 0 && (
-                          <span className="rounded-full bg-terracotta-surface px-2 py-0.5 text-label-sm text-terracotta">
+                          <span className="rounded-full bg-amber-500 text-white font-bold px-2 py-0.5 text-xs shadow-2xs">
                             {flagged} to review
                           </span>
                         )}
-                        {changed > 0 && <span className="text-body-sm text-ink-2">{changed} changed</span>}
+                        {changed > 0 && (
+                          <span className="rounded-full bg-sky-100 text-sky-800 border border-sky-200 font-semibold px-2 py-0.5 text-xs">
+                            {changed} changed
+                          </span>
+                        )}
                         {!open && flagged === 0 && changed === 0 && (
-                          <span className="text-body-sm text-ink-3">— all unchanged</span>
+                          <span className="text-body-sm text-slate-400">— all unchanged</span>
                         )}
                       </button>
                     </td>
@@ -293,9 +403,9 @@ function HistoryRow({ row, columns, start, patientId, expanded, onToggle, onShow
   return (
     <>
       <tr
-        className={`cursor-pointer border-t border-line transition-colors hover:bg-subcanvas/60 ${
-          expanded ? 'bg-subcanvas/60' : ''
-        } ${row.needsReview ? 'bg-terracotta-surface/40' : ''}`}
+        className={`group cursor-pointer border-t border-slate-100 transition-colors hover:bg-indigo-50/30 ${
+          expanded ? 'bg-slate-50/80' : ''
+        } ${row.needsReview ? 'bg-amber-50/30' : ''}`}
         onClick={onToggle}
       >
         <td className="py-2.5 pl-5 pr-2 align-middle">
@@ -306,17 +416,17 @@ function HistoryRow({ row, columns, start, patientId, expanded, onToggle, onShow
               onToggle();
             }}
             aria-expanded={expanded}
-            className="flex w-full min-w-0 items-center gap-1.5 text-left text-body-md text-ink hover:text-cypress"
+            className="flex w-full min-w-0 items-center gap-1.5 text-left text-body-md text-ink group-hover:text-indigo-950"
             title={row.name}
           >
             <Icon
               name="chevronRight"
               size={13}
-              className={`shrink-0 text-ink-3 transition-transform ${expanded ? 'rotate-90' : ''}`}
+              className={`shrink-0 text-slate-400 transition-transform group-hover:text-indigo-600 ${expanded ? 'rotate-90' : ''}`}
             />
-            <span className="truncate">
+            <span className="truncate font-medium">
               {row.name}
-              {row.unit && <span className="ml-1.5 text-body-sm text-ink-3">{row.unit}</span>}
+              {row.unit && <span className="ml-1.5 text-body-sm text-slate-400 font-normal">({row.unit})</span>}
             </span>
           </button>
         </td>
@@ -358,21 +468,32 @@ function HistoryRow({ row, columns, start, patientId, expanded, onToggle, onShow
           }
 
           const isNewest = index === newestIndex;
+          const band = !cell.needsReview ? getClinicalBand(row.standardKey, cell.number, cell.value) : 'normal';
+
+          let cellClass = 'tabular rounded px-2 py-0.5 transition-colors ';
+          if (band === 'critical') {
+            cellClass += 'bg-rose-50 border border-rose-300 text-rose-700 font-bold shadow-2xs hover:bg-rose-100 ';
+          } else if (band === 'warning') {
+            cellClass += 'bg-amber-50 border border-amber-300 text-amber-800 font-semibold shadow-2xs hover:bg-amber-100 ';
+          } else {
+            cellClass += isNewest
+              ? 'font-display text-label-lg text-ink hover:bg-slate-100 '
+              : 'text-body-sm text-slate-700 hover:bg-slate-100 ';
+          }
+
           return (
             <td key={column.key} className={`${pad} py-2.5 text-right`}>
               <button
                 type="button"
                 onClick={openSource}
                 aria-haspopup="dialog"
-                className={`tabular rounded px-1 underline-offset-4 hover:bg-subcanvas hover:underline ${
-                  isNewest ? 'font-display text-label-lg text-ink' : 'text-body-sm text-ink-2'
-                }`}
+                className={cellClass}
                 title={`${isNewest && changeLabel ? `${changeLabel}. ` : ''}Click to see it on the report.`}
               >
                 {formatValue(cell.value)}
                 {isNewest && direction !== 'flat' && (
                   <span
-                    className={`ml-1 text-[11px] ${direction === 'up' ? 'text-terracotta' : 'text-cypress'}`}
+                    className={`ml-1 text-[11px] font-bold ${direction === 'up' ? 'text-rose-600' : 'text-emerald-600'}`}
                     aria-label={changeLabel}
                   >
                     {direction === 'up' ? '▲' : '▼'}
@@ -385,14 +506,20 @@ function HistoryRow({ row, columns, start, patientId, expanded, onToggle, onShow
       </tr>
 
       {expanded && (
-        <tr className="border-t border-line bg-subcanvas/40">
+        <tr className="border-t border-slate-200 bg-slate-50/50">
           <td colSpan={colSpan} className="px-5 py-4">
-            <div className="rounded-xl border border-line bg-surface p-4">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <Icon name="history" size={15} className="text-ink-3" />
-                <h4 className="font-display text-label-lg text-ink">{row.name} — history</h4>
-                {changeLabel && <span className="text-body-sm text-ink-2">{changeLabel}</span>}
-                {loading && <span className="text-body-sm text-ink-3">loading…</span>}
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                  <Icon name="history" size={14} />
+                </span>
+                <h4 className="font-display text-label-lg font-bold text-slate-900">{row.name} — history</h4>
+                {changeLabel && (
+                  <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
+                    {changeLabel}
+                  </span>
+                )}
+                {loading && <span className="text-body-sm text-slate-400">loading…</span>}
               </div>
               <TrendChart series={series} unit={row.unit} />
             </div>

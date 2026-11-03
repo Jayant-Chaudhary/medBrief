@@ -109,18 +109,30 @@ export function ConsultancyNotes({
       </details>
 
       {draftText && (
-        <div className="mb-3 rounded-lg border border-line bg-subcanvas p-3" role="region" aria-label="Draft from consultation audio">
-          <p className="text-label-sm uppercase text-ink-3">Draft from consultation audio</p>
-          <p className="mt-1 text-body-sm text-ink-3">
-            Generated from the recording. Check it against the visit before using it.
+        <div className="mb-3 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50/70 to-purple-50/40 p-4 shadow-xs" role="region" aria-label="Draft from consultation audio">
+          <div className="flex items-center gap-1.5 text-label-sm font-bold uppercase tracking-wider text-indigo-900">
+            <span>🎙️ Ambient Audio Draft</span>
+          </div>
+          <p className="mt-1 text-body-sm text-slate-600">
+            Generated from the ambient consultation recording. Review and edit before inserting into notes:
           </p>
-          <pre className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap font-sans text-body-sm text-ink">{draftText}</pre>
-          {draftError && <p className="mt-2 text-body-sm text-terracotta">{draftError}</p>}
+          <pre className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap font-sans text-body-sm text-slate-800 bg-white/80 p-3 rounded-lg border border-indigo-100">{draftText}</pre>
+          {draftError && <p className="mt-2 text-body-sm text-rose-600">{draftError}</p>}
           <div className="mt-3 flex gap-2">
-            <button type="button" className="rounded-xl bg-cypress px-3 py-1.5 text-label-md text-white disabled:opacity-60" disabled={draftBusy} onClick={insertDraft}>
-              Add to notes
+            <button
+              type="button"
+              className="rounded-xl bg-indigo-600 px-3.5 py-1.5 text-label-md font-semibold text-white shadow-xs hover:bg-indigo-700 disabled:opacity-60 transition-all active:scale-95"
+              disabled={draftBusy}
+              onClick={insertDraft}
+            >
+              Insert into notes
             </button>
-            <button type="button" className="rounded-xl border border-line bg-surface px-3 py-1.5 text-label-md text-cypress hover:bg-subcanvas disabled:opacity-60" disabled={draftBusy} onClick={() => onRejectDraft?.().catch(() => {})}>
+            <button
+              type="button"
+              className="rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-label-md font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60 transition-all"
+              disabled={draftBusy}
+              onClick={() => onRejectDraft?.().catch(() => {})}
+            >
               Dismiss
             </button>
           </div>
@@ -128,27 +140,27 @@ export function ConsultancyNotes({
       )}
 
       {!draftText && !draft && (draftWaiting || draftBusy) && (
-        <div className="mb-3 flex items-center gap-2 rounded-lg border border-line bg-subcanvas p-3" role="status">
-          <span className="h-3 w-3 animate-spin rounded-full border-2 border-cypress border-t-transparent" aria-hidden="true" />
-          <p className="text-body-sm text-ink">Summarising the consultation… please wait.</p>
+        <div className="mb-3 flex items-center gap-2.5 rounded-xl border border-indigo-200 bg-indigo-50/60 p-3.5 shadow-xs" role="status">
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" aria-hidden="true" />
+          <p className="text-body-sm font-medium text-indigo-900">Generating AI consultation summary… please wait.</p>
         </div>
       )}
 
       {!draftText && !draft && draftStalled && !draftBusy && (
-        <div className="mb-3 rounded-lg border border-line bg-subcanvas p-3" role="status">
-          <p className="text-body-sm text-ink">The summary is taking longer than expected.</p>
-          {draftError && <p className="mt-1 text-body-sm text-terracotta">{draftError}</p>}
+        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3.5" role="status">
+          <p className="text-body-sm text-amber-900">The summary is taking longer than expected.</p>
+          {draftError && <p className="mt-1 text-body-sm text-rose-600">{draftError}</p>}
           <button
             type="button"
             onClick={() => onGenerateDraft?.()}
-            className="mt-2 rounded-xl border border-line bg-surface px-3 py-1.5 text-label-md text-cypress hover:bg-subcanvas"
+            className="mt-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-label-md font-medium text-slate-700 hover:bg-slate-50 shadow-xs"
           >
             Try again
           </button>
         </div>
       )}
 
-      <h3 className="mb-2 text-label-sm uppercase text-ink-3">Notes</h3>
+      <h3 className="mb-2 text-label-sm font-semibold uppercase tracking-wider text-slate-500">Consultation Observations</h3>
       <label className="sr-only" htmlFor="consultancy-notes">
         Consultancy notes
       </label>
@@ -156,9 +168,9 @@ export function ConsultancyNotes({
         id="consultancy-notes"
         value={text}
         onChange={onChange}
-        rows={3}
+        rows={4}
         placeholder="Subjective, objective, assessment, plan…"
-        className="field min-h-[84px] w-full resize-y py-2 text-body-sm leading-relaxed"
+        className="field min-h-[120px] w-full resize-y p-3.5 text-body-md leading-relaxed border border-slate-200 rounded-xl focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 shadow-2xs"
       />
     </SectionCard>
   );
