@@ -1,0 +1,13 @@
+drop function if exists save_patient_allergies(uuid, uuid, text, jsonb);
+drop function if exists save_medication_template(uuid, jsonb);
+drop table if exists prescription_drafts;
+drop table if exists prescription_factor_states;
+drop table if exists prescription_factor_catalogs;
+drop table if exists medication_allergen_associations;
+drop table if exists medication_feedback_events;
+drop table if exists medication_recommendation_events;
+drop table if exists patient_allergies;
+drop table if exists patient_allergy_reviews;
+drop table if exists medication_template_items;
+drop table if exists medication_substances;
+drop table if exists medication_templates;

@@ -8,6 +8,7 @@
 const sessionService = require('../services/consultAudio/session.service');
 const chunkIngestService = require('../services/consultAudio/chunkIngest.service');
 const gapService = require('../services/consultAudio/gap.service');
+const draftService = require('../services/consultAudio/draft.service');
 const { verifySessionToken } = require('../services/consultAudio/token.service');
 const { convertTo16kHzMonoWav } = require('../utils/audioConverter');
 const providerFactory = require('../services/consultAudio/stt/providerFactory');
@@ -396,6 +397,70 @@ async function getDeviceGaps(req, res, next) {
   }
 }
 
+/**
+ * GET /api/consults/:id/draft
+ * Returns latest clinical notes draft for a consultation session.
+ */
+async function getDraft(req, res, next) {
+  try {
+    const { id: sessionId } = req.params;
+    const callerUserId = req.user?.id || req.sessionToken?.userId;
+
+    const draft = await draftService.getSessionDraft(sessionId, callerUserId);
+    if (!draft) {
+      return res.status(404).json({ error: 'No draft found for this consultation session' });
+    }
+
+    res.status(200).json(draft);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/consults/:id/draft/review
+ * Doctor approves, edits, or rejects the draft.
+ */
+async function reviewDraft(req, res, next) {
+  try {
+    const { id: sessionId } = req.params;
+    const doctorUserId = req.user?.id || req.sessionToken?.userId;
+    const { action } = req.body;
+    const editedDoctorNotes = req.body.editedDoctorNotes ?? req.body.edited_doctor_notes ?? null;
+    const rejectionReason = req.body.rejectionReason ?? req.body.rejection_reason ?? null;
+
+    if (!action) {
+      return res.status(400).json({ error: 'action ("approve" or "reject") is required' });
+    }
+
+    const updated = await draftService.reviewSessionDraft({
+      sessionId,
+      doctorUserId,
+      action,
+      editedDoctorNotes,
+      rejectionReason,
+    });
+
+    res.status(200).json(updated);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/consults/:id/draft/generate
+ * On-demand generation or re-generation of notes draft.
+ */
+async function generateDraft(req, res, next) {
+  try {
+    const { id: sessionId } = req.params;
+    const draft = await draftService.generateDraftForSession(sessionId, req.body || {});
+    res.status(201).json(draft);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createSession,
   joinSession,
@@ -413,4 +478,7 @@ module.exports = {
   recordDeviceGap,
   getDeviceGaps,
   testAudioStt,
+  getDraft,
+  reviewDraft,
+  generateDraft,
 };

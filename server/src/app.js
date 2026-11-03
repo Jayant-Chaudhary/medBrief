@@ -22,6 +22,7 @@ const templatesRoutes = require('./routes/templates.routes');
 const { consultRouter, timeRouter } = require('./routes/consultAudio.routes');
 const maternityRoutes = require('./routes/maternity.routes');
 const assistantRoutes = require('./routes/assistant.routes');
+const medicationDecisionRoutes = require('./routes/medicationDecision.routes');
 
 const app = express();
 const server = http.createServer(app);
@@ -69,6 +70,7 @@ app.use('/api/time', timeRouter);
 app.use('/api/consults', consultRouter);
 app.use('/api/maternity', maternityRoutes);
 app.use('/api/assistant', assistantRoutes);
+app.use('/api/decision-support', medicationDecisionRoutes);
 
 app.use((req, res) => res.status(404).json({ error: 'Endpoint not found', requestId: req.id }));
 app.use(errorHandler);
@@ -77,6 +79,7 @@ if (process.env.NODE_ENV !== 'test') {
   const { checkFfmpegInstalled } = require('./utils/audioConverter');
   const transcriptionWorker = require('./services/consultAudio/transcriptionWorker');
   const audioCache = require('./services/consultAudio/audioCache.service');
+  const orchestratorService = require('./services/consultAudio/orchestrator.service');
 
   process.on('unhandledRejection', (reason) => {
     logger.error('unhandled promise rejection', { err: reason instanceof Error ? reason : new Error(String(reason)) });
@@ -89,6 +92,7 @@ if (process.env.NODE_ENV !== 'test') {
   const gracefulShutdown = () => {
     logger.info('Shutting down server, stopping background workers...');
     transcriptionWorker.stopWorker();
+    orchestratorService.stop();
     audioCache.close();
     server.close(() => {
       logger.info('HTTP server closed');
@@ -109,9 +113,10 @@ if (process.env.NODE_ENV !== 'test') {
     // Check ffmpeg availability
     await checkFfmpegInstalled();
 
-    // Start background transcription worker
+    // Start background transcription worker and orchestrator
     void audioCache.start();
     transcriptionWorker.startWorker();
+    void orchestratorService.start();
   });
 }
 

@@ -59,9 +59,9 @@ export function ChecklistPicker({ templates = [], selected = [], onAdd, onRemove
             return (
               <li key={row.label}>
                 <label
-                  className={`flex cursor-pointer items-start rounded-xl border transition-colors ${compact ? 'gap-2 p-2' : 'gap-3 p-3'}
+                  className={`flex cursor-pointer items-start rounded-xl border transition-all duration-150 active:scale-[0.99] ${compact ? 'gap-2 p-2' : 'gap-3 p-3'}
                               ${busy === row.label ? 'opacity-60' : ''}
-                              ${checked ? 'border-sage-border bg-sage-surface' : 'border-line bg-subcanvas hover:border-line-strong'}`}
+                              ${checked ? 'border-sage-border bg-sage-surface shadow-xs' : 'border-line bg-subcanvas/70 hover:bg-subcanvas hover:border-line-strong'}`}
                 >
                   <input
                     type="checkbox"
@@ -72,13 +72,13 @@ export function ChecklistPicker({ templates = [], selected = [], onAdd, onRemove
                   />
                   <span
                     aria-hidden="true"
-                    className={`mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-md border-[1.5px]
-                                ${checked ? 'border-cypress bg-cypress text-surface' : 'border-line-strong bg-raised'}`}
+                    className={`mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-md border-[1.5px] transition-all duration-150
+                                ${checked ? 'border-cypress bg-cypress text-surface shadow-xs' : 'border-line-strong bg-raised'}`}
                   >
                     {checked && <Icon name="check" size={12} strokeWidth={2.5} />}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className={`block ${compact ? 'text-body-sm' : 'text-body-md'} ${checked ? 'text-sage-ink' : 'text-ink'}`}>{row.label}</span>
+                    <span className={`block ${compact ? 'text-body-sm' : 'text-body-md'} ${checked ? 'font-semibold text-sage-ink' : 'text-ink'}`}>{row.label}</span>
                     {row.entry?.note && <span className="block text-body-sm text-ink-3">{row.entry.note}</span>}
                   </span>
                 </label>
@@ -101,7 +101,7 @@ export function ChecklistPicker({ templates = [], selected = [], onAdd, onRemove
           aria-label="Add"
           disabled={!draft.trim() || Boolean(busy)}
           className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cypress text-surface
-                     transition-colors hover:bg-cypress-deep disabled:opacity-40"
+                     shadow-xs transition-all hover:bg-cypress-deep active:scale-95 disabled:opacity-40"
         >
           <Icon name="plus" size={16} />
         </button>

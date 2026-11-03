@@ -99,10 +99,10 @@ export default {
         display: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
       },
       fontSize: {
-        'label-sm': ['11px', { lineHeight: '14px', letterSpacing: '0.04em', fontWeight: '700' }],
-        'label-md': ['12px', { lineHeight: '16px', letterSpacing: '0.02em', fontWeight: '600' }],
+        'label-sm': ['12px', { lineHeight: '16px', letterSpacing: '0.03em', fontWeight: '700' }],
+        'label-md': ['13px', { lineHeight: '18px', letterSpacing: '0.02em', fontWeight: '600' }],
         'label-lg': ['14px', { lineHeight: '20px', letterSpacing: '0em', fontWeight: '600' }],
-        'body-sm': ['13px', { lineHeight: '18px' }],
+        'body-sm': ['13.5px', { lineHeight: '20px' }],
         'body-md': ['14px', { lineHeight: '22px' }],
         'body-lg': ['16px', { lineHeight: '24px', letterSpacing: '-0.005em' }],
         'head-sm': ['18px', { lineHeight: '26px', letterSpacing: '-0.01em', fontWeight: '600' }],
@@ -115,10 +115,10 @@ export default {
         '2xl': '1rem'
       },
       boxShadow: {
-        card: '0 4px 20px rgba(31,41,51,0.06)',
-        raised: '0 8px 20px -4px rgba(46, 42, 39, 0.07)',
-        overlay: '0 16px 36px -6px rgba(46, 42, 39, 0.12)',
-        focus: '0 0 0 3px rgba(44, 64, 53, 0.12)',
+        card: '0 1px 3px 0 rgba(15, 23, 42, 0.05), 0 1px 2px -1px rgba(15, 23, 42, 0.05)',
+        raised: '0 4px 6px -1px rgba(15, 23, 42, 0.07), 0 2px 4px -2px rgba(15, 23, 42, 0.05)',
+        overlay: '0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.1)',
+        focus: '0 0 0 3px rgba(13, 148, 136, 0.18)',
       },
       transitionDuration: { 250: '250ms' },
     },

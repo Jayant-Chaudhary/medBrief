@@ -8,6 +8,7 @@
 const supabaseAdmin = require('../../config/supabaseAdminClient');
 const config = require('../../config/consultAudio.config');
 const { STATES } = require('./stateMachine');
+const orchestratorService = require('./orchestrator.service');
 const logger = require('../../utils/logger');
 const audioCache = require('./audioCache.service');
 
@@ -245,6 +246,11 @@ async function ingestChunk({
     silent: silentChunk,
   });
 
+  // 7. If session is ending, check if all expected chunks are now received & transcribed
+  if (currentStatus === STATES.ENDING) {
+    void orchestratorService.checkCompleteness(sessionId).catch(() => {});
+  }
+
   return {
     ok: true,
     duplicated: false,
@@ -302,6 +308,10 @@ async function recordDeviceFinalMarker({ sessionId, device, totalChunks }) {
     device,
     expectedChunks: parsedTotal,
   });
+
+  if (session.status === STATES.ENDING) {
+    void orchestratorService.checkCompleteness(sessionId).catch(() => {});
+  }
 
   return {
     ok: true,

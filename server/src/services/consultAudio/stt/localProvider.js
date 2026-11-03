@@ -39,7 +39,7 @@ class LocalProvider extends SttProvider {
     const formData = new FormData();
     formData.append('file', blob, fileName);
 
-    if (options.languageCode) {
+    if (options.languageCode && options.languageCode !== 'auto') {
       formData.append('language', options.languageCode);
     }
     formData.append('vad_filter', options.vadFilter === false ? 'false' : 'true');
@@ -75,13 +75,21 @@ class LocalProvider extends SttProvider {
       segmentCount: (data.segments || []).length,
     });
 
-    const segments = (data.segments || []).map((s) => ({
-      start_ms: Number(s.start_ms) || 0,
-      end_ms: Number(s.end_ms) || 0,
-      text: (s.text || '').trim(),
-      confidence: s.confidence !== null && s.confidence !== undefined ? Number(s.confidence) : 0.95,
-      language: data.language,
-    }));
+    const segments = (data.segments || []).map((s) => {
+      let conf = 0.95;
+      if (s.confidence !== null && s.confidence !== undefined) {
+        const rawConf = Number(s.confidence);
+        // Whisper returns avg_logprob <= 0 (e.g. -0.35). Convert to standard probability:
+        conf = rawConf <= 0 ? Math.min(1.0, Math.max(0.05, Math.exp(rawConf))) : Math.min(1.0, rawConf);
+      }
+      return {
+        start_ms: Number(s.start_ms) || 0,
+        end_ms: Number(s.end_ms) || 0,
+        text: (s.text || '').trim(),
+        confidence: Number(conf.toFixed(2)),
+        language: data.language,
+      };
+    });
 
     // If whole chunk produced one text without segments
     if (segments.length === 0 && data.text && data.text.trim()) {

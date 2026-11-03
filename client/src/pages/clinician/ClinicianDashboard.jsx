@@ -15,8 +15,9 @@ import { PrescriptionTemplates } from '../../components/prescriptions/Prescripti
 import { PrescriptionUpload } from '../../components/clinician/PrescriptionUpload.jsx';
 import { Spinner } from '../../components/common/Spinner.jsx';
 import { usePatientDashboard } from '../../hooks/usePatientDashboard.js';
-import { Plus, ArrowLeft, Clock, User, CheckCircle, NotebookPen, CircleStop, BadgeCheck, UserCheck, Mic, FileAudio } from 'lucide-react';
+import { Plus, ArrowLeft, Clock, User, CheckCircle, NotebookPen, CircleStop, BadgeCheck, UserCheck, Mic, FileAudio, Heart } from 'lucide-react';
 import { DoctorConsultationModal } from '../../components/consultAudio/DoctorConsultationModal.jsx';
+import { useConsultDraft } from '../../hooks/useConsultDraft.js';
 import { buildFlowsheet } from '../../utils/flowsheet.js';
 import {
   fetchPatients,
@@ -36,17 +37,26 @@ import {
  */
 function visitStage(appointment) {
   if (appointment.isPending) {
-    return { label: 'Pending', note: 'Invited patient', Icon: Clock, badge: 'bg-attention-light text-attention-dark' };
+    return { label: 'Pending', note: 'Invited patient', Icon: Clock, badge: 'border border-amber-200 bg-amber-50 text-amber-800' };
   }
   switch (appointment.status) {
     case 'completed':
-      return { label: 'Completed', note: 'Visit completed', Icon: BadgeCheck, badge: 'bg-sage-surface text-sage-ink' };
+      return { label: 'Completed', note: 'Visit completed', Icon: BadgeCheck, badge: 'border border-emerald-200 bg-emerald-50 text-emerald-800' };
     case 'checked_in':
-      return { label: 'Checked in', note: 'Ready to be seen', Icon: UserCheck, badge: 'bg-primary-light text-primary-dark' };
+      return { label: 'Checked in', note: 'Ready to be seen', Icon: UserCheck, badge: 'border border-sky-200 bg-sky-50 text-sky-800' };
     default:
-      return { label: 'Accepted', note: 'Registered patient', Icon: CheckCircle, badge: 'bg-success-light text-success-dark' };
+      return { label: 'Accepted', note: 'Registered patient', Icon: CheckCircle, badge: 'border border-teal-200 bg-teal-50 text-teal-800' };
   }
 }
+
+const AVATAR_GRADIENTS = [
+  'bg-gradient-to-br from-indigo-500 to-blue-600 text-white shadow-sm ring-2 ring-indigo-100',
+  'bg-gradient-to-br from-rose-500 to-pink-600 text-white shadow-sm ring-2 ring-rose-100',
+  'bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-sm ring-2 ring-emerald-100',
+  'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-sm ring-2 ring-amber-100',
+  'bg-gradient-to-br from-violet-500 to-purple-600 text-white shadow-sm ring-2 ring-violet-100',
+  'bg-gradient-to-br from-cyan-500 to-teal-600 text-white shadow-sm ring-2 ring-cyan-100',
+];
 
 function isToday(value) {
   return value && new Date(value).toDateString() === new Date().toDateString();
@@ -110,6 +120,7 @@ export function ClinicianDashboard() {
 
   const { data, loading, error, patch } = usePatientDashboard(selected?.id, selected?.appointmentId);
   const appointmentId = data?.appointment?.id;
+  const consultDraft = useConsultDraft(appointmentId, Boolean(selected));
 
   const handleSaveNotes = useCallback(
     async (text) => {
@@ -250,10 +261,11 @@ export function ClinicianDashboard() {
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {todays.map((appointment) => {
+          {todays.map((appointment, idx) => {
             const isPending = appointment.isPending;
             const isCompleted = !isPending && appointment.status === 'completed';
             const stage = visitStage(appointment);
+            const avatarGrad = AVATAR_GRADIENTS[idx % AVATAR_GRADIENTS.length];
 
             return (
               <div
@@ -261,20 +273,20 @@ export function ClinicianDashboard() {
                 onClick={() => open(appointment)}
                 className={`card p-6 flex flex-col gap-4 border transition-all duration-200 ${
                   isPending
-                    ? 'border-ink-soft/20 bg-canvas-alt opacity-75 cursor-not-allowed'
+                    ? 'border-slate-200 bg-slate-50/60 opacity-75 cursor-not-allowed'
                     : isCompleted
-                      ? 'border-sage-border bg-sage-surface/40 cursor-pointer hover:shadow-md'
-                      : 'border-primary/10 hover:border-primary/30 hover:shadow-md cursor-pointer'
+                      ? 'border-emerald-200 bg-emerald-50/30 cursor-pointer hover:shadow-md hover:border-emerald-300'
+                      : 'border-slate-200/90 bg-white hover:border-indigo-300 hover:shadow-md cursor-pointer'
                 }`}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary-light text-primary flex items-center justify-center font-bold">
+                    <div className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm tracking-wide ${avatarGrad}`}>
                       {appointment.name?.charAt(0) || <User className="w-5 h-5" />}
                     </div>
                     <div>
-                      <h3 className="font-semibold text-ink">{appointment.name}</h3>
-                      <p className="text-xs text-ink-soft truncate w-32">{stage.note}</p>
+                      <h3 className="font-semibold text-ink text-base">{appointment.name}</h3>
+                      <p className="text-xs text-ink-soft truncate w-36">{stage.note}</p>
                     </div>
                   </div>
                   <span
@@ -362,70 +374,70 @@ export function ClinicianDashboard() {
 
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex items-center gap-4 mb-4">
-          <button onClick={close} aria-label="Back to dashboard" className="p-2 hover:bg-canvas-alt rounded-full transition-colors">
-            <ArrowLeft className="w-5 h-5 text-ink-soft" />
-          </button>
-          <h1 className="text-xl font-display font-semibold text-ink">Report Analysis</h1>
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={close}
+              aria-label="Back to dashboard"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium text-sm transition-all shadow-xs active:scale-95"
+            >
+              <ArrowLeft className="w-4 h-4 text-slate-500" />
+              <span>Visits</span>
+            </button>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-display font-semibold text-ink">Report Analysis</h1>
+              {data.patient?.name && (
+                <span className="hidden sm:inline-block text-sm font-medium text-slate-500">
+                  · {data.patient.name}
+                </span>
+              )}
+            </div>
+          </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setAudioConsultTab('RECORD');
-              setAudioConsultOpen(true);
-            }}
-            className="ml-auto flex items-center gap-2 rounded-xl border border-primary/20 bg-primary-light px-4 py-2 text-label-lg text-primary-dark transition-colors hover:bg-primary-light/80 shadow-sm"
-          >
-            <Mic className="h-4 w-4 text-primary" />
-            Record consultation
-          </button>
+          <div className="flex items-center gap-3">
+            <Link
+              to={`/clinician/maternity?patientId=${data.patient.id}&patientName=${encodeURIComponent(data.patient.name || '')}&phone=${encodeURIComponent(data.patient.phone || '')}`}
+              className="flex items-center gap-2 rounded-xl border border-pink-200 bg-pink-50 px-4 py-2 text-label-lg font-semibold text-pink-800 transition-all hover:bg-pink-100 hover:border-pink-300 hover:shadow-sm active:scale-[0.98]"
+              title="Open Antenatal Maternity Record"
+            >
+              <Heart className="h-4 w-4 text-pink-600 fill-pink-500/20 shrink-0" />
+              <span>Maternity card</span>
+            </Link>
 
-          <button
-            type="button"
-            onClick={() => {
-              setAudioConsultTab('TRANSCRIPT');
-              setAudioConsultOpen(true);
-            }}
-            className="flex items-center gap-2 rounded-xl border border-line bg-surface px-4 py-2 text-label-lg text-ink-2 transition-colors hover:border-ink-soft hover:bg-subcanvas shadow-sm"
-            title="View consultation audio transcript and speech-to-text processing logs"
-          >
-            <FileAudio className="h-4 w-4 text-primary" />
-            Transcript Logs
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setNotesOpen(true)}
-            aria-haspopup="dialog"
-            aria-expanded={notesOpen}
-            className="flex items-center gap-2 rounded-xl border border-line bg-surface px-4 py-2 text-label-lg text-cypress
-                       transition-colors hover:border-cypress hover:bg-subcanvas"
-          >
-            <NotebookPen className="h-4 w-4" />
-            Consultation notes
-            {(data.notes.text.trim() || data.actionItems.length > 0 || data.prescriptions.length > 0) && (
-              <span className="h-2 w-2 rounded-full bg-sage" aria-label="has content" />
-            )}
-          </button>
-
-          {data.appointment?.status === 'completed' ? (
-            <span className="flex items-center gap-2 rounded-xl border border-sage-border bg-sage-surface px-4 py-2 text-label-lg text-sage-ink">
-              <BadgeCheck className="h-4 w-4" />
-              Visit ended · summary shared
-            </span>
-          ) : (
             <button
               type="button"
-              onClick={() => {
-                setEndError(null);
-                setConfirmEnd(true);
-              }}
-              className="flex items-center gap-2 rounded-xl bg-cypress px-4 py-2 text-label-lg text-white transition-colors hover:bg-cypress-deep"
+              onClick={() => setNotesOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={notesOpen}
+              className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-label-lg font-semibold text-emerald-900 transition-all hover:bg-emerald-100 hover:border-emerald-400 hover:shadow-sm active:scale-[0.98]"
+              title="Consultation notes, action checklist, and prescriptions"
             >
-              <CircleStop className="h-4 w-4" />
-              End visit
+              <NotebookPen className="h-4 w-4 text-emerald-700 shrink-0" />
+              <span>Consultation notes</span>
+              {(data.notes.text.trim() || data.actionItems.length > 0 || data.prescriptions.length > 0) && (
+                <span className="h-2 w-2 rounded-full bg-emerald-600 animate-pulse" aria-label="has content" />
+              )}
             </button>
-          )}
+
+            {data.appointment?.status === 'completed' ? (
+              <span className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-label-lg font-semibold text-emerald-800">
+                <BadgeCheck className="h-4 w-4 text-emerald-600" />
+                Visit ended
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setEndError(null);
+                  setConfirmEnd(true);
+                }}
+                className="flex items-center gap-2 rounded-xl bg-cypress px-4 py-2 text-label-lg font-semibold text-white shadow-sm transition-all hover:bg-cypress-deep hover:shadow active:scale-[0.98]"
+              >
+                <CircleStop className="h-4 w-4" />
+                End visit
+              </button>
+            )}
+          </div>
         </div>
 
         {/*
@@ -457,6 +469,14 @@ export function ClinicianDashboard() {
             checkedItems={data.consultationItems}
             onCheckItem={handleCheckConsultation}
             onUncheckItem={handleUncheckConsultation}
+            draft={consultDraft.draft}
+            draftBusy={consultDraft.busy}
+            draftError={consultDraft.error}
+            draftStalled={consultDraft.stalled}
+            draftWaiting={consultDraft.waiting}
+            onGenerateDraft={consultDraft.generate}
+            onApproveDraft={consultDraft.approve}
+            onRejectDraft={consultDraft.reject}
           />
           <ActionChecklist
             templates={data.actionTemplates}
@@ -540,6 +560,50 @@ export function ClinicianDashboard() {
 
         <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-clip px-6 py-5">{renderBody()}</main>
       </div>
+
+      {/* Floating Ambient Consultation Audio Bar when visit is open */}
+      {selected && (
+        <aside
+          aria-label="Ambient Consultation Audio"
+          className="fixed bottom-7 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3.5 rounded-full border border-slate-200/90 bg-white/95 px-5 py-2.5 shadow-xl backdrop-blur-md transition-all hover:shadow-2xl ring-1 ring-black/5"
+        >
+          <div className="flex items-center gap-2 pr-1">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75"></span>
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-600"></span>
+            </span>
+            <span className="text-[12px] font-bold uppercase tracking-wider text-slate-700">Ambient AI Audio</span>
+          </div>
+
+          <div className="h-4 w-px bg-slate-200" />
+
+          <button
+            type="button"
+            onClick={() => {
+              setAudioConsultTab('RECORD');
+              setAudioConsultOpen(true);
+            }}
+            className="flex items-center gap-2 rounded-full bg-rose-600 px-4 py-2 text-label-md font-semibold text-white shadow-sm transition-all hover:bg-rose-700 hover:shadow active:scale-95"
+            title="Record consultation audio with ambient speech-to-text"
+          >
+            <Mic className="h-4 w-4 shrink-0 text-white" />
+            <span>Record Consultation</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setAudioConsultTab('TRANSCRIPT');
+              setAudioConsultOpen(true);
+            }}
+            className="flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-label-md font-semibold text-indigo-800 transition-all hover:bg-indigo-100 hover:border-indigo-300 active:scale-95"
+            title="View consultation audio transcript and speech-to-text processing logs"
+          >
+            <FileAudio className="h-4 w-4 shrink-0 text-indigo-600" />
+            <span>Transcript Logs</span>
+          </button>
+        </aside>
+      )}
 
       <Link
         to="/clinician/appointments/new"

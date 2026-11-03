@@ -100,6 +100,9 @@ consultRouter.get('/:id/devices/:device/gaps', sessionTokenGuard, controller.get
 consultRouter.get('/:id/gaps', flexibleSessionAuth, controller.getDeviceGaps);
 consultRouter.get('/:id/state', flexibleSessionAuth, controller.getSessionState);
 consultRouter.get('/:id/transcript', doctorSessionOrAuthGuard, controller.getTranscript);
+consultRouter.get('/:id/draft', flexibleSessionAuth, controller.getDraft);
+consultRouter.post('/:id/draft/review', doctorSessionOrAuthGuard, controller.reviewDraft);
+consultRouter.post('/:id/draft/generate', doctorSessionOrAuthGuard, controller.generateDraft);
 consultRouter.get('/by-appointment/:appointmentId', doctorSessionOrAuthGuard, controller.getSessionByAppointment);
 consultRouter.post('/test-stt', doctorSessionOrAuthGuard, rawAudioParser, controller.testAudioStt);
 consultRouter.post('/:id/test-stt', doctorSessionOrAuthGuard, rawAudioParser, controller.testAudioStt);

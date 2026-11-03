@@ -119,6 +119,15 @@ function emitGapRecorded(sessionId, gapPayload) {
   ioInstance.to(roomName).emit('gap_recorded', gapPayload);
 }
 
+function emitTranscriptUpdated(sessionId, payload = {}) {
+  if (!ioInstance) return;
+  const roomName = `session:${sessionId}`;
+  ioInstance.to(roomName).emit('transcript_updated', {
+    sessionId,
+    ...payload,
+  });
+}
+
 module.exports = {
   initSocketServer,
   getIO,
@@ -128,4 +137,5 @@ module.exports = {
   emitStatusUpdate,
   emitNotesReady,
   emitGapRecorded,
+  emitTranscriptUpdated,
 };

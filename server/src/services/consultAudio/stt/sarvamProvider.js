@@ -50,7 +50,7 @@ class SarvamProvider extends SttProvider {
     formData.append('mode', 'transcribe');
     formData.append('with_timestamps', 'true');
 
-    if (options.languageCode) {
+    if (options.languageCode && options.languageCode !== 'auto') {
       formData.append('language_code', options.languageCode);
     }
 

@@ -1,0 +1,22 @@
+const express = require('express');
+const authGuard = require('../middleware/authGuard');
+const roleGuard = require('../middleware/roleGuard');
+const controller = require('../controllers/medicationDecision.controller');
+
+const router = express.Router();
+router.use(authGuard, roleGuard('clinician'));
+router.get('/templates', controller.listTemplates);
+router.put('/templates', controller.saveTemplate);
+router.get('/medications/search', controller.searchMedications);
+router.get('/factor-catalog', controller.getFactorCatalog);
+router.get('/appointments/:appointmentId/factors', controller.getFactorState);
+router.put('/appointments/:appointmentId/factors', controller.saveFactorState);
+router.get('/appointments/:appointmentId/context', controller.getContext);
+router.put('/appointments/:appointmentId/allergies', controller.saveAllergies);
+router.get('/appointments/:appointmentId/draft', controller.getDraft);
+router.put('/appointments/:appointmentId/draft', controller.saveDraft);
+router.post('/appointments/:appointmentId/evaluate', controller.evaluate);
+router.put('/appointments/:appointmentId/evaluations/:eventId/displayed', controller.saveDisplayedCandidates);
+router.post('/feedback', controller.saveFeedback);
+router.get('/analytics', controller.analytics);
+module.exports = router;

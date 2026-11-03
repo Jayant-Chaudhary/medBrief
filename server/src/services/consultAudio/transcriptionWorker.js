@@ -15,6 +15,7 @@ const { getProvider } = require('./stt/providerFactory');
 const { convertTo16kHzMonoWav } = require('../../utils/audioConverter');
 const logger = require('../../utils/logger');
 const audioCache = require('./audioCache.service');
+const orchestratorService = require('./orchestrator.service');
 
 const STORAGE_BUCKET = 'consult-audio';
 const SAFE_ERROR_CODES = new Set([
@@ -246,7 +247,7 @@ async function processJob(job, overrideProvider = null) {
     // 6. Transcribe using STT provider
     const provider = overrideProvider || getProvider();
     const sttResult = await provider.transcribe(wavBuffer, {
-      languageCode: session?.language_code || 'hi',
+      languageCode: session?.language_code || config.sttDefaultLanguage,
       durationMs: chunk.duration_ms,
       device: chunk.device,
     });
@@ -266,7 +267,17 @@ async function processJob(job, overrideProvider = null) {
       );
     }
 
-    // 8. Insert segments into database
+    // 8. Replace this chunk's segments so a re-run (e.g. a job recovered after timeout) never duplicates them
+    const { error: clearSegErr } = await supabaseAdmin
+      .from('segments')
+      .delete()
+      .eq('chunk_id', chunk.id)
+      .eq('source', 'chunk');
+    if (clearSegErr) {
+      throw workerError('ERR_SEGMENTS_SAVE');
+    }
+
+    // Insert segments into database
     if (segments.length > 0) {
       const segmentRows = segments
         .filter((seg) => seg && typeof seg.text === 'string' && seg.text.trim().length > 0)
@@ -285,7 +296,7 @@ async function processJob(job, overrideProvider = null) {
             text: seg.text.trim(),
             source: 'chunk',
             provider: provider.name || config.sttProvider,
-            language: seg.language || session?.language_code || 'hi',
+            language: seg.language || session?.language_code || config.sttDefaultLanguage,
             confidence: seg.confidence !== undefined ? seg.confidence : 0.95,
             flags: seg.flags || [],
           };
@@ -306,6 +317,13 @@ async function processJob(job, overrideProvider = null) {
     await checkedUpdate('audio_chunks', chunk.id, { status: 'transcribed' }, 'ERR_CHUNK_STATUS_SAVE');
     await markJobCompleted(job);
     await removeCachedAudio(chunk);
+
+    // 10. Notify orchestrator: check completeness if ending, or flag draft_outdated if late
+    if (chunk.is_late) {
+      void orchestratorService.handleLateChunkTranscribed(chunk).catch(() => {});
+    } else {
+      void orchestratorService.checkCompleteness(chunk.session_id).catch(() => {});
+    }
 
     const processingMs = Date.now() - startTime;
     logger.info('Chunk successfully transcribed', {

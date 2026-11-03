@@ -87,8 +87,8 @@ export function TrendChart({ series = [], unit = '', status = 'pending', referen
           const ty = PAD.top + (index / (ticks.length - 1)) * plotH;
           return (
             <g key={value}>
-              <line x1={PAD.left} y1={ty} x2={VIEW_W - PAD.right} y2={ty} strokeWidth="1" className="stroke-line" />
-              <text x={PAD.left - 8} y={ty + 4} textAnchor="end" fontSize="11" className="tabular fill-ink-3">
+              <line x1={PAD.left} y1={ty} x2={VIEW_W - PAD.right} y2={ty} strokeWidth="1" className="stroke-slate-200" />
+              <text x={PAD.left - 8} y={ty + 4} textAnchor="end" fontSize="12" className="tabular fill-slate-500 font-medium">
                 {formatTick(value)}
               </text>
             </g>
@@ -96,7 +96,7 @@ export function TrendChart({ series = [], unit = '', status = 'pending', referen
         })}
 
         <path d={area} fill={`url(#${gradientId})`} />
-        <path d={line} fill="none" stroke={tone.stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={line} fill="none" stroke={tone.stroke} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
 
         {active && (
           <line
@@ -105,9 +105,9 @@ export function TrendChart({ series = [], unit = '', status = 'pending', referen
             x2={active.cx}
             y2={PAD.top + plotH}
             stroke={tone.stroke}
-            strokeWidth="1"
+            strokeWidth="1.5"
             strokeDasharray="3 3"
-            opacity="0.6"
+            opacity="0.75"
           />
         )}
 
@@ -116,12 +116,12 @@ export function TrendChart({ series = [], unit = '', status = 'pending', referen
             <circle
               cx={point.cx}
               cy={point.cy}
-              r={hoverIndex === index || index === points.length - 1 ? 5 : 4}
+              r={hoverIndex === index || index === points.length - 1 ? 5.5 : 4}
               fill={tone.stroke}
-              className="stroke-surface"
+              className="stroke-white"
               strokeWidth="2"
             />
-            <text x={point.cx} y={VIEW_H - 8} textAnchor="middle" fontSize="11" className="fill-ink-3">
+            <text x={point.cx} y={VIEW_H - 8} textAnchor="middle" fontSize="12" className="fill-slate-500 font-medium">
               {formatShortDate(point.date)}
             </text>
           </g>

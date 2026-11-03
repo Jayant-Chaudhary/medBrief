@@ -11,6 +11,8 @@ const { generateRoomCode, getRoomCodeExpiry, checkRateLimit, recordFailedAttempt
 const { signSessionToken } = require('./token.service');
 const { STATES, transitionSession } = require('./stateMachine');
 const socketService = require('./socket.service');
+const orchestratorService = require('./orchestrator.service');
+const { mergeSegments } = require('./mergeSegments');
 const logger = require('../../utils/logger');
 
 /**
@@ -381,6 +383,7 @@ async function endConsultation({ sessionId, doctorUserId }) {
   });
 
   socketService.emitEndRequested(sessionId, endDeadlineAt);
+  orchestratorService.registerEndingSession(sessionId, endDeadlineAt);
 
   return updatedSession;
 }
@@ -459,6 +462,10 @@ async function getSessionState(sessionId, callerUserId) {
       ended_at: session.ended_at,
       endDeadlineAt: session.end_deadline_at,
       end_deadline_at: session.end_deadline_at,
+      incompleteSides: session.incomplete_sides || [],
+      incomplete_sides: session.incomplete_sides || [],
+      draftOutdated: session.draft_outdated || false,
+      draft_outdated: session.draft_outdated || false,
     },
     devices: (devices || []).map((d) => ({
       device: d.device,
@@ -479,7 +486,7 @@ async function getSessionState(sessionId, callerUserId) {
 async function getSessionTranscript(sessionId, doctorUserId = null) {
   const { data: session, error: sErr } = await supabaseAdmin
     .from('consult_sessions')
-    .select('id, doctor_id, status')
+    .select('id, doctor_id, status, incomplete_sides, draft_outdated')
     .eq('id', sessionId)
     .single();
 
@@ -505,20 +512,21 @@ async function getSessionTranscript(sessionId, doctorUserId = null) {
     throw new Error(`Failed to fetch segments: ${segErr.message}`);
   }
 
-  // Query audio chunks to provide live progress stats
+  // Fetch audio chunks to associate loudness (avg_dbfs) and calculate progress
   let totalChunks = 0;
   let transcribedChunks = 0;
   let isProcessing = ['recording', 'ending', 'processing'].includes(session.status);
+  let chunkList = [];
 
   try {
     const { data: chunks } = await supabaseAdmin
       .from('audio_chunks')
-      .select('id, status, is_silent, seq, device')
+      .select('id, status, silent, seq, device, avg_dbfs, start_ms, duration_ms')
       .eq('session_id', sessionId);
 
-    const chunkList = chunks || [];
+    chunkList = chunks || [];
     totalChunks = chunkList.length;
-    transcribedChunks = chunkList.filter((c) => c.status === 'transcribed' || c.is_silent).length;
+    transcribedChunks = chunkList.filter((c) => c.status === 'transcribed' || c.silent).length;
     if (totalChunks > 0 && transcribedChunks < totalChunks) {
       isProcessing = true;
     }
@@ -527,27 +535,49 @@ async function getSessionTranscript(sessionId, doctorUserId = null) {
     transcribedChunks = segments?.length || 0;
   }
 
+  // Fetch explicit timeline gaps
+  let gapsList = [];
+  try {
+    const { data: gaps } = await supabaseAdmin
+      .from('consult_audio_gaps')
+      .select('id, gap_id, device, start_ms, duration_ms, reason_code, received_at')
+      .eq('session_id', sessionId);
+    gapsList = gaps || [];
+  } catch (_gapErr) {
+    gapsList = [];
+  }
+
+  // Associate chunk avg_dbfs with segments if not already on the segment
+  const chunkDbfsMap = new Map(chunkList.map((c) => [c.id, c.avg_dbfs]));
+  const enrichedSegments = (segments || []).map((s) => ({
+    ...s,
+    avg_dbfs: s.avg_dbfs !== undefined && s.avg_dbfs !== null ? s.avg_dbfs : chunkDbfsMap.get(s.chunk_id),
+  }));
+
+  const doctorSegments = enrichedSegments.filter((s) => s.device === 'doctor');
+  const patientSegments = enrichedSegments.filter((s) => s.device === 'patient');
+  const failedChunks = chunkList.filter((c) => c.status === 'failed');
+
+  const merged = mergeSegments(doctorSegments, patientSegments, {
+    gaps: gapsList,
+    failedChunks,
+    dedupeMinOverlap: config.dedupeMinOverlap,
+    dedupeMinSimilarity: config.dedupeMinSimilarity,
+    lowConfidenceThreshold: config.lowConfidenceThreshold,
+  });
+
   return {
     sessionId,
     status: session.status,
+    incompleteSides: session.incomplete_sides || [],
+    incomplete_sides: session.incomplete_sides || [],
+    draftOutdated: session.draft_outdated || false,
+    draft_outdated: session.draft_outdated || false,
     totalChunks,
     transcribedChunks,
     isProcessing,
-    segments: (segments || []).map((s) => ({
-      id: s.id,
-      device: s.device,
-      speaker: s.speaker,
-      startMs: Number(s.start_ms),
-      start_ms: Number(s.start_ms),
-      endMs: Number(s.end_ms),
-      end_ms: Number(s.end_ms),
-      text: s.text,
-      provider: s.provider,
-      language: s.language,
-      confidence: s.confidence,
-      flags: s.flags || [],
-      createdAt: s.created_at,
-    })),
+    segments: merged,
+    stats: merged.stats,
   };
 }
 

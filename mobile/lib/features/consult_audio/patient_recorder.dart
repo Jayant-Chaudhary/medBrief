@@ -144,8 +144,12 @@ class PatientRecorder {
 
   Future<void> startRecording({required int initialTimelineMs}) async {
     if (_recording) return;
-    if (!await checkPrerequisites(request: false)) {
-      throw StateError('ERR_AUDIO_PERMISSION');
+    // record_android's permission helper requires an attached Activity and
+    // returns false in a foreground-service engine. The visible UI requested
+    // permission before starting that service; AudioRecord/Android enforces the
+    // current permission again when startStream opens the microphone.
+    if (!await _source.isEncoderSupported(AudioEncoder.aacLc)) {
+      throw StateError('ERR_AUDIO_ENCODER');
     }
     _stop = null;
     _stopping = false;
