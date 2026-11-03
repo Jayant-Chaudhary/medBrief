@@ -22,7 +22,7 @@ const { resolvePatient, describePatient } = require('./resolvers/patients');
 const { norm } = require('./resolvers/values');
 const { listClinicianPatients } = require('../patientDirectory.service');
 const { nowInWords, wallClock, safeTimeZone } = require('./resolvers/datetime');
-const { redact, classify, confirmGroup, describeElements, checkPageActions, checkAnswer, matchPageCommand, splitParts, doneLine } = require('./pageSnapshot');
+const { redact, applyTokenBudget, classify, confirmGroup, describeElements, checkPageActions, checkAnswer, matchPageCommand, splitParts, doneLine } = require('./pageSnapshot');
 
 const { planChecklist, checkDone } = require('./agent/planner');
 const { navigateRound } = require('./agent/navigator');
@@ -793,7 +793,12 @@ async function handleStep({
   let patients = [];
   if (role === 'clinician' && page?.elements?.length) {
     patients = await Promise.resolve(directory(userId)).catch(() => []);
-    seen = redact({ ...page, elements: page.elements.slice(0, settings.maxPageElements || config.maxPageElements) }, patients);
+    const budgetChars = (settings.snapshotTokenBudget || config.snapshotTokenBudget || 1500) * 4;
+    seen = applyTokenBudget(
+      redact({ ...page, elements: page.elements.slice(0, settings.maxPageElements || config.maxPageElements) }, patients),
+      message,
+      budgetChars
+    );
   }
 
   // 1. Fast path: Page phrase rules

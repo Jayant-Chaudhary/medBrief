@@ -85,6 +85,9 @@ export function nameOf(el) {
     const text = textOf(el);
     if (text) return text;
   }
+  if (isPrivate && (tag === 'button' || tag === 'a' || el.getAttribute('role'))) {
+    return '[patient row]';
+  }
   return cleanLabel(el.getAttribute('placeholder') || el.getAttribute('title') || '');
 }
 
@@ -157,8 +160,24 @@ export function readPage(doc = document) {
     const options = kind === 'select'
       ? [...el.options].map((o) => cleanLabel(o.textContent)).filter(Boolean).slice(0, MAX_OPTIONS)
       : null;
+    const isPrivate = Boolean(el.closest('[data-assistant-private]'));
+    let nearbyText = null;
+    if (!isPrivate) {
+      const describedBy = el.getAttribute('aria-describedby');
+      if (describedBy) {
+        nearbyText = cleanLabel(describedBy.split(/\s+/).map((id) => el.ownerDocument.getElementById(id)?.textContent || '').join(' '), 160);
+      }
+      if (!nearbyText) {
+        const hint = el.parentElement?.querySelector('.text-xs, .text-sm, [role="status"], [role="alert"]');
+        if (hint && !hint.contains(el) && isShown(hint)) {
+          nearbyText = cleanLabel(hint.textContent, 160);
+        }
+      }
+    }
+
     elements.push({
       ref, kind, name,
+      ...(nearbyText && { text: nearbyText }),
       ...(section && { section }),
       ...(options && { options }),
       ...(effect && { effect }),

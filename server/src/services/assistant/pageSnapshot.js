@@ -56,6 +56,7 @@ function redact(snapshot, patients = []) {
     elements: (snapshot.elements || []).map((el) => ({
       ...el,
       name: clean(el.name),
+      ...(el.text && { text: clean(el.text) }),
       ...(el.section && { section: clean(el.section) }),
       ...(el.options && { options: el.options.map(clean) }),
     })),
@@ -88,12 +89,50 @@ function confirmGroup(element, op) {
 /** One line per element for the prompt: `r3 button "Add medicine" (Prescription · Medicine 2) [saves]`. */
 function describeElements(elements) {
   return elements.map((el) => {
+    const desc = el.text ? ` - "${el.text}"` : '';
     const where = el.section ? ` (${el.section})` : '';
     const options = el.options?.length ? ` options: ${el.options.join(' | ')}` : '';
     const mark = el.effect === 'save' ? ' [saves]' : el.effect === 'send' ? ' [sends to patient]' : NEVER.test(el.name) || el.effect === 'never' ? ' [never]' : '';
     const off = el.disabled ? ' [disabled until the field before it is filled]' : '';
-    return `${el.ref} ${el.kind} "${el.name}"${where}${options}${mark}${off}`;
+    return `${el.ref} ${el.kind} "${el.name}"${desc}${where}${options}${mark}${off}`;
   }).join('\n');
+}
+
+/**
+ * Trims snapshot elements when they exceed the token budget (~1500 tokens / 6000 chars for Gemma).
+ * Trimming priority order: preserves open dialogs and sections mentioned in the request, trims Menu first.
+ */
+function applyTokenBudget(snapshot, message = '', maxBudgetChars = 6000) {
+  if (!snapshot?.elements || snapshot.elements.length === 0) return snapshot;
+  const currentText = describeElements(snapshot.elements);
+  if (currentText.length <= maxBudgetChars) return snapshot;
+
+  const msgNorm = String(message || '').toLowerCase();
+  const scored = snapshot.elements.map((el, index) => {
+    let score = 0;
+    if (el.section?.toLowerCase().includes('dialog') || el.section?.toLowerCase().includes('modal')) score += 100;
+    if (el.section && msgNorm.includes(el.section.toLowerCase())) score += 50;
+    if (el.name && msgNorm.includes(el.name.toLowerCase())) score += 30;
+    if (el.section === 'Menu') score -= 50;
+    return { el, index, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score || a.index - b.index);
+
+  const kept = [];
+  let currentChars = 0;
+  for (const item of scored) {
+    const line = `${item.el.ref} ${item.el.kind} "${item.el.name}"`;
+    if (currentChars + line.length > maxBudgetChars && kept.length > 0) break;
+    kept.push(item);
+    currentChars += line.length + 30;
+  }
+
+  kept.sort((a, b) => a.index - b.index);
+  return {
+    ...snapshot,
+    elements: kept.map((item) => item.el),
+  };
 }
 
 const REASON = {
@@ -427,5 +466,5 @@ function checkAnswer(text, maxChars) {
 }
 
 module.exports = {
-  redact, classify, confirmGroup, describeElements, checkPageActions, checkAnswer, matchPageCommand, splitParts, doneLine, NOTES_BUTTON, NEVER,
+  redact, applyTokenBudget, classify, confirmGroup, describeElements, checkPageActions, checkAnswer, matchPageCommand, splitParts, doneLine, NOTES_BUTTON, NEVER,
 };
