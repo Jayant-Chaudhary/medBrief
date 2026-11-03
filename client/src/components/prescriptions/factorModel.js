@@ -15,8 +15,6 @@ export const FACTOR_GROUPS = ['Prescription checks', 'Pregnancy & history', 'Rep
 export const DEFAULT_FACTORS = [
   f('age', 'Age', 'Prescription checks', 'number', { unit: 'years', profile: 'age' }),
   f('purpose', 'Consultation purpose / indication', 'Prescription checks', 'text', { appointment: 'purpose', reference: 'medicines' }),
-  f('allergy_status', 'Drug allergy status', 'Prescription checks', 'select', { options: ['No known drug allergies', 'Allergy reported'], reference: 'medicines' }),
-  f('allergy_details', 'Allergy and reaction details', 'Prescription checks', 'text', { reference: 'medicines' }),
   f('current_medicines', 'Current medicines, supplements and recent injections', 'Prescription checks', 'text', { reference: 'medicines' }),
   f('diabetes_status', 'Confirmed diabetes status', 'Prescription checks', 'select', { options: ['No diagnosed diabetes', 'Type 1 diabetes', 'Type 2 diabetes', 'Gestational diabetes', 'Other diabetes'], reference: 'diabetes' }),
   f('hypertension_status', 'Confirmed hypertension status', 'Prescription checks', 'select', { options: ['No diagnosed hypertension', 'Chronic hypertension', 'Gestational hypertension', 'Pre-eclampsia'], reference: 'hypertension' }),

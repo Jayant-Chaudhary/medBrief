@@ -3,20 +3,49 @@ import { Plus, Search, Settings2 } from 'lucide-react';
 import { fetchMaternityCard } from '../../services/clinicianService.js';
 import { mergeFactorDefinitions } from './maternityFactors.js';
 import { readLocal } from './templateModel.js';
+import { fetchPrescriptionFactors, savePrescriptionFactors } from '../../services/medicationDecisionService.js';
 import { DEFAULT_FACTORS, FACTOR_GROUPS, FACTOR_SOURCES, validDefinitions, validFactorValues, resolveFactorValues, usableFactor } from './factorModel.js';
 
 export function usePrescriptionFactors({ ownerId, patient, appointment, appointmentId, reports }) {
-  const catalogKey = `medbrief.rx.factor-definitions.v1.${encodeURIComponent(ownerId)}`;
-  const valuesKey = `medbrief.rx.factor-values.v1.${encodeURIComponent(ownerId)}.${encodeURIComponent(patient.id)}.${encodeURIComponent(appointmentId)}`;
-  const [catalogRead] = useState(() => readLocal(catalogKey, DEFAULT_FACTORS, validDefinitions));
-  const [valuesRead] = useState(() => readLocal(valuesKey, {}, validFactorValues));
-  const [definitions, setDefinitions] = useState(() => mergeFactorDefinitions(catalogRead.value, DEFAULT_FACTORS));
-  const [overrides, setOverrides] = useState(valuesRead.value);
-  const [catalogBlocked, setCatalogBlocked] = useState(Boolean(catalogRead.error));
-  const [valuesBlocked, setValuesBlocked] = useState(Boolean(valuesRead.error));
-  const [error, setError] = useState(catalogRead.error || valuesRead.error);
+  const [definitions, setDefinitions] = useState(DEFAULT_FACTORS);
+  const [overrides, setOverrides] = useState({});
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
   const [maternity, setMaternity] = useState({ card: null, loading: true, error: '' });
   const loadSequence = useRef(0);
+  const definitionsRef = useRef(definitions);
+  const overridesRef = useRef(overrides);
+  const persistTimer = useRef(null);
+  definitionsRef.current = definitions;
+  overridesRef.current = overrides;
+  useEffect(() => {
+    let active = true;
+    fetchPrescriptionFactors(appointmentId).then(state => {
+      if (!active) return;
+      const legacyCatalog = readLocal(`medbrief.rx.factor-definitions.v1.${encodeURIComponent(ownerId)}`, DEFAULT_FACTORS, validDefinitions);
+      const legacyValues = readLocal(`medbrief.rx.factor-values.v1.${encodeURIComponent(ownerId)}.${encodeURIComponent(patient.id)}.${encodeURIComponent(appointmentId)}`, {}, validFactorValues);
+      const hasRemoteCatalog = validDefinitions(state.definitions) && state.definitions.length > 0;
+      const hasRemoteOverrides = Boolean(state.updatedAt);
+      const nextDefinitions = mergeFactorDefinitions(hasRemoteCatalog ? state.definitions : legacyCatalog.value, DEFAULT_FACTORS).filter(item => !['allergy_status', 'allergy_details'].includes(item.id));
+      const sourceOverrides = hasRemoteOverrides && validFactorValues(state.overrides) ? state.overrides : legacyValues.value;
+      const nextOverrides = { ...sourceOverrides };
+      delete nextOverrides.allergy_status;
+      delete nextOverrides.allergy_details;
+      definitionsRef.current = nextDefinitions; overridesRef.current = nextOverrides;
+      setDefinitions(nextDefinitions); setOverrides(nextOverrides); setError('');
+      if (!hasRemoteCatalog || !hasRemoteOverrides || JSON.stringify(nextOverrides) !== JSON.stringify(sourceOverrides)) {
+        savePrescriptionFactors(appointmentId, { definitions: nextDefinitions, overrides: nextOverrides }).catch(() => setError('Older device factors were loaded but could not be migrated to the server yet.'));
+      }
+      setLoading(false);
+    }).catch(() => { if (active) { setError('Saved prescription factors could not be loaded from the server. Changes may not persist.'); setLoading(false); } });
+    return () => { active = false; };
+  }, [appointmentId, ownerId, patient.id]);
+  useEffect(() => () => {
+    if (persistTimer.current) {
+      clearTimeout(persistTimer.current);
+      savePrescriptionFactors(appointmentId, { definitions: definitionsRef.current, overrides: overridesRef.current }).catch(() => {});
+    }
+  }, [appointmentId]);
   const refreshMaternity = useCallback(async () => {
     const sequence = ++loadSequence.current;
     setMaternity(current => ({ ...current, loading: true, error: '' }));
@@ -28,45 +57,39 @@ export function usePrescriptionFactors({ ownerId, patient, appointment, appointm
     } catch {
       if (sequence === loadSequence.current) setMaternity({ card: null, loading: false, error: 'Maternity card unavailable. Report/profile values are still shown; retry to load the saved card.' });
     }
-  }, [patient.id, ownerId]);
+  }, [patient.id]);
   useEffect(() => {
     refreshMaternity();
     window.addEventListener('focus', refreshMaternity);
     return () => { ++loadSequence.current; window.removeEventListener('focus', refreshMaternity); };
   }, [refreshMaternity]);
   const records = useMemo(() => resolveFactorValues(definitions, patient, appointment, reports, overrides, maternity.card), [definitions, patient, appointment, reports, overrides, maternity.card]);
-  useEffect(() => {
-    function changed(event) {
-      if (event.key === catalogKey || event.key === valuesKey || event.key === null) {
-        if (event.key !== valuesKey) setCatalogBlocked(true);
-        if (event.key !== catalogKey) setValuesBlocked(true);
-        setError('Factors changed in another tab. Reload before editing to avoid overwriting them.');
-      }
-    }
-    window.addEventListener('storage', changed);
-    return () => window.removeEventListener('storage', changed);
-  }, [catalogKey, valuesKey]);
-  function persist(key, value, blocked) {
-    if (blocked) { setError('Factor saving is paused to preserve existing data. Reload before making changes.'); return false; }
-    try { localStorage.setItem(key, JSON.stringify(value)); setError(''); return true; }
-    catch { setError('Could not save factors in this browser. Keep the page open and copy changes before leaving.'); return false; }
+  function persist(nextDefinitions, nextOverrides) {
+    clearTimeout(persistTimer.current);
+    persistTimer.current = setTimeout(() => {
+      persistTimer.current = null;
+      savePrescriptionFactors(appointmentId, { definitions: definitionsRef.current, overrides: overridesRef.current }).then(() => setError('')).catch(() => setError('Prescription factors could not be saved to the server. Keep this visit open and retry.'));
+    }, 300);
+    return true;
   }
   function saveDefinition(definition) {
     const duplicate = definitions.some(item => item.id !== definition.id && item.label.trim().toLowerCase() === definition.label.trim().toLowerCase());
     if (duplicate) { setError('A factor with that name already exists.'); return false; }
-    const next = definitions.some(item => item.id === definition.id) ? definitions.map(item => item.id === definition.id ? definition : item) : [...definitions, definition];
-    if (!persist(catalogKey, next, catalogBlocked)) return false;
+    const next = definitionsRef.current.some(item => item.id === definition.id) ? definitionsRef.current.map(item => item.id === definition.id ? definition : item) : [...definitionsRef.current, definition];
+    definitionsRef.current = next;
+    persist(next, overridesRef.current);
     setDefinitions(next); return true;
   }
   function saveValue(definition, value, reset = false) {
-    const next = { ...overrides };
+    const next = { ...overridesRef.current };
     if (reset) delete next[definition.id];
     else next[definition.id] = { value, unit: definition.unit, recordedAt: new Date().toISOString(), sourceRecordedAt: records[definition.id]?.sourceRecordedAt || records[definition.id]?.recordedAt || '', reportId: records[definition.id]?.reportId || '', metricId: records[definition.id]?.metricId || '' };
-    // Retain edits in memory on storage failure, but display a visible save error.
+    // Keep the current value visible while its database write is pending.
+    overridesRef.current = next;
     setOverrides(next);
-    return persist(valuesKey, next, valuesBlocked);
+    return persist(definitionsRef.current, next);
   }
-  return { definitions, records, overrides, saveDefinition, saveValue, error, maternity, refreshMaternity };
+  return { definitions, records, overrides, saveDefinition, saveValue, error, loading, maternity, refreshMaternity };
 }
 const formatDate = value => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleDateString() : 'Date not supplied';
 function DefinitionEditor({ initial, onSave, onCancel }) {

@@ -2,10 +2,10 @@ import { fitSimilarityModel, rankSimilarityModel, validateSimilarityDataset } fr
 import { evaluateFactorRule } from './factorModel.js';
 const normalize = value => String(value ?? '').trim().toLowerCase();
 export const tags = value => [...new Set(String(value ?? '').split(',').map(normalize).filter(Boolean))];
-export const blankMedication = () => ({ id: crypto.randomUUID(), name: '', strength: '', dose: '', route: '', frequency: '', duration: '', instructions: '', kind: 'medicine' });
+export const blankMedication = () => ({ id: crypto.randomUUID(), name: '', ingredientKey: '', allergySubstanceKeys: [], strength: '', dose: '', route: '', frequency: '', duration: '', instructions: '', kind: 'medicine' });
 export const blankDraft = () => ({ medications: [], instructions: '', followUp: '' });
 export const blankTemplate = () => ({ id: crypto.randomUUID(), version: 1, name: '', purpose: '', required: '', optional: '', exclusions: '', minAge: '', maxAge: '', pregnancy: '', medications: [], instructions: '', followUp: '', archived: false, factorRules: [] });
-export const medicationFields = ['name', 'strength', 'dose', 'route', 'frequency', 'duration', 'instructions'];
+export const medicationFields = ['name', 'ingredientKey', 'strength', 'dose', 'route', 'frequency', 'duration', 'instructions'];
 export function templateFromDraft(draft) {
   return { ...blankTemplate(), medications: draft.medications.map(row => Object.fromEntries(['id', ...medicationFields].map(key => [key, row[key] || '']).concat([['kind', row.kind || 'medicine']]))), instructions: draft.instructions, followUp: draft.followUp };
 }
@@ -26,6 +26,26 @@ export function buildPatientContext(patient = {}, appointment = {}) {
   return { age, purpose, pregnancy, factors, absentFactors: absent.join(', '), available };
 }
 
+export function allergyReview(template, context) {
+  const status = context.allergyReview?.status || 'not_assessed';
+  const allergies = context.allergies || [];
+  const knownNone = status === 'none_known';
+  const reported = status === 'allergies_documented';
+  const patientAllergenKeys = new Set(allergies.map(allergy => allergy.substance_key));
+  const items = (template.medications || []).map(medication => {
+    const associations = medication.allergyAssociations || (medication.allergySubstanceKeys || []).map(substance_key => ({ substance_key, substance_display: substance_key }));
+    const matches = associations.filter(association => patientAllergenKeys.has(association.substance_key));
+    return { medicationId: medication.id, medicationName: medication.name, matches, checked: associations.length > 0 };
+  });
+  return {
+    status: knownNone ? 'none-reported' : reported ? 'reported' : status === 'not_assessed' ? 'unknown' : 'review',
+    allergies: allergies.map(allergy => ({ name: allergy.substance_display, reaction: allergy.reaction || '' })),
+    items,
+    matchedCount: items.filter(item => item.matches.length).length,
+    uncheckedCount: items.filter(item => !item.checked).length,
+  };
+}
+
 /** Equal-weight criteria coverage, not a clinical probability. Unknowns earn no points. */
 export function evaluateTemplate(template, context) {
   const factors = tags(context.factors);
@@ -38,10 +58,12 @@ export function evaluateTemplate(template, context) {
   for (const factor of tags(template.optional).filter(factor => !tags(template.required).includes(factor))) {
     add(`Factor: ${factor}`, factors.includes(factor) ? 'matched' : absent.includes(factor) ? 'different' : 'unknown', false);
   }
+  for (const ailment of tags(template.purpose)) {
+    add(`Associated ailment: ${ailment}`, factors.includes(ailment) ? 'matched' : absent.includes(ailment) ? 'different' : 'unknown', false);
+  }
   for (const factor of tags(template.exclusions)) {
     add(`Excluded factor: ${factor}`, factors.includes(factor) ? 'conflict' : absent.includes(factor) ? 'matched' : 'unknown');
   }
-  if (template.purpose.trim()) add('Consultation purpose', !context.purpose?.trim() ? 'unknown' : normalize(context.purpose) === normalize(template.purpose) ? 'matched' : 'conflict');
   if (template.pregnancy) add('Pregnancy stage', !context.pregnancy ? 'unknown' : context.pregnancy === template.pregnancy ? 'matched' : 'conflict');
   if (template.minAge !== '' || template.maxAge !== '') {
     const known = context.age !== '' && context.age != null && Number.isFinite(Number(context.age)) && Number(context.age) >= 0;
@@ -119,7 +141,7 @@ export function readLocal(key, fallback, validate) {
     return { value, error: '' };
   } catch { return { value: fallback, error: 'Saved data could not be read. It has been preserved; writing is paused for this record.' }; }
 }
-export function validMedication(row) { return row && typeof row.id === 'string' && medicationFields.every(key => typeof row[key] === 'string'); }
+export function validMedication(row) { return row && typeof row.id === 'string' && medicationFields.every(key => key === 'ingredientKey' ? row[key] === undefined || typeof row[key] === 'string' : typeof row[key] === 'string'); }
 export function validDraft(value) { return value && Array.isArray(value.medications) && value.medications.every(validMedication) && typeof value.instructions === 'string' && typeof value.followUp === 'string'; }
 function validRules(value) { return value === undefined || Array.isArray(value) && value.every(rule => rule && ['factorId','label','value','unit'].every(key => typeof rule[key] === 'string') && ['equals','min','max'].includes(rule.operator)); }
 export function validLibrary(value) { return Array.isArray(value) && value.every(row => validDraft(row) && typeof row.id === 'string' && Number.isInteger(row.version) && validRules(row.factorRules) && ['name','purpose','required','optional','exclusions','minAge','maxAge','pregnancy'].every(key => typeof row[key] === 'string') && typeof row.archived === 'boolean'); }

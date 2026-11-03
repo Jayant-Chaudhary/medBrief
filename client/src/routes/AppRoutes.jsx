@@ -30,6 +30,7 @@ import VerificationPending from '../pages/clinician/VerificationPending.jsx';
 import ClinicianProfile from '../pages/clinician/ClinicianProfile.jsx';
 import NewAppointment from '../pages/clinician/NewAppointment.jsx';
 import MaternityCardPage from '../pages/clinician/MaternityCardPage.jsx';
+import { MedicationTemplateLibraryPage } from '../components/prescriptions/PrescriptionTemplates.jsx';
 
 // Onboarding Pages
 import PatientOnboarding from '../pages/onboarding/PatientOnboarding.jsx';
@@ -76,6 +77,7 @@ export function AppRoutes() {
       <Route path="/clinician/appointments/new" element={<ProtectedRoute requireVerifiedClinician><NewAppointment /></ProtectedRoute>} />
       <Route path="/clinician/schedule" element={<ProtectedRoute requireVerifiedClinician><ClinicianSchedule /></ProtectedRoute>} />
       <Route path="/clinician/patients" element={<ProtectedRoute requireVerifiedClinician><ClinicianPatients /></ProtectedRoute>} />
+      <Route path="/clinician/templates" element={<ProtectedRoute requireVerifiedClinician><MedicationTemplateLibraryPage /></ProtectedRoute>} />
       <Route path="/clinician/maternity" element={<ProtectedRoute requireVerifiedClinician><MaternityCardPage /></ProtectedRoute>} />
       <Route path="/clinician/checklists" element={<ProtectedRoute requireVerifiedClinician><ClinicianChecklists /></ProtectedRoute>} />
       <Route path="/clinician/lab-inbox" element={<ProtectedRoute requireVerifiedClinician><ComingSoon title="Lab Inbox" icon="flask" /></ProtectedRoute>} />
