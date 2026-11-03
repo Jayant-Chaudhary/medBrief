@@ -123,7 +123,8 @@ class ApiClient {
           fieldName,
           bytes,
           filename: filename,
-          contentType: contentType != null ? MediaType.parse(contentType) : null,
+          contentType:
+              contentType != null ? MediaType.parse(contentType) : null,
         ),
       );
       final response = await _client

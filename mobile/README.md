@@ -61,10 +61,12 @@ cd ../server
 npm run dev
 ```
 
+For local Wi-Fi hosting (phone and computer on same Wi-Fi network), set
+`API_BASE_URL` to your computer's local IP (e.g. `http://192.168.31.82:4000`).
 For the Android emulator, `http://10.0.2.2:4000` reaches Express on the host.
-For a USB-connected physical phone, use `adb reverse tcp:4000 tcp:4000` and set
-`API_BASE_URL` to `http://127.0.0.1:4000`. Hosted API builds should use HTTPS.
-Only debug Android builds allow cleartext HTTP for local development.
+For a USB-connected physical phone with reverse proxy, use `adb reverse tcp:4000 tcp:4000`
+and set `API_BASE_URL` to `http://127.0.0.1:4000`. Hosted API builds should use HTTPS.
+Only debug and profile Android builds allow cleartext HTTP for local development.
 
 Running without configuration displays the login layout with sign-in disabled;
 it never connects to a placeholder Supabase project or pretends login succeeded.

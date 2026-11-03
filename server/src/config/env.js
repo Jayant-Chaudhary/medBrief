@@ -16,6 +16,7 @@ for (const key of required) {
 }
 
 module.exports = {
+  host: process.env.HOST || '0.0.0.0',
   port: process.env.PORT || 4000,
   ocrServiceUrl: process.env.OCR_SERVICE_URL || 'http://localhost:8000',
   supabaseUrl: process.env.SUPABASE_URL || 'https://placeholder.supabase.co',

@@ -31,16 +31,14 @@ class GeminiDraftProvider extends DraftProviderInterface {
     super();
     this.name = 'gemini';
     this.apiKey = options.apiKey || config.geminiApiKey;
-    this.modelVersion = options.model || config.geminiDraftModel || 'gemini-1.5-flash';
-    this.timeoutMs = options.timeoutMs || config.draftTimeoutMs || 25000;
+    this.modelVersion = options.model || config.geminiDraftModel || 'gemini-3.5-flash-lite';
+    this.timeoutMs = options.timeoutMs || config.draftTimeoutMs || 60000;
   }
 
   async _callGeminiApi(promptText, responseSchema) {
     if (!this.apiKey) {
       throw new Error('GEMINI_API_KEY is not configured');
     }
-
-    const url = `${GEMINI_API_BASE}/${this.modelVersion}:generateContent?key=${this.apiKey}`;
 
     const requestBody = {
       contents: [
@@ -56,37 +54,75 @@ class GeminiDraftProvider extends DraftProviderInterface {
       },
     };
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const maxRetries = 3;
+    const candidateModels = [
+      this.modelVersion,
+      'gemini-3.5-flash-lite',
+      'gemini-flash-lite-latest',
+    ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      });
+    let lastError;
 
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Gemini API error (${res.status}): ${errText}`);
+    for (let mIdx = 0; mIdx < candidateModels.length; mIdx++) {
+      const model = candidateModels[mIdx];
+      const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${this.apiKey}`;
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+        try {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody),
+            signal: controller.signal,
+          });
+
+          if (!res.ok) {
+            const errText = await res.text();
+            if ((res.status === 503 || res.status === 429) && attempt < maxRetries) {
+              const backoffMs = attempt * 2000;
+              logger.warn(`Gemini API returned ${res.status} for ${model}, retrying in ${backoffMs}ms (attempt ${attempt}/${maxRetries})`);
+              await new Promise((r) => setTimeout(r, backoffMs));
+              continue;
+            }
+            throw new Error(`Gemini API error (${res.status}): ${errText}`);
+          }
+
+          const data = await res.json();
+          const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!rawText) {
+            throw new Error('Empty response from Gemini API');
+          }
+
+          return JSON.parse(rawText);
+        } catch (err) {
+          if (err.name === 'AbortError') {
+            lastError = new Error(`Gemini request timed out after ${this.timeoutMs}ms`);
+          } else {
+            lastError = err;
+          }
+
+          const isModelUnavailable = lastError.message.includes('404') || lastError.message.includes('503');
+          if (attempt === maxRetries && isModelUnavailable && mIdx < candidateModels.length - 1) {
+            logger.warn(`Model ${model} unavailable, falling back to ${candidateModels[mIdx + 1]}`);
+            break;
+          }
+
+          if (attempt === maxRetries || (!lastError.message.includes('503') && !lastError.message.includes('429'))) {
+            if (mIdx === candidateModels.length - 1) {
+              throw lastError;
+            }
+            break;
+          }
+        } finally {
+          clearTimeout(timeout);
+        }
       }
-
-      const data = await res.json();
-      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawText) {
-        throw new Error('Empty response from Gemini API');
-      }
-
-      return JSON.parse(rawText);
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        throw new Error(`Gemini request timed out after ${this.timeoutMs}ms`);
-      }
-      throw err;
-    } finally {
-      clearTimeout(timeout);
     }
+
+    throw lastError;
   }
 
   async generateDoctorNotes({ transcript, structuredContext, tracerCatalog }) {

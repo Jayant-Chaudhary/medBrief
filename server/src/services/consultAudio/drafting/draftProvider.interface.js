@@ -34,17 +34,17 @@ class DraftProviderInterface {
   }
 
   /**
-   * Runs the 3 generation tasks in parallel and returns full draft payload.
+   * Runs the 3 generation tasks and returns full draft payload.
+   * Tasks are executed sequentially to avoid concurrent request collisions
+   * and 503 high-demand spike errors on external LLM APIs (e.g. Gemini).
    * @param {Object} params
    * @returns {Promise<{ doctorNotes: Object, patientSummary: Object, clinicalFlags: Array, latencyMs: number, provider: string, modelVersion: string }>}
    */
   async generateDraft(params) {
     const start = Date.now();
-    const [docRes, patRes, flagRes] = await Promise.all([
-      this.generateDoctorNotes(params),
-      this.generatePatientSummary(params),
-      this.generateClinicalFlags(params),
-    ]);
+    const docRes = await this.generateDoctorNotes(params);
+    const patRes = await this.generatePatientSummary(params);
+    const flagRes = await this.generateClinicalFlags(params);
 
     const totalLatencyMs = Date.now() - start;
 

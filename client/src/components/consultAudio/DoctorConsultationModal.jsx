@@ -34,6 +34,7 @@ import {
   getSessionByAppointment,
   testSpeechToText,
 } from '../../services/consultAudio/consultClient.service.js';
+import { getApiBaseUrl } from '../../services/apiClient.js';
 import { WebRecorder } from '../../services/consultAudio/webRecorder.js';
 
 export function DoctorConsultationModal({
@@ -297,7 +298,7 @@ export function DoctorConsultationModal({
         sessionId,
         sessionToken: token,
         device: 'doctor',
-        apiBaseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000',
+        apiBaseUrl: getApiBaseUrl(),
         onLoudness: (dbfs) => {
           setMicLevelDbfs(dbfs);
         },

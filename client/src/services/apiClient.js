@@ -1,6 +1,23 @@
 import { supabase } from './supabaseClient.js';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+export function getApiBaseUrl() {
+  const envUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+    const host = window.location.hostname;
+    if (host !== 'localhost' && host !== '127.0.0.1') {
+      try {
+        const parsed = new URL(envUrl);
+        parsed.hostname = host;
+        return parsed.origin;
+      } catch {
+        return `http://${host}:4000`;
+      }
+    }
+  }
+  return envUrl;
+}
+
+export const BASE_URL = getApiBaseUrl();
 
 // Traces every API call to the console in dev, or anywhere with VITE_DEBUG_API=true.
 // Set VITE_DEBUG_API=false to silence it in dev.

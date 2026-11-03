@@ -76,13 +76,13 @@ module.exports = {
 
   // Clinical Notes Drafting (Phase 8)
   draftModelProvider: env.DRAFT_MODEL_PROVIDER || 'gemini', // 'gemini' | 'local' | 'fake'
-  geminiDraftModel: env.GEMINI_DRAFT_MODEL || 'gemini-1.5-flash',
+  geminiDraftModel: env.GEMINI_DRAFT_MODEL || 'gemini-3.5-flash-lite',
   geminiApiKey: env.GEMINI_API_KEY || '',
   localLlmUrl: env.LOCAL_LLM_URL || 'http://localhost:11434/api/chat',
   localLlmModel: env.LOCAL_LLM_MODEL || 'qwen3:8b',
   // Qwen3 'thinking' mode is slow for structured notes; off by default (Ollama /api/chat only).
   localLlmThink: env.LOCAL_LLM_THINK === 'true',
-  draftTimeoutMs: Number(env.DRAFT_TIMEOUT_MS || 25000),
+  draftTimeoutMs: Number(env.DRAFT_TIMEOUT_MS || 60000),
 
   // Audio Retention
   audioRetentionAfterReviewHours: Number(env.AUDIO_RETENTION_AFTER_REVIEW_HOURS || 0),
