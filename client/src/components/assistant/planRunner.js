@@ -19,15 +19,22 @@
  * @param {(page: string, button: string, outcome: string, errorCode?: string) => void} io.report
  * @param {(index: number, result: object) => void} io.progress
  * @param {() => boolean} io.stopped
+ * @param {(action: object) => void} [io.pageAction] - runs one action on an element read from the page (throws if it changed)
+ * @param {string} [io.pageId] - names the open page in the action log
  * @returns {Promise<'done'|'stopped'|'cancelled'|'failed'>}
  */
 export async function runPlan(plan, io, { stepDelayMs = 500 } = {}) {
   for (let i = 0; i < plan.length; i += 1) {
     if (io.stopped()) return 'stopped';
-    const { path, state, fill, press } = plan[i];
+    const { path, state, fill, press, page } = plan[i];
     const result = {};
     // No path: the page is already open, and what the user chose on it stays.
     if (path) io.navigate(path, state);
+
+    if (page) {
+      const outcome = await runPageActions(page.actions, io, i, result);
+      if (outcome !== 'done') return outcome;
+    }
 
     let actions = null;
     if (fill || press) {
@@ -60,6 +67,93 @@ export async function runPlan(plan, io, { stepDelayMs = 500 } = {}) {
 
 // Logged when the user confirms fields that save as soon as they are filled.
 const SAVE_DETAILS = 'save_details';
+// Logged for a confirmed action on an element read from the page.
+const PAGE_ACTION = 'page_action';
+
+const VERB = { click: 'Press', type: 'Type in', append: 'Add to', replace: 'Change in', select: 'Choose in', check: 'Tick' };
+const SIDE_EFFECT = {
+  send: 'The patient will be able to see this.',
+  save: 'This is saved as soon as it is done.',
+};
+
+/**
+ * Actions on elements read from the page, in order. Harmless ones run at once;
+ * the rest wait for the user's Confirm. Any failure or Cancel stops the plan.
+ */
+// How each kind of change reads on a Confirm card, so "adds" and "replaces" are never confused.
+const ROW_VALUE = {
+  check: () => 'tick',
+  append: (a) => `adds: ${a.value}`,
+  type: (a) => `replaces the text with: ${a.value}`,
+  replace: (a) => `changes “${a.find}” to “${a.value}”`,
+};
+
+/** The Confirm card for one action, or for several fields of one section filled together. */
+function cardFor(group) {
+  const [first] = group;
+  if (group.length === 1 && !first.group?.startsWith('fields:')) {
+    return {
+      label: `${VERB[first.op]} "${first.name}"`,
+      rows: [
+        ...(first.section ? [{ label: 'Where', value: first.section }] : []),
+        ...(first.op === 'replace' ? [{ label: 'Change', value: first.find }, { label: 'To', value: first.value }] : []),
+        ...(first.op === 'type' ? [{ label: 'Replaces the text with', value: first.value }] : []),
+        ...(first.op !== 'replace' && first.op !== 'type' && first.value !== undefined ? [{ label: 'Value', value: first.value }] : []),
+      ],
+      sideEffect: SIDE_EFFECT[first.effect] || 'This presses the button on the page for you.',
+      changed: false,
+    };
+  }
+  return {
+    label: `Fill ${first.section || 'these fields'}`,
+    rows: group.map((a) => ({ label: a.name, value: ROW_VALUE[a.op]?.(a) ?? a.value })),
+    sideEffect: SIDE_EFFECT[first.effect] || 'This is saved as soon as it is done.',
+    changed: false,
+  };
+}
+
+async function runPageActions(actions, io, index, result) {
+  result.page = [];
+  const show = () => io.progress(index, { ...result, page: [...result.page] });
+  for (let j = 0; j < actions.length;) {
+    if (io.stopped()) return 'stopped';
+    // Consecutive fields of one section that save are confirmed together.
+    const group = [actions[j]];
+    if (actions[j].risk === 'confirm' && actions[j].group?.startsWith('fields:')) {
+      while (actions[j + group.length]?.group === actions[j].group) group.push(actions[j + group.length]);
+    }
+    const confirming = actions[j].risk === 'confirm';
+    if (confirming) {
+      group.forEach((_, k) => { result.page[j + k] = 'confirming'; });
+      show();
+      const yes = await io.confirm(cardFor(group));
+      if (!yes || io.stopped()) {
+        io.report(io.pageId, PAGE_ACTION, 'cancelled');
+        group.forEach((_, k) => { result.page[j + k] = 'cancelled'; });
+        show();
+        return 'cancelled';
+      }
+      io.report(io.pageId, PAGE_ACTION, 'confirmed');
+    }
+    for (let k = 0; k < group.length; k += 1) {
+      try {
+        io.pageAction(group[k]);
+      } catch (err) {
+        if (confirming) io.report(io.pageId, PAGE_ACTION, 'failed', err?.code || 'PAGE_ACTION_FAILED');
+        result.page[j + k] = 'failed';
+        show();
+        return 'failed';
+      }
+      result.page[j + k] = 'done';
+      show();
+      // Let the page react (a panel opening, a new row, a button enabling) before the next action.
+      await io.settle();
+    }
+    if (confirming) io.report(io.pageId, PAGE_ACTION, 'done');
+    j += group.length;
+  }
+  return 'done';
+}
 
 /**
  * Fills the page's controls. Where the page says these fields save the moment

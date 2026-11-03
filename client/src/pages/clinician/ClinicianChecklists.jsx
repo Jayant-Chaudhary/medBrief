@@ -83,6 +83,8 @@ function EditableList({ items, onAdd, onRename, onRemove, placeholder, emptyText
                     if (e.key === 'Escape') setEditingId(null);
                   }}
                   aria-label="Edit item"
+                  // Saves when you leave the field or press Enter.
+                  data-assistant-effect="save"
                   className="field h-9 flex-1"
                 />
               ) : (
@@ -93,6 +95,9 @@ function EditableList({ items, onAdd, onRename, onRemove, placeholder, emptyText
                     setEditText(item.label);
                   }}
                   title="Click to edit"
+                  // Only opens the item for renaming.
+                  data-assistant-effect="free"
+                  data-assistant-label={`Rename ${item.label}`}
                   className="min-w-0 flex-1 truncate text-left text-body-md text-ink hover:text-cypress"
                 >
                   {item.label}

@@ -341,7 +341,7 @@ export function ClinicianSchedule() {
                     </Link>
                   </div>
                 ) : (
-                  <ul className="divide-y divide-line">
+                  <ul className="divide-y divide-line" data-assistant-private="">
                     {dayAppointments.map((appointment) => {
                       const cfg = STATUS_CONFIG[appointment.status] ?? STATUS_CONFIG.active;
                       const openable = !appointment.isPending && appointment.status !== 'cancelled';

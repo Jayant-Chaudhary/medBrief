@@ -3,7 +3,7 @@ const { ProviderError } = require('./provider.interface');
 /** POST a JSON body and return the parsed JSON reply, mapping failures to ProviderError codes. */
 async function postJson(url, body, { headers = {}, timeoutMs }) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
   let response;
   try {
     response = await fetch(url, {
@@ -15,7 +15,7 @@ async function postJson(url, body, { headers = {}, timeoutMs }) {
   } catch (err) {
     throw new ProviderError(err.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK');
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
   }
 
   if (!response.ok) throw new ProviderError(`HTTP_${response.status}`);

@@ -24,8 +24,18 @@ async function step(req, res, next) {
       timeZone: req.validated.timeZone,
       // Path only (the client sends no query string), so the open form can be filled.
       currentPath: req.validated.currentPath,
+      // The open page's labels and what this request already did; never logged.
+      page: req.validated.page,
+      round: req.validated.round,
+      progress: req.validated.progress,
+      partsDone: req.validated.partsDone,
+      checklist: req.validated.checklist,
+      note: req.validated.note,
+      results: req.validated.results,
+      pageHash: req.validated.pageHash,
     });
     const { attempts, errorCode, source, ...reply } = result;
+    const pageSteps = (reply.steps || []).filter((s) => s.page);
 
     log.info('assistant step', {
       reqId: req.id,
@@ -37,6 +47,12 @@ async function step(req, res, next) {
       filled: reply.steps?.reduce((n, s) => n + Object.keys(s.fill?.fields || {}).length, 0) || undefined,
       skipped: reply.steps?.reduce((n, s) => n + (s.skipped?.length || 0), 0) || undefined,
       press: reply.steps?.find((s) => s.press)?.press.id,
+      pageElements: req.validated.page?.elements?.length,
+      pageActions: pageSteps.reduce((n, s) => n + s.page.actions.length, 0) || undefined,
+      refused: pageSteps.reduce((n, s) => n + s.page.refused.length, 0) || undefined,
+      round: req.validated.round,
+      checklistItems: reply.checklist?.length || undefined,
+      continues: reply.continue || undefined,
       choices: reply.options?.length,
       attempts,
       errorCode,
@@ -44,6 +60,7 @@ async function step(req, res, next) {
     });
     res.json({ ...reply, source });
   } catch (err) {
+    console.log('CONTROLLER ERROR STACK:', err.stack);
     next(err);
   }
 }
@@ -56,7 +73,9 @@ async function step(req, res, next) {
 function event(req, res) {
   if (rateLimited(req, res)) return;
   const { page, button, outcome, errorCode } = req.validated;
-  const known = findButton(req.user.role, page, button);
+  // A confirmed action on a button the assistant read from the page (doctors only, Phase 5).
+  const pageAction = button === 'page_action' && req.user.role === 'clinician' && /^[a-z_]{1,40}$/.test(page);
+  const known = pageAction ? { effect: 'confirm' } : findButton(req.user.role, page, button);
   if (!known || known.effect === 'ui') return res.status(400).json({ error: 'Unknown assistant action' });
   log.info('assistant action', { reqId: req.id, userId: req.user.id, role: req.user.role, page, button, effect: known.effect, outcome, errorCode });
   return res.status(204).end();

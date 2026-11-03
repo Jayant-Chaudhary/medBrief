@@ -764,6 +764,77 @@ describe('Ollama provider requests', () => {
   });
 });
 
+describe('Gemini provider requests', () => {
+  const GeminiProvider = require('../../services/assistant/llm/geminiProvider');
+  const { toGeminiSchema } = GeminiProvider;
+  let calls;
+
+  beforeEach(() => {
+    calls = [];
+    global.fetch = jest.fn(async (url, init) => {
+      calls.push({ url, headers: init.headers, body: JSON.parse(init.body) });
+      return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: '{"action":"unsupported"}' }] } }] }) };
+    });
+  });
+  afterEach(() => delete global.fetch);
+
+  it('sends the key in a header, never in the URL, and the system prompt separately', async () => {
+    const provider = new GeminiProvider({ apiKey: 'test-key-123', model: 'gemini-test' });
+    const text = await provider.complete({ messages: [{ role: 'system', content: 'rules' }, { role: 'user', content: 'hi' }], schema: null, timeoutMs: 1000 });
+    expect(text).toBe('{"action":"unsupported"}');
+    expect(calls[0].url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-test:generateContent');
+    expect(calls[0].url).not.toContain('test-key-123');
+    expect(calls[0].headers['x-goog-api-key']).toBe('test-key-123');
+    expect(calls[0].body.systemInstruction.parts[0].text).toBe('rules');
+    expect(calls[0].body.contents).toEqual([{ role: 'user', parts: [{ text: 'hi' }] }]);
+  });
+
+  it('converts our schema to the subset Gemini accepts', () => {
+    const converted = toGeminiSchema({
+      type: 'object',
+      additionalProperties: false,
+      properties: { steps: { type: 'array', maxItems: 4, items: { type: 'string', enum: ['a'], maxLength: 10 } } },
+      required: ['steps'],
+    });
+    expect(converted).toEqual({
+      type: 'OBJECT',
+      properties: { steps: { type: 'ARRAY', items: { type: 'STRING', enum: ['a'] } } },
+      required: ['steps'],
+    });
+  });
+
+  it('skips thought parts and tries the fallback model once when the first is busy', async () => {
+    let n = 0;
+    global.fetch = jest.fn(async (url, init) => {
+      calls.push({ url, body: JSON.parse(init.body) });
+      n += 1;
+      if (n === 1) return { ok: false, status: 503, json: async () => ({}) };
+      return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ thought: true, text: 'thinking' }, { text: '{"action":' }, { text: '"run"}' }] } }] }) };
+    });
+    const provider = new GeminiProvider({ apiKey: 'test-key-123', model: 'main-model', fallbackModel: 'spare-model', thinkingLevel: 'low' });
+    const text = await provider.complete({ messages: [{ role: 'user', content: 'hi' }], schema: null, timeoutMs: 1000 });
+    expect(text).toBe('{"action":"run"}');
+    expect(calls.map((c) => c.url.split('/').pop())).toEqual(['main-model:generateContent', 'spare-model:generateContent']);
+    expect(calls[1].body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'low' });
+  });
+
+  it('does not retry a refused request on the fallback model', async () => {
+    global.fetch = jest.fn(async () => ({ ok: false, status: 403, json: async () => ({}) }));
+    const provider = new GeminiProvider({ apiKey: 'test-key-123', model: 'main-model', fallbackModel: 'spare-model' });
+    await expect(provider.complete({ messages: [{ role: 'user', content: 'hi' }], schema: null, timeoutMs: 1000 })).rejects.toMatchObject({ code: 'HTTP_403' });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a missing key as a configuration error', async () => {
+    const saved = { g: process.env.GEMINI_API_KEY, l: process.env.LLM_API_KEY };
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.LLM_API_KEY;
+    await expect(new GeminiProvider({}).complete({ messages: [], timeoutMs: 1000 })).rejects.toMatchObject({ code: 'CONFIG_ERROR' });
+    if (saved.g !== undefined) process.env.GEMINI_API_KEY = saved.g;
+    if (saved.l !== undefined) process.env.LLM_API_KEY = saved.l;
+  });
+});
+
 describe('rate limiter', () => {
   it('allows the limit per window, per user', () => {
     let time = 0;

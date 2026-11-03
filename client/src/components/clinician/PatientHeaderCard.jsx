@@ -23,7 +23,7 @@ export function PatientHeaderCard({ patient }) {
   };
 
   return (
-    <section className="card flex flex-wrap items-center gap-x-6 gap-y-4 px-6 py-4 border border-slate-200/90 shadow-sm bg-white">
+    <section className="card flex flex-wrap items-center gap-x-6 gap-y-4 px-6 py-4 border border-slate-200/90 shadow-sm bg-white" data-assistant-private="">
       <div className="relative">
         <Avatar
           name={patient.name}

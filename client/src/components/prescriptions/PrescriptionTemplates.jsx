@@ -431,6 +431,7 @@ function MedicationEditor({ rows, onChange, selectedIds, inlineTemplates = [], a
               return (
                 <div
                   key={row.id}
+                  data-assistant-row={`Medicine ${index + 1}`}
                   className={`rx-med-summary-row ${allergyMatch ? 'rx-med-summary-allergy' : ''}`}
                   onClick={() => toggleExpand(row.id)}
                   title="Click to expand and edit dosage details"
@@ -484,7 +485,7 @@ function MedicationEditor({ rows, onChange, selectedIds, inlineTemplates = [], a
 
             // Expanded Full Editor View
             return (
-              <fieldset className="rx-medication" key={row.id}>
+              <fieldset className="rx-medication" key={row.id} data-assistant-row={`Medicine ${index + 1}`}>
                 <div className="rx-med-head">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span className="rx-med-num">#{index + 1}</span>
@@ -649,7 +650,7 @@ function TemplateEditor({ initial, onSave, onClose, definitions }) {
       <label className="rx-check"><input type="checkbox" checked={followUp} onChange={event => setFollowUp(event.target.checked)}/> Include follow-up</label>
       <Field label="Follow-up / investigations" multiline value={value.followUp} onChange={next => setValue({ ...value, followUp: next })}/>
       {error && <p role="alert" className="rx-error">{error}</p>}
-      <div className="rx-footer"><span className="rx-muted">Clinician-saved template</span><button type="button" className="rx-button" onClick={onClose}>Cancel</button><button className="rx-button rx-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save template'}</button></div>
+      <div className="rx-footer"><span className="rx-muted">Clinician-saved template</span><button type="button" className="rx-button" onClick={onClose}>Cancel</button><button className="rx-button rx-primary" type="submit" disabled={saving} data-assistant-effect="save">{saving ? 'Saving…' : 'Save template'}</button></div>
     </form>
   </Dialog>;
 }
@@ -747,7 +748,14 @@ export function PrescriptionTemplates({ patient, appointment, appointmentId, rep
   const { user } = useAuthContext();
   if (!user?.id) return null;
   if (!patient?.id || !appointmentId) return <p className="rx-muted">Select a patient visit to open its prescription.</p>;
-  return <Workspace key={`${user.id}:${patient.id}:${appointmentId}`} ownerId={user.id} patient={patient} appointment={appointment} appointmentId={appointmentId} reports={reports}/>;
+  // For the assistant: the draft, factors and allergies here are saved to the server as they
+  // change (doctor-only; not sent to the patient), so filling them is confirmed first.
+  // Buttons that only open or show something stay free; Remove/Archive are never pressed.
+  return (
+    <div style={{ display: 'contents' }} data-assistant-effect="save" data-assistant-section="Prescription">
+      <Workspace key={`${user.id}:${patient.id}:${appointmentId}`} ownerId={user.id} patient={patient} appointment={appointment} appointmentId={appointmentId} reports={reports}/>
+    </div>
+  );
 }
 
 export function MedicationTemplateLibraryPage() {

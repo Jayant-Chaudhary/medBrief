@@ -209,15 +209,17 @@ const CONTROLS = {
   dashboard: {
     roles: ['clinician'],
     hints: /\b(?:dashboard|observations|audio consult)\b/i,
-    controls: [
-      { id: 'notes', label: 'Consultation notes', kind: 'textarea', aliases: ['note', 'notes', 'likho', 'write', 'dawa'] },
-    ],
+    // The notes box is a page field (read by the page reader), so it can be added to,
+    // replaced or edited, always after Confirm.
+    controls: [],
     buttons: [
       { id: 'open_notes', label: 'Open notes', effect: 'ui' },
       { id: 'close_notes', label: 'Close notes', effect: 'ui' },
       { id: 'save_notes', label: 'Save notes', effect: 'save', sideEffect: 'Saves consultation notes for this visit.' },
-      { id: 'open_audio_consult', label: 'Open audio consult', effect: 'ui' },
-      { id: 'close_visit', label: 'Close visit', effect: 'ui' },
+      // Opening the recording window starts a consultation session on the server; recording itself stays the doctor's.
+      { id: 'open_audio_consult', label: 'Open audio consult', effect: 'save', sideEffect: 'Opens the recording window and starts a consultation session for this visit. You start the recording yourself.' },
+      // Only returns to the list of today's visits; it does not end the visit.
+      { id: 'close_visit', label: 'Back to today\'s visits', effect: 'ui' },
     ],
   },
 

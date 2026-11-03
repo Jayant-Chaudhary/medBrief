@@ -21,6 +21,13 @@ The assistant is the gold button at the bottom right of MedBrief. Type what you 
    ollama pull gemma4:e4b
    ```
    Already have a different Gemma? Use it and set `LLM_MODEL=<its name>` (from `ollama list`) in `server/.env`.
+
+   **Or use Google Gemini instead** (no download; requests go to Google, so use it only with synthetic data or a data agreement). In `server/.env`:
+   ```
+   LLM_PROVIDER=gemini
+   GEMINI_API_KEY=<your key>
+   ```
+   Leave `LLM_MODEL` and `LLM_MAX_OUTPUT_TOKENS` unset: the defaults are `gemini-flash-lite-latest`, falling back once to `gemini-3.1-flash-lite` when Google is busy. Dated names like `gemini-2.5-flash` are closed to new keys and fail with "not available".
 3. Turn the assistant on. Add to `server/.env`:
    ```
    ASSISTANT_ENABLED=true
@@ -56,7 +63,7 @@ Use a test patient; these save to your database. Replace `<patient>` with one of
 | Problem | Fix |
 |---|---|
 | No gold button | `VITE_ASSISTANT_ENABLED=true` in `client/.env`, restart Vite, sign in as a verified doctor |
-| "The assistant is not available right now" | Ollama isn't running, or `LLM_MODEL` doesn't match `ollama list` |
+| "The assistant is not available right now" | Ollama isn't running, or `LLM_MODEL` doesn't match `ollama list`. With Gemini: check the key, and that `LLM_MODEL` is unset or a current model |
 | Replies take 10+ seconds | Run `ollama ps`. If it says CPU, plug in the laptop and restart Ollama |
 | It fills nothing | Name the field and the value ("hb 10.5", "tomorrow at 5 pm") |
 

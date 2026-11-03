@@ -9,6 +9,7 @@ const logger = require('../utils/logger');
 const { mockTables, profileRow } = require('./helpers/supabaseMock');
 const FakeProvider = require('../services/assistant/llm/fakeProvider');
 const assistant = require('../services/assistant/assistant.service');
+const config = require('../config/assistant.config');
 
 jest.mock('../config/supabaseAdminClient', () => ({ auth: { getUser: jest.fn() }, from: jest.fn() }));
 
@@ -94,7 +95,7 @@ describe('POST /api/assistant/step', () => {
 
   it.each([
     ['an empty message', ''],
-    ['an over-long message', 'x'.repeat(301)],
+    ['an over-long message', 'x'.repeat(config.maxMessageChars + 1)],
   ])('rejects %s', async (_label, message) => {
     as('patient');
     expect((await send(message)).status).toBe(400);
@@ -127,6 +128,19 @@ describe('POST /api/assistant/step', () => {
     expect(logged).toContain('assistant step');
     expect(logged).not.toMatch(/Priya|xyzzy|secret phrase/);
   });
+
+  it('never logs the page it was sent, and rejects oversized pages', async () => {
+    as('clinician');
+    listClinicianPatients.mockResolvedValue([]);
+    const info = jest.spyOn(logger, 'info');
+    const page = { title: 'Visit of Zed Unique', elements: [{ ref: 'r1', kind: 'button', name: 'Notes about Zed Unique' }] };
+    const res = await request(app).post('/api/assistant/step').set('Authorization', 'Bearer t').send({ message: 'open something unclear', currentPath: '/clinician', page });
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(info.mock.calls)).not.toMatch(/Zed Unique/);
+    const huge = { elements: Array.from({ length: 500 }, (_, i) => ({ ref: `r${i}`, kind: 'button', name: 'x' })) };
+    as('clinician');
+    expect((await request(app).post('/api/assistant/step').set('Authorization', 'Bearer t').send({ message: 'x', page: huge })).status).toBe(400);
+  });
 });
 
 describe('POST /api/assistant/event', () => {
@@ -140,6 +154,13 @@ describe('POST /api/assistant/event', () => {
     const [, fields] = info.mock.calls.find(([message]) => message === 'assistant action');
     expect(fields).toMatchObject({ userId: `user-${userCount}`, role: 'clinician', page: 'new_appointment', button: 'create_visit', effect: 'send', outcome: 'confirmed' });
     expect(Object.keys(fields).sort()).toEqual(['button', 'effect', 'errorCode', 'outcome', 'page', 'reqId', 'role', 'scope', 'userId']);
+  });
+
+  it('logs a confirmed action on a button read from the page, for doctors only', async () => {
+    as('clinician');
+    expect((await report({ page: 'dashboard', button: 'page_action', outcome: 'done' })).status).toBe(204);
+    as('patient');
+    expect((await report({ page: 'reports', button: 'page_action', outcome: 'done' })).status).toBe(400);
   });
 
   it.each([

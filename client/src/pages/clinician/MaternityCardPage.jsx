@@ -752,7 +752,8 @@ export function MaternityCardPage() {
 
           <div className="maternity-top-actions">
             {/* Patient selector */}
-            <div className="patient-select-wrap">
+            {/* Its choices are patient names; the assistant opens a patient's card by the name you type. */}
+            <div className="patient-select-wrap" data-assistant-private="">
               <label htmlFor="pSelect" className="font-semibold text-white/80">Patient:</label>
               <select
                 id="pSelect"
@@ -1932,7 +1933,8 @@ export function MaternityCardPage() {
           {/* ============================================================ */}
           {/* RIGHT: Live Structured Clinical Maternity Card                */}
           {/* ============================================================ */}
-          <main className="card-area">
+          {/* The printed card shows the patient's values: the assistant fills the form on the left instead. */}
+          <main className="card-area" data-assistant-private="">
             <article id="card" className="card" aria-label="Maternity Card">
               {/* Card Header */}
               <header className="card-head">

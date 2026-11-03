@@ -22,6 +22,7 @@ const PAGES = {
     { id: 'new_appointment', path: '/clinician/appointments/new', label: 'New appointment', description: 'Book an appointment and invite a patient', aliases: ['new appointment', 'book appointment', 'create appointment', 'add appointment'] },
     { id: 'maternity', path: '/clinician/maternity', label: 'Maternity card', description: 'Antenatal and delivery record', aliases: ['maternity', 'maternity card', 'antenatal card', 'antenatal record', 'antenatal', 'anc card', 'mcp card'] },
     { id: 'checklists', path: '/clinician/checklists', label: 'Checklists', description: 'Visit checklist templates', aliases: ['checklist', 'checklists', 'check list', 'check lists'] },
+    { id: 'medication_templates', path: '/clinician/templates', label: 'Medication templates', description: 'Saved prescription and medicine templates', aliases: ['medication templates', 'medicine templates', 'prescription templates', 'medication template', 'template library', 'dawai templates'] },
     { id: 'profile', path: '/clinician/profile', label: 'Profile', description: 'Your clinician details', aliases: ['profile', 'my profile', 'account', 'प्रोफाइल'] },
   ],
 };

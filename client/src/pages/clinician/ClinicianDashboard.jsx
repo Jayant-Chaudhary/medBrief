@@ -122,19 +122,20 @@ export function ClinicianDashboard() {
   const { data, loading, error, patch } = usePatientDashboard(selected?.id, selected?.appointmentId);
   const appointmentId = data?.appointment?.id;
   const consultDraft = useConsultDraft(appointmentId, Boolean(selected));
+  // The previous visit's data stays on screen while the next one loads; nothing is
+  // filled until the open visit's own data has arrived.
+  const visitLoaded = Boolean(selected) && appointmentId === selectedAppointmentId;
+
+  // Notes typed but not yet autosaved belong to the visit they were typed in: save them
+  // before another visit opens, so the debounce cannot land them on the next one.
+  useEffect(() => () => flushNotesRef.current?.(), [selectedAppointmentId]);
 
   useAssistantControls(
     'dashboard',
     {
-      context: () => ({ patientId: selected?.id || null, appointmentId: selectedAppointmentId || null }),
-      controls: {
-        notes: {
-          get: () => data?.notes?.text ?? '',
-          set: (val) => {
-            if (val != null && appointmentId) handleSaveNotes(val);
-          },
-        },
-      },
+      context: () => ({ patientId: visitLoaded ? selected.id : null, appointmentId: visitLoaded ? selectedAppointmentId : null }),
+      // The notes box itself is read and edited by the assistant's page reader, through its own
+      // onChange (so autosave runs as if typed), after the doctor confirms.
       buttons: {
         open_notes: {
           run: () => {
@@ -179,7 +180,7 @@ export function ClinicianDashboard() {
         },
       },
     },
-    { ready: !queueLoading }
+    { ready: !queueLoading && (!selected || visitLoaded) }
   );
 
   const handleSaveNotes = useCallback(
@@ -320,7 +321,8 @@ export function ClinicianDashboard() {
             {todays.filter((a) => a.status === 'completed').length} of {todays.length} completed
           </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Patient cards: the assistant reaches a visit by the name you type, never by reading these. */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-assistant-private="">
           {todays.map((appointment, idx) => {
             const isPending = appointment.isPending;
             const isCompleted = !isPending && appointment.status === 'completed';
@@ -585,6 +587,7 @@ export function ClinicianDashboard() {
               type="button"
               onClick={handleEndVisit}
               disabled={ending}
+              data-assistant-effect="send"
               className="rounded-xl bg-cypress px-4 py-2 text-label-lg text-white hover:bg-cypress-deep disabled:opacity-60"
             >
               {ending ? 'Ending…' : 'End visit and share summary'}

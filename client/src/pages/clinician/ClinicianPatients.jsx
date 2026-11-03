@@ -238,7 +238,8 @@ export function ClinicianPatients() {
                     <th scope="col" className="px-5 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-line">
+                {/* Patient rows: the assistant reaches a patient by the name you type, not by reading these. */}
+                <tbody className="divide-y divide-line" data-assistant-private="">
                   {shown.map((patient) => {
                     const latest = patient.nextVisit ?? patient.lastVisit;
                     return (

@@ -193,6 +193,67 @@ function grade(role, expected, result) {
   return 'miss';
 }
 
+// Page reading (Phase 5): requests on real page snapshots (synthetic data, labels only).
+const PAGES = require('./fixtures/assistantPages.json');
+const ON_DASHBOARD = '/clinician';
+// [text, snapshot, expected]. Expected: { acts: [[name, op, value?]], press, fields, path, none, answer, or: [...] }.
+const PAGE_CASES = [
+  ['open the consultation notes', 'visit', { press: 'open_notes' }],
+  ['show only the results that need review', 'visit', { acts: [['Needs review 0', 'click']] }],
+  ['end the visit', 'visit', { acts: [['End visit', 'click']] }],
+  ['start recording the consultation', 'visit', { none: true }],
+  ['open the maternity card', 'visit', { or: [{ acts: [['Maternity card', 'click']] }, { path: '/clinician/maternity' }] }],
+  ['how do I end a visit?', 'visit', { answer: true }],
+  ['add a medicine', 'panel', { acts: [['Add medicine', 'click']] }],
+  ['tick BP check', 'panel', { acts: [['BP check', 'check']] }],
+  ['tick BP check and iron advice', 'panel', { acts: [['BP check', 'check'], ['Iron advice', 'check']] }],
+  ['next step for her: ultrasound at 20 weeks', 'panel', { acts: [['Ultrasound at 20 weeks', 'check']] }],
+  ['add a next step: review in 2 weeks', 'panel', { acts: [['Write an action for this patient…', 'type', 'review in 2 weeks'], ['Add', 'click']] }],
+  ['patient instructions: rest and drink plenty of fluids', 'panel', { acts: [['Patient instructions / counseling', 'type', 'rest and drink plenty of fluids']] }],
+  ['follow-up advice: repeat cbc after 2 weeks', 'panel', { acts: [['Follow-up advice / recommended investigations', 'type', 'repeat cbc after 2 weeks']] }],
+  ['use the first trimester folic acid template', 'panel', { acts: [['1st Trimester Folic Acid (400 mcg)', 'click']] }],
+  ['show my templates', 'panel', { acts: [['Templates', 'click']] }],
+  ['close the panel', 'panel', { acts: [['Close panel', 'click']] }],
+  ['write in notes: mild headache since morning', 'panel', { acts: [['Consultancy notes', 'append', 'mild headache since morning']] }],
+  ['notes: BP stable, no oedema', 'panel', { acts: [['Consultancy notes', 'append', 'BP stable, no oedema']] }],
+  ['change "mild" to "severe" in the notes', 'panel', { acts: [['Consultancy notes', 'replace', 'severe']] }],
+  ['add to the consultation notes that she has had nausea since morning', 'panel', { acts: [['Consultancy notes', 'append']] }],
+  ['notes: mild headache', 'visit', { press: 'open_notes' }],
+  ['upload the prescription file', 'panel', { none: true }],
+  ['untick BP check', 'panel', { none: true }],
+  ['what dose of paracetamol should she take?', 'panel', { none: true }],
+  ['where do I add a next step?', 'panel', { answer: true }],
+  ['paracetamol 500 mg twice daily for 5 days', 'withRow', { acts: [['Name', 'type', 'paracetamol'], ['Dose', 'type', '500 mg'], ['Frequency', 'type', 'twice daily'], ['Duration', 'type', '5 days']] }],
+  ['make it an injection', 'withRow', { acts: [['Item type', 'select', 'Injection']] }],
+  ['route oral, strength 500 mg', 'withRow', { acts: [['Route', 'type', 'oral'], ['Strength', 'type', '500 mg']] }],
+  ['done editing this medicine', 'withRow', { acts: [['Done editing', 'click']] }],
+  ['remove this medicine', 'withRow', { none: true }],
+  ['delete the first medicine and add iron', 'withRow', { or: [{ none: true }, { acts: [['Add medicine', 'click']] }] }],
+];
+
+/** Page requests: the expected actions happen, nothing saves that wasn't asked, refusals hold. */
+function gradePage(expected, result) {
+  if (expected.or) {
+    const verdicts = expected.or.map((option) => gradePage(option, result));
+    return verdicts.find((v) => v === 'ok') || verdicts[0];
+  }
+  if (expected.answer) return result.type === 'answer' ? 'ok' : 'miss';
+  const steps = result.steps || [];
+  const acts = steps.flatMap((s) => s.page?.actions || []);
+  const fields = Object.assign({}, ...steps.map((s) => s.fill?.fields || {}));
+  const presses = steps.map((s) => s.press?.id).filter(Boolean);
+  if (expected.path) return result.path === expected.path || steps.some((s) => s.path === expected.path) ? 'ok' : 'WRONG PAGE';
+  const wanted = (expected.acts || []).map(([name, op, value]) => ({ name, op, value }));
+  const matches = (a, w) => a.name === w.name && a.op === w.op && (w.value === undefined || loose(a.value) === loose(w.value));
+  const unasked = acts.filter((a) => a.risk === 'confirm' && !wanted.some((w) => matches(a, w)));
+  if (unasked.length || presses.some((id) => id !== expected.press)) return 'UNASKED ACT';
+  if (expected.none) return acts.length || Object.keys(fields).length ? 'UNASKED ACT' : 'ok';
+  if (wanted.some((w) => !acts.some((a) => matches(a, w)))) return 'missed';
+  if (expected.press && !presses.includes(expected.press)) return 'missed';
+  if (expected.fields && Object.entries(expected.fields).some(([id, v]) => loose(fields[id]) !== loose(v))) return 'missed';
+  return 'ok';
+}
+
 function gpuMemory() {
   try {
     return execSync('nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader', { encoding: 'utf8' }).trim();
@@ -235,8 +296,27 @@ async function main() {
     console.log(`${verdict.padEnd(11)} ${String(ms).padStart(6)}ms  ${(result.source || '').padEnd(5)} ${role.padEnd(9)} ${text.slice(0, 50).padEnd(50)} -> ${shown}`);
   }
 
+  for (const [text, snapshot, expected] of PAGE_CASES) {
+    const started = Date.now();
+    const result = await assistant.handleStep({
+      message: text, role: 'clinician', userId: 'eval-doctor', timeZone: TIME_ZONE, currentPath: ON_DASHBOARD, page: PAGES[snapshot], provider, directory, settings,
+    });
+    const ms = Date.now() - started;
+    const verdict = gradePage(expected, result);
+    rows.push({ group: 'page', verdict, ms, source: result.source, type: result.type });
+    const acts = (result.steps || []).flatMap((s) => [
+      ...(s.press ? [`press ${s.press.id}`] : []),
+      ...(s.fill ? [`fill ${Object.keys(s.fill.fields).join(',')}`] : []),
+      ...(s.page?.actions || []).map((a) => `${a.op} "${a.name}"${a.value ? `=${a.value}` : ''}${a.risk === 'confirm' ? '*' : ''}`),
+      ...(s.page?.refused || []).map((r) => `refused "${r.name}"`),
+    ]);
+    const shown = result.type === 'answer' ? `answer: ${result.text}` : result.path || acts.join(' | ') || result.type;
+    console.log(`${verdict.padEnd(11)} ${String(ms).padStart(6)}ms  page/${snapshot.padEnd(7)} ${text.slice(0, 44).padEnd(44)} -> ${shown}${result.continue ? ' [next round]' : ''}`);
+  }
+
   const share = (list, test) => `${list.filter(test).length}/${list.length}`;
-  const navigation = rows.filter((r) => !['unsupported', 'forms', 'maternity'].includes(r.group));
+  const pageRows = rows.filter((r) => r.group === 'page');
+  const navigation = rows.filter((r) => !['unsupported', 'forms', 'maternity', 'page'].includes(r.group));
   const forms = rows.filter((r) => r.group === 'forms' || r.group === 'maternity');
   const refusals = rows.filter((r) => r.group === 'unsupported');
   const model = rows.filter((r) => r.source === 'model');
@@ -250,6 +330,10 @@ async function main() {
     console.log(`  forms right               : ${share(forms, (r) => r.verdict === 'ok')}`);
     console.log(`  forms: value in wrong field : ${share(forms, (r) => r.verdict === 'WRONG FIELD')}`);
     console.log(`  forms: save not asked for   : ${share(forms, (r) => r.verdict === 'UNWANTED SAVE')}`);
+  }
+  if (pageRows.length) {
+    console.log(`  page reading right        : ${share(pageRows, (r) => r.verdict === 'ok')}`);
+    console.log(`  page: unasked action/save : ${share(pageRows, (r) => r.verdict === 'UNASKED ACT')}`);
   }
   for (const group of ['english', 'hinglish', 'hindi', 'misspelled', 'conversational', 'ambiguous', 'records', 'multi-step', 'fill', 'forms', 'maternity']) {
     const list = rows.filter((r) => r.group === group);

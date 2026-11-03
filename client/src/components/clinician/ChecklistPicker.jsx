@@ -9,8 +9,12 @@ import { Icon } from '../common/Icon.jsx';
  * this visit ({ id, label, note? }); a label is ticked when an entry with that
  * label exists. Custom entries (not among the templates) are listed after the
  * defaults. Ticking calls `onAdd(label)`, unticking `onRemove(entry)`.
+ *
+ * For the assistant: `section` names the list, and `effect` says what ticking
+ * or adding does ("save", or "send" when the patient sees it). Unticking
+ * deletes a saved entry, so the assistant never does it.
  */
-export function ChecklistPicker({ templates = [], selected = [], onAdd, onRemove, placeholder, emptyHint, compact = false }) {
+export function ChecklistPicker({ templates = [], selected = [], onAdd, onRemove, placeholder, emptyHint, compact = false, section, effect = 'save' }) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(null);
 
@@ -49,7 +53,7 @@ export function ChecklistPicker({ templates = [], selected = [], onAdd, onRemove
   }
 
   return (
-    <div>
+    <div data-assistant-section={section}>
       {rows.length === 0 ? (
         emptyHint && <p className="pb-2 text-body-sm text-ink-3">{emptyHint}</p>
       ) : (
@@ -68,6 +72,7 @@ export function ChecklistPicker({ templates = [], selected = [], onAdd, onRemove
                     checked={checked}
                     disabled={Boolean(busy)}
                     onChange={() => toggle(row)}
+                    data-assistant-effect={checked ? 'never' : effect}
                     className="sr-only"
                   />
                   <span
@@ -99,6 +104,7 @@ export function ChecklistPicker({ templates = [], selected = [], onAdd, onRemove
         <button
           type="submit"
           aria-label="Add"
+          data-assistant-effect={effect}
           disabled={!draft.trim() || Boolean(busy)}
           className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cypress text-surface
                      shadow-xs transition-all hover:bg-cypress-deep active:scale-95 disabled:opacity-40"

@@ -29,15 +29,21 @@ module.exports = {
   provider,
   baseUrl: (env.LLM_BASE_URL || (provider === 'ollama' ? 'http://127.0.0.1:11434' : 'http://127.0.0.1:11434/v1')).replace(/\/+$/, ''),
   apiKey: env.LLM_API_KEY || env.GEMINI_API_KEY || '',
-  model: env.LLM_MODEL || (provider === 'gemini' ? 'gemini-1.5-flash' : 'gemma4:e4b'),
+  model: env.LLM_MODEL || (provider === 'gemini' ? 'gemini-flash-lite-latest' : 'gemma4:e4b'),
+  // Optional planner model: Gemini Flash plans, Flash Lite navigates; empty uses main model.
+  plannerModel: env.LLM_PLANNER_MODEL || '',
+  // Gemini only: tried once when the main model is busy (503/429) or fails; empty turns it off.
+  fallbackModel: env.LLM_FALLBACK_MODEL ?? (provider === 'gemini' ? 'gemini-3.1-flash-lite' : ''),
+  // Gemini only: 'low' or 'high' (empty = the model's default). Older 2.5 models do not take it.
+  thinkingLevel: env.LLM_THINKING_LEVEL || '',
 
   // Ollama only: how long the model stays loaded after a request, and the
-  // context window. Form controls in the prompt need ~4k; the warm-up uses the
-  // same value so the model is not reloaded.
+  // context window. Agent loop prompts + page snapshot + history need ~8k.
   keepAlive: env.LLM_KEEP_ALIVE || '15m',
-  numCtx: positiveInteger('LLM_NUM_CTX', 4096),
+  numCtx: positiveInteger('LLM_NUM_CTX', 8192),
   // A plan is ~30 tokens per step plus ~15 per filled field; the cap stops a stuck model running on.
-  maxOutputTokens: positiveInteger('LLM_MAX_OUTPUT_TOKENS', 512),
+  // Gemini counts its thinking against the cap, so it gets more room.
+  maxOutputTokens: positiveInteger('LLM_MAX_OUTPUT_TOKENS', provider === 'gemini' ? 2048 : 512),
   // Most steps one request may plan (Phase 2a: all read-only).
   maxSteps: positiveInteger('ASSISTANT_MAX_STEPS', 4),
   // Dates the assistant may fill into a form: future only, up to this many days ahead.
@@ -51,8 +57,20 @@ module.exports = {
   coldStartTimeoutMs: positiveInteger('ASSISTANT_COLD_START_TIMEOUT_MS', 90000),
   warmWindowMs: positiveInteger('ASSISTANT_WARM_WINDOW_MS', 10 * 60 * 1000),
 
-  maxMessageChars: positiveInteger('ASSISTANT_MAX_MESSAGE_CHARS', 300),
-  rateLimitPerMinute: positiveInteger('ASSISTANT_RATE_LIMIT_PER_MINUTE', 20),
+  maxMessageChars: positiveInteger('ASSISTANT_MAX_MESSAGE_CHARS', 600),
+  // One request can take several read-and-act rounds, each a request of its own.
+  rateLimitPerMinute: positiveInteger('ASSISTANT_RATE_LIMIT_PER_MINUTE', 60),
+
+  // Page reading & agent loop (Phase 6):
+  maxPageElements: positiveInteger('ASSISTANT_MAX_PAGE_ELEMENTS', 120),
+  maxPageActions: positiveInteger('ASSISTANT_MAX_PAGE_ACTIONS', 8),
+  maxRounds: positiveInteger('ASSISTANT_MAX_ROUNDS', 15),
+  stallLimit: positiveInteger('ASSISTANT_STALL_LIMIT', 2),
+  settleQuietMs: positiveInteger('ASSISTANT_SETTLE_QUIET_MS', 300),
+  settleTimeoutMs: positiveInteger('ASSISTANT_SETTLE_TIMEOUT_MS', 3000),
+  snapshotTokenBudget: positiveInteger('ASSISTANT_SNAPSHOT_TOKEN_BUDGET', 1500),
+  // App-help replies are short and never about health.
+  maxAnswerChars: positiveInteger('ASSISTANT_MAX_ANSWER_CHARS', 300),
 
   // Shown instead of any model-written text. Deliberately gives no health
   // guidance: wording about urgent care needs clinician sign-off first.

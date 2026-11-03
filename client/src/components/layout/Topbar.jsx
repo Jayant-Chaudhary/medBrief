@@ -81,7 +81,7 @@ export function Topbar({ patients = [], onSelectPatient, notifications = [] }) {
         />
 
         {open && (
-          <ul className="absolute z-20 mt-2 max-h-80 w-full overflow-y-auto rounded-xl border border-line-strong bg-raised py-1 shadow-raised">
+          <ul className="absolute z-20 mt-2 max-h-80 w-full overflow-y-auto rounded-xl border border-line-strong bg-raised py-1 shadow-raised" data-assistant-private="">
             {results.length === 0 && (
               <li className="px-4 py-3 text-body-sm text-ink-3">No patient matches “{query}”.</li>
             )}
@@ -133,7 +133,7 @@ export function Topbar({ patients = [], onSelectPatient, notifications = [] }) {
             {notifications.length === 0 ? (
               <p className="px-2 py-3 text-body-sm text-ink-3">Nothing new.</p>
             ) : (
-              <ul className="space-y-0.5">
+              <ul className="space-y-0.5" data-assistant-private="">
                 {notifications.map((item) => (
                   <li key={item.id} className="rounded-lg px-2 py-2 text-body-sm text-ink-2 hover:bg-subcanvas">
                     {item.text}

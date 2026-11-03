@@ -99,6 +99,7 @@ export function ConsultancyNotes({
         <summary className="mb-2 cursor-pointer text-label-sm text-ink-3">Consultation checklist ({checkedItems.length} selected)</summary>
         <ChecklistPicker
           compact
+          section="Consultation checklist"
           templates={templates}
           selected={checkedItems}
           onAdd={onCheckItem}
@@ -166,7 +167,9 @@ export function ConsultancyNotes({
       </label>
       <textarea
         id="consultancy-notes"
-        data-assistant-id="dashboard.notes"
+        // The assistant edits this like any page field (through onChange, so autosave runs);
+        // it saves as it changes, so the doctor confirms first.
+        data-assistant-effect="save"
         value={text}
         onChange={onChange}
         rows={4}

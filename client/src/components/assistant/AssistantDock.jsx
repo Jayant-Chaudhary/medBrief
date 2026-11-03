@@ -6,11 +6,13 @@ import { assistantService } from '../../services/assistantService';
 import { assistantVisibleOn } from './assistantRoutes';
 import { useAssistantBridge } from './AssistantBridge.jsx';
 import { runPlan } from './planRunner';
+import { readPage } from './pageReader';
+import { runPageAction } from './pageActions';
 import ConfirmCard from './ConfirmCard.jsx';
 import AssistantMark from './AssistantMark.jsx';
 
 const ENABLED = import.meta.env.VITE_ASSISTANT_ENABLED === 'true';
-const MAX_CHARS = 300;
+const MAX_CHARS = 600;
 const UNAVAILABLE = 'The assistant is not available right now. You can still use the menu.';
 // Long enough to see each page open, short enough not to feel slow.
 const STEP_DELAY_MS = 500;
@@ -20,6 +22,50 @@ const PAGE_READY_TIMEOUT_MS = 8000;
 const SETTLE_MS = 50;
 // How long a filled field stays outlined.
 const FLASH_MS = 2500;
+// Before reading the page again for the next round: a panel opening or a page loading.
+const ROUND_SETTLE_MS = 700;
+
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function waitForSettle(quietMs = 300, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    let timer = setTimeout(resolve, quietMs);
+    const timeout = setTimeout(() => {
+      observer.disconnect();
+      resolve();
+    }, timeoutMs);
+
+    const observer = new MutationObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        observer.disconnect();
+        clearTimeout(timeout);
+        resolve();
+      }, quietMs);
+    });
+
+    if (typeof document !== 'undefined' && document.body) {
+      observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    } else {
+      resolve();
+    }
+  });
+}
+const DONE_VERB = { click: 'Pressed', type: 'Typed in', append: 'Added to', replace: 'Changed in', select: 'Chose in', check: 'Ticked' };
+
+/** What a finished round did, in labels only, for the next round's "already done". */
+function doneLines(reply) {
+  if (reply.type === 'navigate') return [`Opened ${reply.label}`];
+  return (reply.steps || []).flatMap((s) => [
+    ...(s.path ? [`Opened ${s.label}`] : []),
+    ...(s.fill ? [`Filled ${Object.keys(s.fill.fields).join(', ')} on ${s.label}`] : []),
+    ...(s.press ? [`Pressed ${s.press.label}`] : []),
+    ...(s.page?.actions || []).map((a) => `${DONE_VERB[a.op]} "${a.name}"`),
+  ]);
+}
+
+/** A name for the open page in the action log ("clinician_maternity"). */
+const pageIdOf = (pathname) => pathname.replace(/^\/+|\/+$/g, '').replace(/[^a-z]+/gi, '_').toLowerCase().slice(0, 40) || 'home';
 
 /** Outlines the fields the assistant just filled (pages mark them with data-assistant-id) and scrolls to the first. */
 function highlight(ids) {
@@ -50,9 +96,12 @@ export default function AssistantDock({ enabled = ENABLED }) {
   const listRef = useRef(null);
   const warmed = useRef(false);
   const wasOpen = useRef(false);
-  // Pending Confirm cards and stopped runs, by entry id.
+  // Pending Confirm cards by entry id; stopped requests by request id (a request may take several rounds).
   const confirmers = useRef(new Map());
   const stopped = useRef(new Set());
+  // The path now, for rounds that start after the page changed.
+  const pathRef = useRef(location.pathname);
+  pathRef.current = location.pathname;
 
   const verified = profile?.clinicianDetails?.is_verified === true;
   const visible = enabled && !loading && Boolean(user) && assistantVisibleOn(location.pathname, { role, verified });
@@ -83,10 +132,10 @@ export default function AssistantDock({ enabled = ENABLED }) {
 
   const update = (entryId, change) => setSteps((current) => current.map((s) => (s.id === entryId ? { ...s, ...change } : s)));
 
-  function go(path, entryId) {
+  function go(path, entryId, keepOpen = false) {
     update(entryId, { chosen: path });
     navigate(path);
-    if (window.innerWidth < 640) setOpen(false);
+    if (!keepOpen && window.innerWidth < 640) setOpen(false);
   }
 
   function answer(entryId, yes) {
@@ -96,23 +145,28 @@ export default function AssistantDock({ enabled = ENABLED }) {
     resolve?.(yes);
   }
 
-  function stop(entryId) {
-    stopped.current.add(entryId);
-    answer(entryId, false);
+  function stop(entry) {
+    stopped.current.add(entry.requestId);
+    answer(entry.id, false);
   }
 
   /** Runs the plan step by step, so the user sees each page open and each field fill. */
-  async function execute(plan, entryId) {
+  async function execute(plan, entryId, requestId, names = new Map()) {
     const results = [];
     update(entryId, { running: true, progress: 0, results: [] });
     const outcome = await runPlan(plan, {
+      pageId: pageIdOf(pathRef.current),
+      // Acts only if the element still has the label it had when the page was read.
+      pageAction: (action) => runPageAction(action, names.get(action.ref)),
       navigate: (path, state) => navigate(path, state ? { state } : undefined),
       // A fill after opening a page waits until that page shows the intended record
       // (a named patient, or none), never the one that was open before.
       waitFor: (page, context) => bridge.waitFor(
         page,
         PAGE_READY_TIMEOUT_MS,
-        context ? (actions) => (actions.context()?.patientId ?? null) === context.patientId : undefined
+        context
+          ? (actions) => Object.entries(context).every(([key, value]) => (actions.context()?.[key] ?? null) === value)
+          : undefined
       ),
       pause: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       settle: () => new Promise((resolve) => setTimeout(resolve, SETTLE_MS)),
@@ -126,37 +180,94 @@ export default function AssistantDock({ enabled = ENABLED }) {
         results[index] = result;
         update(entryId, { progress: index + 1, results: [...results] });
       },
-      stopped: () => stopped.current.has(entryId),
+      stopped: () => stopped.current.has(requestId),
     }, { stepDelayMs: STEP_DELAY_MS });
     update(entryId, { running: false, confirm: null, outcome });
-    if (outcome === 'done' && window.innerWidth < 640) setOpen(false);
+    return outcome;
   }
 
-  function choose(option, entryId, more) {
-    update(entryId, { reply: { type: 'run', steps: option.steps, ...(more && { more }) }, progress: 0 });
-    execute(option.steps, entryId);
+  /**
+   * One round of a request: read the open page (doctors; labels only), ask,
+   * run what comes back. If the server says the request isn't finished (a
+   * panel had to open, a page had to load), read the page again and go on.
+   */
+  async function runRound({ message, requestId, round, progress, partsDone = [], checklist = [], note = '', results = [] }) {
+    const id = crypto.randomUUID();
+    setSteps((current) => [...current, { id, requestId, message, round, progress, partsDone, checklist, note, results, continued: round > 0, reply: null }]);
+    const { page, names } = role === 'clinician' ? readPage() : { page: undefined, names: new Map() };
+    let reply;
+    setBusy(true);
+    try {
+      reply = await assistantService.ask(message, pathRef.current, { page, round, progress, partsDone, checklist, note, results });
+    } catch (err) {
+      const errNote = err?.status === 429 ? 'Too many requests. Please wait a moment.' : UNAVAILABLE;
+      update(id, { reply: { type: 'unavailable', message: errNote } });
+      inputRef.current?.focus();
+      return;
+    } finally {
+      setBusy(false);
+    }
+    const currentChecklist = reply.checklist || checklist;
+    const currentNote = reply.note || note;
+    update(id, { reply, names, checklist: currentChecklist, note: currentNote });
+
+    let outcome = 'done';
+    let actionResults = [];
+    if (reply.type === 'navigate') {
+      go(reply.path, id, reply.continue);
+      actionResults = [{ result: 'ok' }];
+    } else if (reply.type === 'run') {
+      outcome = await execute(reply.steps, id, requestId, names);
+      actionResults = (reply.steps || []).map(() => ({ result: outcome === 'done' ? 'ok' : 'refused' }));
+    }
+    await continueAfter(reply, outcome, {
+      message,
+      requestId,
+      round,
+      progress,
+      partsDone,
+      checklist: currentChecklist,
+      note: currentNote,
+      results: actionResults,
+    });
   }
 
-  async function submit(event) {
+  async function continueAfter(reply, outcome, { message, requestId, round, progress, partsDone = [], checklist = [], note = '', results = [] }) {
+    if (!reply.continue || outcome !== 'done' || stopped.current.has(requestId)) {
+      if (outcome === 'done' && !reply.continue && window.innerWidth < 640) setOpen(false);
+      // Back to the message box only when the request is over: moving focus mid-request would
+      // close what the page just opened (a list of templates, a menu).
+      inputRef.current?.focus();
+      return;
+    }
+    await waitForSettle(300, 3000);
+    if (stopped.current.has(requestId)) return;
+    const finishedPart = reply.part !== undefined && reply.partDone;
+    await runRound({
+      message,
+      requestId,
+      round: round + 1,
+      progress: [...progress, ...doneLines(reply)],
+      partsDone: finishedPart ? [...partsDone, reply.part] : partsDone,
+      checklist,
+      note,
+      results,
+    });
+  }
+
+  async function choose(option, entry) {
+    const reply = { ...entry.reply, type: 'run', steps: option.steps };
+    update(entry.id, { reply, progress: 0 });
+    const outcome = await execute(option.steps, entry.id, entry.requestId, entry.names);
+    await continueAfter(reply, outcome, entry);
+  }
+
+  function submit(event) {
     event.preventDefault();
     const message = text.trim();
     if (!message || busy) return;
-    const id = crypto.randomUUID();
-    setSteps((current) => [...current, { id, message, reply: null }]);
     setText('');
-    setBusy(true);
-    try {
-      const reply = await assistantService.ask(message, location.pathname);
-      setSteps((current) => current.map((s) => (s.id === id ? { ...s, reply } : s)));
-      if (reply.type === 'navigate') go(reply.path, id);
-      if (reply.type === 'run') execute(reply.steps, id);
-    } catch (err) {
-      const note = err?.status === 429 ? 'Too many requests. Please wait a moment.' : UNAVAILABLE;
-      setSteps((current) => current.map((s) => (s.id === id ? { ...s, reply: { type: 'unavailable', message: note } } : s)));
-    } finally {
-      setBusy(false);
-      inputRef.current?.focus();
-    }
+    runRound({ message, requestId: crypto.randomUUID(), round: 0, progress: [] });
   }
 
   return (
@@ -167,6 +278,7 @@ export default function AssistantDock({ enabled = ENABLED }) {
           type="button"
           onClick={() => setOpen(true)}
           aria-label="Open assistant"
+          data-assistant-panel=""
           className="assistant-button fixed bottom-5 right-5 z-40 flex h-12 w-12 items-center justify-center rounded-full shadow-card transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
         >
           <AssistantMark size={30} />
@@ -177,6 +289,8 @@ export default function AssistantDock({ enabled = ENABLED }) {
         <section
           role="dialog"
           aria-label="Assistant"
+          // The page reader never reads or acts on the assistant itself.
+          data-assistant-panel=""
           onKeyDown={(event) => event.key === 'Escape' && close()}
           className="fixed inset-0 z-50 flex flex-col border border-line bg-raised text-ink shadow-card sm:inset-auto sm:bottom-5 sm:right-5 sm:h-[480px] sm:w-[360px] sm:rounded-card"
         >
@@ -207,13 +321,15 @@ export default function AssistantDock({ enabled = ENABLED }) {
             )}
             {steps.map((step) => (
               <li key={step.id} className="space-y-1.5">
-                <p className="ml-auto w-fit max-w-[85%] rounded-2xl bg-canvas px-3 py-2 text-sm">{step.message}</p>
+                {step.continued
+                  ? <p className="text-xs uppercase tracking-wide text-ink-soft">Continuing on the page</p>
+                  : <p className="ml-auto w-fit max-w-[85%] rounded-2xl bg-canvas px-3 py-2 text-sm">{step.message}</p>}
                 <Reply
                   step={step}
                   onChoose={(path) => go(path, step.id)}
-                  onPickPatient={(option) => choose(option, step.id, step.reply?.more)}
+                  onPickPatient={(option) => choose(option, step)}
                   onAnswer={(yes) => answer(step.id, yes)}
-                  onStop={() => stop(step.id)}
+                  onStop={() => stop(step)}
                 />
               </li>
             ))}
@@ -269,9 +385,70 @@ function PressLine({ press, state }) {
   return <Line done={false}>Next: press {press.label}</Line>;
 }
 
+const PENDING_VERB = { click: 'press', type: 'type in', append: 'add to', replace: 'change in', select: 'choose in', check: 'tick' };
+
+/** Actions on elements read from the page: done, waiting, refused. */
+function PageLines({ page, states = [], confirm, onAnswer }) {
+  return (
+    <>
+      {page.actions.map((action, j) => {
+        const state = states[j];
+        const label = action.op === 'replace'
+          ? `"${action.name}": “${action.find}” → “${action.value}”`
+          : `"${action.name}"${action.value !== undefined ? `: ${action.value}` : ''}`;
+        return (
+          <span key={`${action.ref}-${j}`} className="block space-y-1">
+            {state === 'done' && <Line done>{DONE_VERB[action.op]} {label}</Line>}
+            {state === 'cancelled' && <Note>Cancelled. Nothing was pressed or saved.</Note>}
+            {state === 'failed' && (action.op === 'replace'
+              ? <Note>I couldn’t find “{action.find}” in “{action.name}”, so nothing was changed.</Note>
+              : <Note>“{action.name}” changed or disappeared, so I stopped. Please check the page.</Note>)}
+            {!state && <Line done={false}>Next: {PENDING_VERB[action.op]} {label}</Line>}
+            {state === 'confirming' && confirm && states.indexOf('confirming') === j && (
+              <ConfirmCard {...confirm} onConfirm={() => onAnswer(true)} onCancel={() => onAnswer(false)} />
+            )}
+          </span>
+        );
+      })}
+      {page.refused.map((item) => <Note key={item.name}>Didn’t touch “{item.name}”: {item.reason}.</Note>)}
+    </>
+  );
+}
+
 function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
   const { reply, chosen, progress = 0, results = [], confirm, running } = step;
-  if (!reply) return <p className="text-sm text-ink-soft">Working…</p>;
+  if (!reply) return <p className="text-sm text-ink-soft">{step.continued ? 'Reading the page…' : 'Working…'}</p>;
+
+  const checklist = step.checklist || reply.checklist || [];
+
+  if (reply.type === 'unsupported') {
+    return (
+      <div className="space-y-1 text-sm text-ink-soft">
+        {checklist.length > 0 && (
+          <ul className="mb-2 space-y-1 rounded-lg border border-line bg-canvas p-2 text-xs">
+            {checklist.map((item, i) => (
+              <li key={i} className={`flex items-start gap-1.5 ${item.done ? 'text-primary' : 'text-ink-soft'}`}>
+                {item.done ? <Check size={13} className="mt-0.5 shrink-0" /> : <span className="inline-block w-[13px] shrink-0 text-center">·</span>}
+                <span className={item.done ? 'line-through opacity-70' : ''}>{item.item}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p>{reply.message || 'Couldn’t complete this request.'}</p>
+      </div>
+    );
+  }
+
+  if (reply.type === 'answer') {
+    return (
+      <div className="space-y-0.5 text-sm">
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Assistant tip</p>
+        <p className="text-ink">{reply.text}</p>
+      </div>
+    );
+  }
+
+  if (reply.type === 'done') return <p className="flex items-center gap-1.5 text-sm text-primary"><Check size={15} aria-hidden="true" /> All done.</p>;
 
   if (reply.type === 'run') {
     const finished = !running && progress >= reply.steps.length;
@@ -279,13 +456,24 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
     const saves = reply.steps.some((item) => item.press && item.press.effect !== 'ui');
     return (
       <div className="space-y-1 text-sm">
+        {checklist.length > 0 && (
+          <ul className="mb-2 space-y-1 rounded-lg border border-line bg-canvas p-2 text-xs">
+            {checklist.map((item, i) => (
+              <li key={i} className={`flex items-start gap-1.5 ${item.done ? 'text-primary' : 'text-ink-soft'}`}>
+                {item.done ? <Check size={13} className="mt-0.5 shrink-0" /> : <span className="inline-block w-[13px] shrink-0 text-center">·</span>}
+                <span className={item.done ? 'line-through opacity-70' : ''}>{item.item}</span>
+              </li>
+            ))}
+          </ul>
+        )}
         <ol className="space-y-1">
           {reply.steps.map((item, index) => {
             const started = index < progress;
             const result = results[index] || {};
             return (
               <li key={`${item.path ?? 'here'}-${index}`} className="space-y-1">
-                {(item.path || !started) && <Line done={started}>{started ? 'Opened' : 'Next:'} {item.label}</Line>}
+                {(item.path || (!started && !item.page)) && <Line done={started}>{started ? 'Opened' : 'Next:'} {item.label}</Line>}
+                {item.page && <PageLines page={item.page} states={result.page} confirm={confirm} onAnswer={onAnswer} />}
                 {result.fill === 'filled' && (item.fill.filled
                   ? item.fill.filled.map((field) => <Line key={field.id} done>{field.label}: {field.value}</Line>)
                   : <Note>{FILLED_NOTE}</Note>)}
@@ -312,6 +500,7 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
         {finished && step.outcome === 'stopped' && <p className="text-ink-soft">Stopped. The form is left as it is.</p>}
         {finished && filledFields && !saves && <p className="text-ink-soft">{CHECK_NOTE}</p>}
         {finished && reply.more && <p className="text-ink-soft">{MORE_NOTE}</p>}
+        {finished && reply.continue && step.outcome === 'done' && <p className="text-ink-soft">Reading the page again for the rest…</p>}
       </div>
     );
   }

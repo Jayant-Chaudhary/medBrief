@@ -283,7 +283,7 @@ export default function NewAppointment() {
                     </div>
 
                     {matches.length > 0 ? (
-                      <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
+                      <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line" data-assistant-private="">
                         {matches.map((patient) => (
                           <li key={patient.id}>
                             <button
