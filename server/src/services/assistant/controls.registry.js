@@ -157,6 +157,114 @@ const CONTROLS = {
       { id: 'save_details', label: 'Save to record', effect: 'save', internal: true },
     ],
   },
+
+  schedule: {
+    roles: ['clinician'],
+    hints: /\b(?:schedule|calendar|agenda)\b/i,
+    controls: [
+      { id: 'date', label: 'Schedule date', kind: 'date', aliases: ['date', 'day', 'din', 'aaj', 'kal', 'parso', 'today', 'tomorrow'] },
+      {
+        id: 'statusFilter',
+        label: 'Status filter',
+        kind: 'select',
+        options: [
+          option('all', ['all', 'sabhi', 'all visits']),
+          option('checked_in', ['checked in', 'waiting', 'aaye hue']),
+          option('active', ['scheduled', 'booked', 'active']),
+          option('completed', ['completed', 'done', 'dekhe hue']),
+          option('cancelled', ['cancelled']),
+        ],
+      },
+    ],
+    buttons: [
+      { id: 'jump_today', label: 'Go to today', effect: 'ui' },
+      { id: 'next_day', label: 'Next day', effect: 'ui' },
+      { id: 'prev_day', label: 'Previous day', effect: 'ui' },
+      { id: 'new_appointment', label: 'Schedule visit', effect: 'ui' },
+    ],
+  },
+
+  patients: {
+    roles: ['clinician'],
+    hints: /\b(?:directory|patient directory|filter tab)\b/i,
+    controls: [
+      { id: 'query', label: 'Search patient name or email', kind: 'text', aliases: ['name', 'patient', 'naam', 'search', 'find'] },
+      {
+        id: 'filterTab',
+        label: 'Filter tab',
+        kind: 'select',
+        options: [
+          option('all', ['all', 'sabhi', 'all patients']),
+          option('upcoming', ['upcoming', 'next', 'aane wale']),
+          option('past', ['past', 'previous', 'purane']),
+        ],
+      },
+    ],
+    buttons: [
+      { id: 'clear_search', label: 'Clear search', effect: 'ui' },
+      { id: 'new_patient', label: 'Add new patient', effect: 'ui' },
+    ],
+  },
+
+  dashboard: {
+    roles: ['clinician'],
+    hints: /\b(?:dashboard|observations|audio consult)\b/i,
+    controls: [
+      { id: 'notes', label: 'Consultation notes', kind: 'textarea', aliases: ['note', 'notes', 'likho', 'write', 'dawa'] },
+    ],
+    buttons: [
+      { id: 'open_notes', label: 'Open notes', effect: 'ui' },
+      { id: 'close_notes', label: 'Close notes', effect: 'ui' },
+      { id: 'save_notes', label: 'Save notes', effect: 'save', sideEffect: 'Saves consultation notes for this visit.' },
+      { id: 'open_audio_consult', label: 'Open audio consult', effect: 'ui' },
+      { id: 'close_visit', label: 'Close visit', effect: 'ui' },
+    ],
+  },
+
+  checklists: {
+    roles: ['clinician'],
+    hints: /(?:checklist|question|template|item|sawal)/i,
+    controls: [
+      { id: 'questionText', label: 'New question label', kind: 'text', aliases: ['question', 'sawal', 'new question'] },
+      {
+        id: 'questionType',
+        label: 'Question response type',
+        kind: 'select',
+        options: [
+          option('yes_no', ['yes or no', 'yes/no', 'yes no', 'haan ya na']),
+          option('text', ['written', 'in words', 'text answer']),
+        ],
+      },
+      { id: 'consultationItem', label: 'Consultation checklist item', kind: 'text', aliases: ['consultation item', 'consult item'] },
+      { id: 'actionItem', label: 'Action checklist item', kind: 'text', aliases: ['action item', 'action'] },
+    ],
+    buttons: [
+      { id: 'add_question', label: 'Add question', effect: 'save', sideEffect: 'Adds question template to library.' },
+      { id: 'add_consultation_item', label: 'Add consultation item', effect: 'save', sideEffect: 'Adds item to consultation template.' },
+      { id: 'add_action_item', label: 'Add action item', effect: 'save', sideEffect: 'Adds item to action template.' },
+    ],
+  },
+
+  checkin: {
+    roles: ['patient'],
+    hints: /(?:checkin|symptom|check in|questionnaire|symptoms)/i,
+    controls: [
+      { id: 'symptomsNotes', label: 'Symptoms notes', kind: 'textarea', aliases: ['symptoms', 'notes', 'takleef', 'problem'] },
+    ],
+    buttons: [
+      { id: 'next_step', label: 'Save check-in step', effect: 'save', sideEffect: 'Saves your check-in answers.' },
+    ],
+  },
+
+  reports: {
+    roles: ['patient'],
+    hints: /(?:report|reports|upload|share)/i,
+    controls: [],
+    buttons: [
+      { id: 'trigger_upload', label: 'Upload report', effect: 'ui' },
+      { id: 'share_all', label: 'Share reports with upcoming appointment', effect: 'send', sideEffect: 'Shares reports with doctor for your next visit.' },
+    ],
+  },
 };
 
 const formFor = (role, pageId) => {

@@ -19,6 +19,7 @@ import { Plus, ArrowLeft, Clock, User, CheckCircle, NotebookPen, CircleStop, Bad
 import { DoctorConsultationModal } from '../../components/consultAudio/DoctorConsultationModal.jsx';
 import { useConsultDraft } from '../../hooks/useConsultDraft.js';
 import { buildFlowsheet } from '../../utils/flowsheet.js';
+import { useAssistantControls } from '../../components/assistant/AssistantBridge.jsx';
 import {
   fetchPatients,
   saveConsultancyNotes,
@@ -121,6 +122,65 @@ export function ClinicianDashboard() {
   const { data, loading, error, patch } = usePatientDashboard(selected?.id, selected?.appointmentId);
   const appointmentId = data?.appointment?.id;
   const consultDraft = useConsultDraft(appointmentId, Boolean(selected));
+
+  useAssistantControls(
+    'dashboard',
+    {
+      context: () => ({ patientId: selected?.id || null, appointmentId: selectedAppointmentId || null }),
+      controls: {
+        notes: {
+          get: () => data?.notes?.text ?? '',
+          set: (val) => {
+            if (val != null && appointmentId) handleSaveNotes(val);
+          },
+        },
+      },
+      buttons: {
+        open_notes: {
+          run: () => {
+            setNotesOpen(true);
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Open consultation notes' }],
+          available: () => Boolean(selected),
+        },
+        close_notes: {
+          run: () => {
+            setNotesOpen(false);
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Close consultation notes' }],
+          available: () => Boolean(notesOpen),
+        },
+        save_notes: {
+          run: async () => {
+            if (flushNotesRef.current) await flushNotesRef.current();
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Save consultation notes' }],
+          available: () => Boolean(selected),
+        },
+        open_audio_consult: {
+          run: () => {
+            setAudioConsultTab('RECORD');
+            setAudioConsultOpen(true);
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Open audio consultation' }],
+          available: () => Boolean(selected),
+        },
+        close_visit: {
+          run: () => {
+            close();
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Return to dashboard cards' }],
+          available: () => Boolean(selected),
+        },
+      },
+    },
+    { ready: !queueLoading }
+  );
 
   const handleSaveNotes = useCallback(
     async (text) => {
@@ -378,6 +438,7 @@ export function ClinicianDashboard() {
           <div className="flex items-center gap-3">
             <button
               onClick={close}
+              data-assistant-id="dashboard.close_visit"
               aria-label="Back to dashboard"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium text-sm transition-all shadow-xs active:scale-95"
             >
@@ -406,6 +467,7 @@ export function ClinicianDashboard() {
 
             <button
               type="button"
+              data-assistant-id="dashboard.open_notes"
               onClick={() => setNotesOpen(true)}
               aria-haspopup="dialog"
               aria-expanded={notesOpen}

@@ -24,12 +24,12 @@ module.exports = {
   // user confirms). Off: the assistant fills forms and the user presses.
   actionsEnabled: env.ASSISTANT_ACTIONS_ENABLED === 'true',
 
-  // 'ollama' (native API, local), 'openai-compatible' (any hosted or local
-  // server speaking /chat/completions), or 'fake' (tests).
+  // 'ollama' (native API, local), 'gemini' (Google Gemini API),
+  // 'openai-compatible' (hosted/vLLM), or 'fake' (tests).
   provider,
   baseUrl: (env.LLM_BASE_URL || (provider === 'ollama' ? 'http://127.0.0.1:11434' : 'http://127.0.0.1:11434/v1')).replace(/\/+$/, ''),
-  apiKey: env.LLM_API_KEY || '',
-  model: env.LLM_MODEL || 'gemma4:e4b',
+  apiKey: env.LLM_API_KEY || env.GEMINI_API_KEY || '',
+  model: env.LLM_MODEL || (provider === 'gemini' ? 'gemini-1.5-flash' : 'gemma4:e4b'),
 
   // Ollama only: how long the model stays loaded after a request, and the
   // context window. Form controls in the prompt need ~4k; the warm-up uses the

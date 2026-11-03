@@ -166,6 +166,7 @@ export function ConsultancyNotes({
       </label>
       <textarea
         id="consultancy-notes"
+        data-assistant-id="dashboard.notes"
         value={text}
         onChange={onChange}
         rows={4}
