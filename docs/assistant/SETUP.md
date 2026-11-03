@@ -32,6 +32,7 @@ The assistant is the gold button at the bottom right of MedBrief. Type what you 
    ```
    ASSISTANT_ENABLED=true
    ASSISTANT_ACTIONS_ENABLED=true
+ASSISTANT_AGENT_LOOP=true
    ```
    and to `client/.env`:
    ```

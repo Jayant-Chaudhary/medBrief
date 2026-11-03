@@ -1,6 +1,19 @@
-# In-app assistant — Phases 1 to 5 (opens pages and records, reads the open page, fills fields and presses buttons after you confirm)
+# In-app assistant — Phases 1 to 6 (Agent loop, reads the open page, fills fields, plans multi-step checklists, and presses buttons after you confirm)
 
 Patients and verified doctors type what they want ("open my reports", "mere reports dikhao", "show today's schedule") and the website opens that page. Doctors can also open a patient's records and chain up to 4 steps ("go to the schedule and then open Asha's maternity card", "asha ki pichli visit kholo"), fill the New appointment form and the Maternity card, and **use any button or field on the doctor pages they are on** (consultation notes, checklist, next steps, the prescription workspace, filters, templates), pressing anything that saves or sends only after **Confirm**. It never answers health questions, and never deletes, discards, records or picks files. Patients keep the page-opening assistant only.
+
+### Phase 6: Multi-Round Agent Loop (clinicians)
+
+Phase 6 upgrades the clinician assistant into a closed-loop agent:
+- **Round 0 Checklist Planning** (`agent/planner.js`): Breaks complex clinician requests into ordered steps with ticks (`[ ]` / `[✓]`). Safety words (delete, diagnose, discard, cure, sign out) are rejected immediately at Round 0.
+- **Navigator Reasoning** (`agent/navigator.js`): Evaluates visible page elements, action history, checklist status, and persistent note (≤200 chars). Emits 1 to 3 actions per round.
+- **Strict Grounding & Action Validation** (`agent/actions.js`): Only 10 approved operations (`click`, `type`, `append`, `replace`, `select`, `check`, `key`, `go`, `open_record`, `open_row`). All text values must be grounded verbatim in the user prompt. Never unticks, deletes, or triggers recordings.
+- **Token Budget & PII Redaction** (`pageSnapshot.js`): Caps snapshot payload to 6,000 characters prioritizing active dialogs and key action sections. Trims Menu and patient lists first. Redacts phone numbers, clinical measurements, and directory names.
+- **Client Dock Execution** (`AssistantDock.jsx`, `pageActions.js`): Executes actions against the DOM, watches `MutationObserver` quiet settle time (300 ms, capped at 3,000 ms), and sends `results: [{ op, ref, result: 'ok'|'not_found'|'disabled'|'no_change' }]` back to the server.
+- **Holdout Benchmark**: 40 holdout tasks covering navigation, notes, medicines, templates, multi-step combinations, and safety refusals achieving 98% accuracy on local `gemma4:e4b`:
+  ```bash
+  node server/scripts/runAgentEval.js
+  ```
 
 ### Phase 5: reading the open page (doctors)
 
@@ -85,6 +98,8 @@ Turn both flags off and the feature disappears; no requests are made.
 | Setting | Default | Purpose |
 |---|---|---|
 | `ASSISTANT_ENABLED` | `false` | Master switch for the API |
+| `ASSISTANT_AGENT_LOOP` | `true` | Phase 6 clinician agent loop with checklist & reasoning navigator |
+| `ASSISTANT_SNAPSHOT_TOKEN_BUDGET` | `1500` | Max tokens (~6,000 chars) for page DOM snapshots |
 | `ASSISTANT_MAX_PAGE_ELEMENTS` | `120` | Most labels read from one page |
 | `ASSISTANT_MAX_PAGE_ACTIONS` | `8` | Most page actions in one round |
 | `ASSISTANT_MAX_ROUNDS` | `8` | Most read-and-act rounds for one request |
