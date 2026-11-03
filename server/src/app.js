@@ -22,30 +22,52 @@ const templatesRoutes = require('./routes/templates.routes');
 const { consultRouter, timeRouter } = require('./routes/consultAudio.routes');
 const maternityRoutes = require('./routes/maternity.routes');
 const medicationDecisionRoutes = require('./routes/medicationDecision.routes');
+const patientSimilarityRoutes = require('./routes/patientSimilarity.routes');
 
 const app = express();
 const server = http.createServer(app);
-const corsOriginList = [env.clientAppUrl, 'http://localhost:5173', 'http://localhost:3000'];
+const configuredOrigins = [env.clientAppUrl, 'http://localhost:5173', 'http://localhost:3000'].filter(Boolean);
+
+const isOriginAllowed = (origin, callback) => {
+  if (!origin) return callback(null, true);
+  if (configuredOrigins.includes(origin)) return callback(null, true);
+
+  // In non-production, allow local WiFi / LAN IP origins (192.168.x.x, 10.x.x.x, 172.16-31.x.x, localhost)
+  if (process.env.NODE_ENV !== 'production') {
+    try {
+      const { hostname } = new URL(origin);
+      if (
+        hostname === 'localhost' ||
+        hostname === '127.0.0.1' ||
+        hostname.startsWith('192.168.') ||
+        hostname.startsWith('10.') ||
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname)
+      ) {
+        return callback(null, true);
+      }
+    } catch {
+      // ignore parse error
+    }
+  }
+
+  return callback(null, false);
+};
+
+const corsOptions = {
+  origin: isOriginAllowed,
+  credentials: true,
+  exposedHeaders: ['X-Request-Id'],
+};
 
 // Initialize Socket.IO control channel
-initSocketServer(server, {
-  origin: corsOriginList,
-  credentials: true,
-});
+initSocketServer(server, corsOptions);
 app.server = server;
 
 // Community must terminate before the identified care logger and error handler.
-app.use('/api/community', cors({
-  origin: [env.clientAppUrl, 'http://localhost:5173', 'http://localhost:3000'],
-  credentials: true,
-}), express.json({ limit: '64kb' }), require('./community/router').configuredRouter(), require('./community/internal').safeErrors);
+app.use('/api/community', cors(corsOptions), express.json({ limit: '64kb' }), require('./community/router').configuredRouter(), require('./community/internal').safeErrors);
 
 app.use(requestLogger);
-app.use(cors({
-  origin: [env.clientAppUrl, 'http://localhost:5173', 'http://localhost:3000'],
-  credentials: true,
-  exposedHeaders: ['X-Request-Id'],
-}));
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -69,6 +91,7 @@ app.use('/api/time', timeRouter);
 app.use('/api/consults', consultRouter);
 app.use('/api/maternity', maternityRoutes);
 app.use('/api/decision-support', medicationDecisionRoutes);
+app.use('/api/patient-similarity', patientSimilarityRoutes);
 
 app.use((req, res) => res.status(404).json({ error: 'Endpoint not found', requestId: req.id }));
 app.use(errorHandler);
@@ -101,8 +124,9 @@ if (process.env.NODE_ENV !== 'test') {
   process.on('SIGTERM', gracefulShutdown);
   process.on('SIGINT', gracefulShutdown);
 
-  server.listen(env.port, async () => {
-    logger.info(`MedBrief API listening on port ${env.port}`, {
+  const host = env.host || '0.0.0.0';
+  server.listen(env.port, host, async () => {
+    logger.info(`MedBrief API listening on http://${host}:${env.port}`, {
       env: process.env.NODE_ENV || 'development',
       ocrServiceUrl: env.ocrServiceUrl,
       clientAppUrl: env.clientAppUrl,
