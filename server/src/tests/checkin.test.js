@@ -10,6 +10,14 @@ jest.mock('../config/supabaseAdminClient', () => ({
   from: jest.fn(),
 }));
 
+jest.mock('../config/checkin.config', () => {
+  const original = jest.requireActual('../config/checkin.config');
+  return {
+    ...original,
+    geminiApiKey: '',
+  };
+});
+
 describe('Check-In & AI Summarization API', () => {
   const mockPatient = { id: 'patient-uuid-1', email: 'patient@example.com' };
   const mockClinician = { id: 'clinician-uuid-1', email: 'doctor@example.com' };

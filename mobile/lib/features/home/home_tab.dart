@@ -441,8 +441,8 @@ class _DynamicCheckinCadenceCard extends StatelessWidget {
       subtitle = days == 0
           ? 'Check-in recorded today • Next pulse in ${cadence.nextDueInDays} days'
           : 'Last check-in $days days ago • Next pulse in ${cadence.nextDueInDays} days';
-      buttonText = 'Check in';
-      onAction = onStartPulse ?? onStartWeekly;
+      buttonText = '';
+      onAction = null;
       icon = Icons.check_circle_rounded;
       iconBg = const Color(0xFF2E7D32);
     } else {
