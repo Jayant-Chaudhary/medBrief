@@ -22,6 +22,7 @@ const templatesRoutes = require('./routes/templates.routes');
 const { consultRouter, timeRouter } = require('./routes/consultAudio.routes');
 const maternityRoutes = require('./routes/maternity.routes');
 const medicationDecisionRoutes = require('./routes/medicationDecision.routes');
+const checkinRoutes = require('./routes/checkin.routes');
 
 const app = express();
 const server = http.createServer(app);
@@ -69,6 +70,7 @@ app.use('/api/time', timeRouter);
 app.use('/api/consults', consultRouter);
 app.use('/api/maternity', maternityRoutes);
 app.use('/api/decision-support', medicationDecisionRoutes);
+app.use('/api/checkin', checkinRoutes);
 
 app.use((req, res) => res.status(404).json({ error: 'Endpoint not found', requestId: req.id }));
 app.use(errorHandler);

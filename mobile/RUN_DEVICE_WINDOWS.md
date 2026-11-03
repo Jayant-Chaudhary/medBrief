@@ -1,4 +1,4 @@
-# Windows Startup Guide: Running the App on Physical Phone via USB
+re# Windows Startup Guide: Running the App on Physical Phone via USB
 
 This guide contains the exact Windows PowerShell commands needed to start all backend services and run the mobile Flutter app on a real Android phone via USB debugging.
 

@@ -119,7 +119,12 @@ class ApiClient {
       if (token != null) request.headers['Authorization'] = 'Bearer $token';
       if (fields != null) request.fields.addAll(fields);
       request.files.add(
-        http.MultipartFile.fromBytes(fieldName, bytes, filename: filename),
+        http.MultipartFile.fromBytes(
+          fieldName,
+          bytes,
+          filename: filename,
+          contentType: contentType != null ? MediaType.parse(contentType) : null,
+        ),
       );
       final response = await _client
           .send(request)

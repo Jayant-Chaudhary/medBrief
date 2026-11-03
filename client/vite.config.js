@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   test: {
-    include: ['src/tests/**/*.test.js'],
+    pool: 'forks',
+    include: ['src/tests/**/*.{test,spec}.{js,jsx}'],
   },
 });

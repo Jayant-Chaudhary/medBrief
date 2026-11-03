@@ -4,6 +4,7 @@ import { Sidebar } from '../../components/layout/Sidebar.jsx';
 import { Topbar } from '../../components/layout/Topbar.jsx';
 import { PatientHeaderCard } from '../../components/clinician/PatientHeaderCard.jsx';
 import { PreVisitQuestionnairePanel } from '../../components/clinician/PreVisitQuestionnairePanel.jsx';
+import { PreVisitAiBriefCard } from '../../components/clinician/PreVisitAiBriefCard.jsx';
 import { OcrTriageAlert } from '../../components/clinician/OcrTriageAlert.jsx';
 import { HistoryGrid } from '../../components/clinician/HistoryGrid.jsx';
 import { SlideOver } from '../../components/ui/SlideOver.jsx';
@@ -29,6 +30,7 @@ import {
   uploadPrescription,
   resolveTriageAlert,
   endVisit,
+  generatePreVisitSummary,
 } from '../../services/clinicianService.js';
 
 /**
@@ -74,6 +76,7 @@ export function ClinicianDashboard() {
   const [notesOpen, setNotesOpen] = useState(false);
   const closeNotes = useCallback(() => setNotesOpen(false), []);
   const [audioConsultOpen, setAudioConsultOpen] = useState(false);
+  const [generatingBrief, setGeneratingBrief] = useState(false);
   const [audioConsultTab, setAudioConsultTab] = useState('RECORD');
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [ending, setEnding] = useState(false);
@@ -121,6 +124,20 @@ export function ClinicianDashboard() {
   const { data, loading, error, patch } = usePatientDashboard(selected?.id, selected?.appointmentId);
   const appointmentId = data?.appointment?.id;
   const consultDraft = useConsultDraft(appointmentId, Boolean(selected));
+
+  const handleGenerateAiBrief = useCallback(async () => {
+    if (!selectedAppointmentId) return;
+    try {
+      setGeneratingBrief(true);
+      const updatedSummary = await generatePreVisitSummary(selectedAppointmentId);
+      patch(() => ({ aiSummary: updatedSummary }));
+      showToast({ type: 'success', message: 'Pre-visit clinical brief generated.' });
+    } catch (err) {
+      showToast({ type: 'error', message: err?.message || 'Failed to generate AI brief' });
+    } finally {
+      setGeneratingBrief(false);
+    }
+  }, [selectedAppointmentId, patch, showToast]);
 
   const handleSaveNotes = useCallback(
     async (text) => {
@@ -447,6 +464,11 @@ export function ClinicianDashboard() {
         */}
         <div className="scroll-column min-h-0 flex-1 space-y-4 pr-1">
           <PatientHeaderCard patient={data.patient} />
+          <PreVisitAiBriefCard
+            summary={data.aiSummary}
+            onGenerate={handleGenerateAiBrief}
+            isGenerating={generatingBrief}
+          />
           {data.questionnaire.answers.length > 0 && <PreVisitQuestionnairePanel questionnaire={data.questionnaire} />}
           <OcrTriageAlert alerts={data.triageAlerts} onResolve={handleResolveAlert} />
           <HistoryGrid flowsheet={data.flowsheet} patientId={data.patient.id} onResolve={handleResolveAlert} />

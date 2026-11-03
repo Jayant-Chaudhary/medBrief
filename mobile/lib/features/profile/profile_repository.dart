@@ -9,6 +9,7 @@ class PatientProfileData {
     required this.fullName,
     this.phone,
     this.dateOfBirth,
+    this.dueDate,
     this.bloodType,
     this.address,
     this.emergencyContactName,
@@ -21,6 +22,7 @@ class PatientProfileData {
         fullName: json['fullName'] as String? ?? json['full_name'] as String? ?? '',
         phone: json['phone'] as String?,
         dateOfBirth: json['dateOfBirth'] as String? ?? json['date_of_birth'] as String?,
+        dueDate: json['dueDate'] as String? ?? json['due_date'] as String?,
         bloodType: json['bloodType'] as String? ?? json['blood_type'] as String?,
         address: json['address'] as String?,
         emergencyContactName: json['emergencyContactName'] as String? ??
@@ -33,6 +35,7 @@ class PatientProfileData {
   final String fullName;
   final String? phone;
   final String? dateOfBirth;
+  final String? dueDate;
   final String? bloodType;
   final String? address;
   final String? emergencyContactName;
@@ -43,6 +46,7 @@ class PatientProfileData {
         'fullName': fullName.trim().isEmpty ? null : fullName.trim(),
         'phone': phone?.trim().isEmpty == true ? null : phone?.trim(),
         'dateOfBirth': dateOfBirth?.trim().isEmpty == true ? null : dateOfBirth?.trim(),
+        'dueDate': dueDate?.trim().isEmpty == true ? null : dueDate?.trim(),
         'bloodType': bloodType?.trim().isEmpty == true ? null : bloodType?.trim(),
         'address': address?.trim().isEmpty == true ? null : address?.trim(),
         'emergencyContactName':

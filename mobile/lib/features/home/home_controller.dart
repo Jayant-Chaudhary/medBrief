@@ -4,25 +4,32 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/api_client.dart';
 import '../auth/auth_repository.dart';
+import '../checkin/checkin_models.dart';
+import '../checkin/checkin_repository.dart';
 import 'appointment_repository.dart';
 
 enum HomeStage { loading, ready, error }
 
 /// State machine for the patient home screen.
 ///
-/// Loads appointments + vitals in parallel. Exposes helpers that the UI calls
-/// to log vitals, select an appointment, and refresh without re-logging in.
+/// Loads appointments + vitals + checkin cadence in parallel.
 class HomeController extends ChangeNotifier {
-  HomeController({required this.repo, required this.profile});
+  HomeController({
+    required this.repo,
+    required this.profile,
+    this.checkinRepo,
+  });
 
   final AppointmentRepository repo;
   final PatientProfile profile;
+  final CheckinRepository? checkinRepo;
 
   HomeStage stage = HomeStage.loading;
   String? error;
 
   AppointmentSet _appointments = AppointmentSet.empty();
   LatestVitals _vitals = const LatestVitals();
+  CheckinCadenceStatus _cadenceStatus = const CheckinCadenceStatus();
   String? _selectedId;
 
   bool _saving = false;
@@ -30,6 +37,7 @@ class HomeController extends ChangeNotifier {
 
   AppointmentSet get appointments => _appointments;
   LatestVitals get vitals => _vitals;
+  CheckinCadenceStatus get cadenceStatus => _cadenceStatus;
   bool get saving => _saving;
   String? get saveError => _saveError;
 
@@ -42,12 +50,18 @@ class HomeController extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
+      final checkinFuture = checkinRepo?.getCheckinStatus() ??
+          Future.value(const CheckinCadenceStatus());
+
       final results = await Future.wait([
         repo.getAppointments(),
         repo.getLatestVitals().catchError((_) => const LatestVitals()),
+        checkinFuture.catchError((_) => const CheckinCadenceStatus()),
       ]);
       _appointments = results[0] as AppointmentSet;
       _vitals = results[1] as LatestVitals;
+      _cadenceStatus = results[2] as CheckinCadenceStatus;
+
       // Auto-select the first upcoming appointment if nothing is selected yet.
       _selectedId ??=
           _appointments.upcoming.firstOrNull?.id ?? _appointments.all.firstOrNull?.id;
@@ -126,4 +140,3 @@ class HomeController extends ChangeNotifier {
   /// Refresh everything (pull-to-refresh).
   Future<void> refresh() => load();
 }
-

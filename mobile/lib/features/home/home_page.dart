@@ -4,7 +4,10 @@ import '../../core/api_client.dart';
 import '../../core/app_theme.dart';
 import '../auth/auth_controller.dart';
 import '../checkin/checkin_page.dart';
+import '../checkin/guided_checkin_page.dart';
 import '../checkin/checkin_repository.dart';
+import '../checkin/ad_hoc_concern_sheet.dart';
+import '../checkin/quick_pulse_sheet.dart';
 import '../community/community_page.dart';
 import '../community/community_push.dart';
 import '../community/community_repository.dart';
@@ -73,7 +76,11 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     final repo = widget.repository ?? AppointmentRepository(api: widget.api);
-    _homeController = HomeController(repo: repo, profile: widget.auth.profile!);
+    _homeController = HomeController(
+      repo: repo,
+      profile: widget.auth.profile!,
+      checkinRepo: widget.checkinRepository ?? CheckinRepository(api: widget.api),
+    );
     _homeController.load();
 
     _reportController = ReportController(
@@ -103,6 +110,86 @@ class _HomePageState extends State<HomePage> {
       _tabIndex = 3;
       _communityInboxRequested = inbox;
     });
+  }
+
+  void _openGuidedCheckin({Appointment? appointment}) {
+    final checkinRepo =
+        widget.checkinRepository ?? CheckinRepository(api: widget.api);
+    final profile = widget.auth.profile;
+
+    int? gestationalWeek;
+    if (profile?.dueDate != null) {
+      final due = DateTime.tryParse(profile!.dueDate!);
+      if (due != null) {
+        final diffDays = due.difference(DateTime.now()).inDays;
+        final week = 40 - (diffDays / 7).round();
+        if (week >= 1 && week <= 42) {
+          gestationalWeek = week;
+        }
+      }
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => GuidedCheckinPage(
+          appointmentId: appointment?.id,
+          gestationalWeek: gestationalWeek,
+          repository: checkinRepo,
+          emergencyContactPhone: profile?.emergencyContactPhone,
+          onCompleted: () {
+            Navigator.of(context).pop();
+            _homeController.refresh();
+          },
+          onCancel: () => Navigator.of(context).pop(),
+        ),
+      ),
+    );
+  }
+
+  void _openQuickPulse() {
+    final checkinRepo =
+        widget.checkinRepository ?? CheckinRepository(api: widget.api);
+    final profile = widget.auth.profile;
+
+    int? gestationalWeek;
+    if (profile?.dueDate != null) {
+      final due = DateTime.tryParse(profile!.dueDate!);
+      if (due != null) {
+        final diffDays = due.difference(DateTime.now()).inDays;
+        final week = 40 - (diffDays / 7).round();
+        if (week >= 1 && week <= 42) gestationalWeek = week;
+      }
+    }
+
+    QuickPulseSheet.show(
+      context,
+      repository: checkinRepo,
+      gestationalWeek: gestationalWeek,
+      onSubmitted: () => _homeController.refresh(),
+    );
+  }
+
+  void _openAdHocConcern() {
+    final checkinRepo =
+        widget.checkinRepository ?? CheckinRepository(api: widget.api);
+    final profile = widget.auth.profile;
+
+    int? gestationalWeek;
+    if (profile?.dueDate != null) {
+      final due = DateTime.tryParse(profile!.dueDate!);
+      if (due != null) {
+        final diffDays = due.difference(DateTime.now()).inDays;
+        final week = 40 - (diffDays / 7).round();
+        if (week >= 1 && week <= 42) gestationalWeek = week;
+      }
+    }
+
+    AdHocConcernSheet.show(
+      context,
+      repository: checkinRepo,
+      gestationalWeek: gestationalWeek,
+      onSubmitted: () => _homeController.refresh(),
+    );
   }
 
   void _openCheckin(Appointment appointment) {
@@ -418,6 +505,9 @@ class _HomePageState extends State<HomePage> {
           controller: _homeController,
           onNavigate: _handleNavigate,
           onCheckin: _openCheckin,
+          onPeriodicCheckin: () => _openGuidedCheckin(),
+          onQuickPulse: _openQuickPulse,
+          onLogConcern: _openAdHocConcern,
           onViewSummary: (appt) => _openSummary(appointment: appt),
           onSignOut: widget.auth.signOut,
         );
@@ -426,6 +516,7 @@ class _HomePageState extends State<HomePage> {
           controller: _homeController,
           onNavigate: _handleNavigate,
           onCheckin: _openCheckin,
+          onPeriodicCheckin: () => _openGuidedCheckin(),
           onViewSummary: (appt) => _openSummary(appointment: appt),
           onSignOut: widget.auth.signOut,
         );

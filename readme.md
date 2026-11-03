@@ -55,7 +55,16 @@ health-on-project/
    - The backend maps raw OCR text (e.g., "HGB") to standard medical dictionary keys ("hemoglobin") and converts units.
    - Low-confidence parses are flagged for manual clinical review ("AI Triage Alerts").
 5. **Vitals Tracking**: Continuous timeline of patient vitals across appointments.
-6. **Post-Visit Summaries**: Prescriptions, consultation notes, and action-item checklists.
+6. **AI-Powered Prenatal Check-In & Pre-Visit Clinical Brief Flow**:
+   - **Longitudinal Micro Check-Ins (<2 mins)**: Asynchronous weekly mobile check-ins and 48-hour pre-visit surveys covering 4 structured pillars: Physical & Obstetric, Emotional & Mood (EPDS/GAD-2 screening), Daily Routine & Vitamins, and Open Agenda for the Doctor.
+   - **Trimester-Adaptive 9-Month Flow**:
+     - *1st Trimester (Weeks 1–13)*: Early surveillance for bleeding, cramping, and severe hyperemesis/dehydration; daily folic acid adherence; early emotional fatigue.
+     - *2nd Trimester (Weeks 14–27)*: Quickening/fetal kick surveillance (week 24+), sudden facial/hand edema (week 20+), contraction rhythm (week 22+), lightheadedness, and iron supplementation.
+     - *3rd Trimester (Weeks 28–36)*: Daily fetal kick counts (DFM), persistent severe headache & visual aura (preeclampsia watch), labor dread / birth anxiety screening, and sleep fragmentation.
+     - *Term & Delivery (Weeks 37–40+)*: Active labor contractions (5-1-1 rule), fluid leakage/rupture of membranes, bloody show, and continuous fetal movement monitoring.
+   - **Immediate Emergency Intercept**: If a patient reports acute danger signs (e.g., vaginal bleeding, blurred vision, or absent fetal kicks), the survey halts immediately and displays emergency clinic triage instructions with one-tap dialing.
+   - **Doctor-Facing 30-Second Clinical Brief**: Gemini 2.5 Flash synthesizes the last 28 days of check-in answers, vitals trajectories, and patient-typed concerns into a prioritized pre-visit card (Urgent Red Flags, 3-Pillar Trajectory, Patient Agenda, and Clinician Talking Points) directly on the web consultation dashboard.
+7. **Post-Visit Summaries**: Prescriptions, consultation notes, and action-item checklists.
 
 ## Getting Started
 
