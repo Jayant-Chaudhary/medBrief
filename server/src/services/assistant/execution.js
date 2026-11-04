@@ -19,7 +19,7 @@ function matchingItem(checklist, action) {
         last_visit: ['last visit', 'previous visit', 'past visit'],
         next_visit: ['next visit', 'upcoming visit'],
         maternity: ['maternity', 'antenatal'],
-        new_appointment: ['appointment', 'book'],
+        new_appointment: ['appointment', 'book', 'new visit', 'naya visit'],
       };
       return Boolean(action.recordId) && (labels[action.kind] || []).some(s => text.includes(s)) && !/\b(write|fill|weight|bp)\b/.test(text);
     }

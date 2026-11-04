@@ -157,6 +157,10 @@ function buildNavigatorMessages({
     '6. Ref format: Output only the exact ref identifier (e.g. "r1", "r2") for ref, never append labels, tags, or extra words to ref.',
     '7. Return JSON only conforming to the response schema.',
     '',
+    'Examples:',
+    '- "open new visit" -> actions: [{ op: "go", page: "new_appointment" }]',
+    '- "new visit for Test Person tomorrow at 5 pm" -> actions: [{ op: "open_record", kind: "new_appointment", patient: "Test Person" }, { op: "fill", control: "scheduledAt", value: "<tomorrow>T17:00" }]',
+    '',
     `Available Menu Pages:\n${pageList}`,
   ].join('\n');
 

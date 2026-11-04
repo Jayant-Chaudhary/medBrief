@@ -19,7 +19,18 @@ const PAGES = {
     { id: 'dashboard', path: '/clinician', label: 'Dashboard', description: "Today's patients and open visits", aliases: ['dashboard', 'home', 'home page', 'main page', 'डैशबोर्ड'] },
     { id: 'schedule', path: '/clinician/schedule', label: 'Schedule', description: 'Calendar of appointments', aliases: ['schedule', 'calendar', 'appointments', 'todays schedule', 'agenda', 'शेड्यूल'] },
     { id: 'patients', path: '/clinician/patients', label: 'Patients', description: 'List of your patients', aliases: ['patients', 'patient list', 'my patients', 'मरीज'] },
-    { id: 'new_appointment', path: '/clinician/appointments/new', label: 'New appointment', description: 'Book an appointment and invite a patient', aliases: ['new appointment', 'book appointment', 'create appointment', 'add appointment'] },
+    {
+      id: 'new_appointment',
+      path: '/clinician/appointments/new',
+      label: 'New visit',
+      description: 'Book an appointment and invite a patient',
+      aliases: [
+        'new visit', 'new visits', 'add visit', 'create visit', 'create a visit',
+        'schedule visit', 'schedule a visit', 'book visit', 'book a visit',
+        'naya visit', 'nayi visit', 'नई विज़िट', 'new visit tab',
+        'new appointment', 'book appointment', 'create appointment', 'add appointment',
+      ],
+    },
     { id: 'maternity', path: '/clinician/maternity', label: 'Maternity card', description: 'Antenatal and delivery record', aliases: ['maternity', 'maternity card', 'antenatal card', 'antenatal record', 'antenatal', 'anc card', 'mcp card'] },
     { id: 'checklists', path: '/clinician/checklists', label: 'Checklists', description: 'Visit checklist templates', aliases: ['checklist', 'checklists', 'check list', 'check lists'] },
     { id: 'medication_templates', path: '/clinician/templates', label: 'Medication templates', description: 'Saved prescription and medicine templates', aliases: ['medication templates', 'medicine templates', 'prescription templates', 'medication template', 'template library', 'dawai templates'] },
@@ -32,7 +43,20 @@ function pagesFor(role) {
 }
 
 function findPage(role, id) {
-  return pagesFor(role).find((page) => page.id === id) || null;
+  const pages = pagesFor(role);
+  const direct = pages.find((page) => page.id === id);
+  if (direct) return direct;
+  const norm = String(id || '').trim().toLowerCase().replace(/[_\s-]+/g, ' ');
+  return pages.find((page) => {
+    const pageIdNorm = String(page.id || '').trim().toLowerCase().replace(/[_\s-]+/g, ' ');
+    if (pageIdNorm === norm) return true;
+    const pageLabelNorm = String(page.label || '').trim().toLowerCase().replace(/[_\s-]+/g, ' ');
+    if (pageLabelNorm === norm) return true;
+    if (Array.isArray(page.aliases)) {
+      return page.aliases.some((alias) => String(alias || '').trim().toLowerCase().replace(/[_\s-]+/g, ' ') === norm);
+    }
+    return false;
+  }) || null;
 }
 
 /** The page id the user is on, from the browser's path (query string ignored), or null. */

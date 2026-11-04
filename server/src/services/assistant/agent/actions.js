@@ -155,7 +155,7 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
       if (['maternity_card', 'antenatal', 'card'].includes(kind)) kind = 'maternity';
       else if (['visit', 'previous_visit', 'past_visit'].includes(kind)) kind = 'last_visit';
       else if (['upcoming_visit'].includes(kind)) kind = 'next_visit';
-      else if (['appointment', 'book'].includes(kind)) kind = 'new_appointment';
+      else if (['appointment', 'book', 'new_visit'].includes(kind)) kind = 'new_appointment';
       if (!['last_visit', 'next_visit', 'maternity', 'new_appointment'].includes(kind)) { refused.push({ name: 'record', reason: REASONS.badPatientRecord }); continue; }
       const build = (p) => {
         const visit = kind === 'last_visit' ? p.lastVisit : p.nextVisit;

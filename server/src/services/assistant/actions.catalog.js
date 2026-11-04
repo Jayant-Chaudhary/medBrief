@@ -153,7 +153,7 @@ function buildFill(step, role, clock, ctx, patient) {
     more,
     step: {
       ...(!here && { path: page.path }),
-      label: page.label,
+      label: page.id === 'new_appointment' ? 'New appointment' : page.label,
       ...(filled.length && { fill: { page: step.page, fields, filled, ...(context && { context }) } }),
       ...(skipped.length && { skipped }),
       ...(press && { press }),

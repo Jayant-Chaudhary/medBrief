@@ -234,6 +234,8 @@ function buildMessages(message, role, clock, onPage = null, page = null, progres
         ...example("open Test Person's maternity card", { action: 'unsupported', ...none }),
       ]
     : [
+        ...example('open new visit', run([step({ page: 'new_appointment' })])),
+        ...example('new visit for Test Person tomorrow at 5 pm', run([step({ do: 'open_new_appointment', patient: 'Test Person', when: `${tomorrow}T17:00` })])),
         ...example("open Test Person's maternity card", run([step({ do: 'open_maternity_card', patient: 'Test Person' })])),
         ...example('go to the schedule and then open the next visit for Test Person', run([step({ page: 'schedule' }), step({ do: 'open_patient_visit', patient: 'Test Person', which: 'next' })])),
         ...example('find Test Person', run([step({ do: 'find_patient', patient: 'Test Person' })])),
