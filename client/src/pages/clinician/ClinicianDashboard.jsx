@@ -20,7 +20,12 @@ import { Plus, ArrowLeft, Clock, User, CheckCircle, NotebookPen, CircleStop, Bad
 import { DoctorConsultationModal } from '../../components/consultAudio/DoctorConsultationModal.jsx';
 import { useConsultDraft } from '../../hooks/useConsultDraft.js';
 import { buildFlowsheet } from '../../utils/flowsheet.js';
-import { evaluatePatientSimilarity } from '../../services/patientSimilarityClient.js';
+import { buildSimilarityQueryPatient } from '../../utils/similarityInputBuilder.js';
+import {
+  evaluatePatientSimilarity,
+  isPatientSimilarityEnabled,
+  isSimilaritySyntheticDataAllowed,
+} from '../../services/patientSimilarityClient.js';
 import {
   fetchPatients,
   saveConsultancyNotes,
@@ -65,58 +70,8 @@ function isToday(value) {
   return value && new Date(value).toDateString() === new Date().toDateString();
 }
 
-/**
- * Normalizes patient demographics, vitals, lab results and pre-visit notes
- * into a feature profile suitable for the patient similarity pipeline.
- */
-function extractQueryPatientFromDashboard(data) {
-  if (!data?.patient) return null;
-  const patient = data.patient;
-  const appointment = data.appointment;
-  const vitals = appointment?.vitals || {};
-  const questionnaireResponses = (data.questionnaire?.answers || []).map((ans) => ({
-    question: ans.questionText || ans.question || '',
-    answer: ans.answerText || ans.answer || '',
-  }));
+// Clinical query extraction logic is extracted and unit-tested in similarityInputBuilder.js
 
-  const labs = {};
-  if (Array.isArray(data.historyReports)) {
-    for (const report of data.historyReports) {
-      for (const m of report.lab_report_metrics || []) {
-        const key = String(m.standard_key || m.standardKey || m.metric_key || m.name || '').toLowerCase();
-        const val = Number(m.reviewed_value ?? m.value);
-        if (Number.isFinite(val)) {
-          if ((key.includes('hemoglobin') || key === 'hb') && !labs.hemoglobin) labs.hemoglobin = val;
-          if (key.includes('platelet') && !labs.platelets) labs.platelets = val;
-          if ((key.includes('fasting') || key.includes('fbs')) && !labs.fasting_glucose) labs.fasting_glucose = val;
-          if ((key.includes('post_meal') || key.includes('ppbs') || key.includes('post_prandial')) && !labs.post_meal_glucose) labs.post_meal_glucose = val;
-          if (key.includes('tsh') && !labs.tsh) labs.tsh = val;
-          if (key.includes('creatinine') && !labs.creatinine) labs.creatinine = val;
-        }
-        if (key.includes('urine_albumin') || key.includes('urine_protein')) {
-          labs.urine_albumin = m.reviewed_value ?? m.value;
-        }
-      }
-    }
-  }
-
-  return {
-    patientId: patient.id,
-    age: Number(patient.age) || 26,
-    gestational_weeks: Number(appointment?.gestationalAgeWeeks || patient.gestationalWeeks) || 28,
-    gravida: Number(patient.gravida) || 1,
-    parity: Number(patient.parity) || 0,
-    bmi: Number(patient.bmi) || 24,
-    vitals: {
-      bp_systolic: Number(vitals.systolic || vitals.bp_systolic) || 120,
-      bp_diastolic: Number(vitals.diastolic || vitals.bp_diastolic) || 80,
-      heart_rate: Number(vitals.heartRate || vitals.heart_rate) || 78,
-    },
-    labs,
-    questionnaireResponses,
-    preVisitNotes: [data.aiSummary?.summary, data.notes?.text].filter(Boolean).join('\n'),
-  };
-}
 
 /**
  * Clinician command centre.
@@ -184,20 +139,99 @@ export function ClinicianDashboard() {
   const [similarityError, setSimilarityError] = useState(null);
 
   const loadSimilarity = useCallback(async () => {
+    if (!isPatientSimilarityEnabled()) {
+      setSimilarityData({ enabled: false, message: 'Similarity model is disabled by configuration' });
+      return;
+    }
     if (!data?.patient) return;
     try {
       setSimilarityLoading(true);
       setSimilarityError(null);
-      const queryPatient = extractQueryPatientFromDashboard(data);
+      const queryPatient = buildSimilarityQueryPatient(data);
       if (!queryPatient) return;
+
+      if (queryPatient.insufficientData) {
+        setSimilarityData({
+          topMatches: [],
+          insufficientData: true,
+          missingFactors: queryPatient.missingFactors,
+          availableFactors: queryPatient.availableFactors,
+          cohortSummary: {
+            cohortProvenance: 'synthetic',
+            totalCohortCount: 0,
+            matchedCohortCount: 0,
+          },
+          message: 'Insufficient clinical observations recorded for patient matching',
+        });
+        return;
+      }
+
       const res = await evaluatePatientSimilarity({ queryPatient });
-      setSimilarityData(res);
+      setSimilarityData({
+        ...res,
+        missingFactors: queryPatient.missingFactors,
+        availableFactors: queryPatient.availableFactors,
+      });
     } catch (err) {
       setSimilarityError(err?.message || 'Could not load similar historical cases');
     } finally {
       setSimilarityLoading(false);
     }
   }, [data]);
+
+  const handleLoadDemoScenario = useCallback(async (scenarioKey = 'elevatedBpAndHeadacheScenario') => {
+    if (!isPatientSimilarityEnabled() || !isSimilaritySyntheticDataAllowed()) {
+      return;
+    }
+    try {
+      setSimilarityLoading(true);
+      setSimilarityError(null);
+      const sampleQuery =
+        scenarioKey === 'elevatedBpAndHeadacheScenario'
+          ? {
+              gestationalWeeks: 28,
+              age: 28,
+              gravida: 2,
+              para: 1,
+              bmi: 26.2,
+              blood_group: 'O+',
+              vitals: { bp_systolic: 140, bp_diastolic: 90, weight_kg: 67, fundal_height_cm: 28, fetal_heart_rate_bpm: 146 },
+              previousVitals: { bp_systolic: 124, bp_diastolic: 78 },
+              labs: { hemoglobin: 11.0 },
+              previousLabs: { hemoglobin: 11.3 },
+              questionnaireResponses: [
+                { question: 'Have you noticed ankle or foot swelling?', answer: true, detail: 'Mild ankle swelling in evenings' },
+                { question: 'Have you had any vaginal bleeding?', answer: false },
+              ],
+              transcriptSegments: [
+                { segment_id: 's1', speaker: 'patient', text: 'I have had a moderate frontal headache for two days and mild ankle swelling.' },
+                { segment_id: 's2', speaker: 'patient', text: 'No blurred vision at all, no epigastric pain.' },
+              ],
+            }
+          : {
+              gestationalWeeks: 26,
+              age: 26,
+              gravida: 2,
+              para: 1,
+              vitals: { bp_systolic: 110, bp_diastolic: 70, weight_kg: 55, fundal_height_cm: 26, fetal_heart_rate_bpm: 148 },
+              labs: { hemoglobin: 8.9 },
+              previousLabs: { hemoglobin: 10.2 },
+              transcriptSegments: [
+                { segment_id: 's1', speaker: 'patient', text: 'I feel severe fatigue and breathlessness climbing stairs, and dizziness.' },
+              ],
+            };
+
+      const res = await evaluatePatientSimilarity({ queryPatient: sampleQuery });
+      setSimilarityData({
+        ...res,
+        isDemoSample: true,
+      });
+    } catch (err) {
+      setSimilarityError(err?.message || 'Could not load demo scenario');
+    } finally {
+      setSimilarityLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (data?.patient?.id) {
@@ -552,7 +586,7 @@ export function ClinicianDashboard() {
             >
               <Users className="h-4 w-4" />
               <span>Patient Overview</span>
-              {similarityData?.uncheckedFactorsInQuery?.length > 0 && (
+              {isPatientSimilarityEnabled() && similarityData?.uncheckedFactorsInQuery?.length > 0 && (
                 <span
                   className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse"
                   title={`${similarityData.uncheckedFactorsInQuery.length} unchecked clinical factors recorded in comparable cases`}
@@ -608,26 +642,31 @@ export function ClinicianDashboard() {
         </div>
 
         {/* Tab 1: Patient Overview */}
-        <div className={`scroll-column min-h-0 flex-1 space-y-4 pr-1 pb-32 ${activeDashboardTab === 'overview' ? 'block' : 'hidden'}`}>
+        <div className={`h-full min-h-0 overflow-y-auto scroll-column space-y-4 pr-1.5 pb-32 ${activeDashboardTab === 'overview' ? 'block' : 'hidden'}`}>
           <PatientHeaderCard patient={data.patient} />
           <PreVisitAiBriefCard
             summary={data.aiSummary}
             onGenerate={handleGenerateAiBrief}
             isGenerating={generatingBrief}
           />
-          <SimilarCasesTriageCard
-            similarityData={similarityData}
-            loading={similarityLoading}
-            error={similarityError}
-            onRefresh={loadSimilarity}
-          />
+          {isPatientSimilarityEnabled() && (
+            <SimilarCasesTriageCard
+              similarityData={similarityData}
+              loading={similarityLoading}
+              error={similarityError}
+              onRefresh={loadSimilarity}
+              onLoadDemo={handleLoadDemoScenario}
+              onResetPatient={loadSimilarity}
+              syntheticAllowed={isSimilaritySyntheticDataAllowed()}
+            />
+          )}
           {data.questionnaire.answers.length > 0 && (
             <PreVisitQuestionnairePanel questionnaire={data.questionnaire} />
           )}
         </div>
 
         {/* Tab 2: Clinical Flowsheet & Labs */}
-        <div className={`scroll-column min-h-0 flex-1 space-y-4 pr-1 pb-32 ${activeDashboardTab === 'flowsheet' ? 'block' : 'hidden'}`}>
+        <div className={`h-full min-h-0 overflow-y-auto scroll-column space-y-4 pr-1.5 pb-32 ${activeDashboardTab === 'flowsheet' ? 'block' : 'hidden'}`}>
           <OcrTriageAlert alerts={data.triageAlerts} onResolve={handleResolveAlert} />
           <HistoryGrid flowsheet={data.flowsheet} patientId={data.patient.id} onResolve={handleResolveAlert} />
         </div>

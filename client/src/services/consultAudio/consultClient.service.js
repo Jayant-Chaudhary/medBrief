@@ -313,6 +313,7 @@ export async function getConsultationDraft({ sessionId, token } = {}) {
  */
 export async function reviewConsultationDraft({
   sessionId,
+  draftId = null,
   token,
   action = 'approve',
   editedDoctorNotes = null,
@@ -323,6 +324,7 @@ export async function reviewConsultationDraft({
   }
 
   const payload = {
+    draft_id: draftId,
     action,
     edited_doctor_notes: editedDoctorNotes,
     rejection_reason: rejectionReason,

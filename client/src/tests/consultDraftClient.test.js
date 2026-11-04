@@ -11,10 +11,10 @@ describe('consult draft requests', () => {
     global.fetch = vi.fn(async () => ({ ok: true, status: 200, headers: new Headers(), json: async () => ({ ok: true }) }));
   });
 
-  it('sends the review body as a single JSON object', async () => {
-    await reviewConsultationDraft({ sessionId: 'sess-1', action: 'approve' });
+  it('sends the review body as a single JSON object with draft_id', async () => {
+    await reviewConsultationDraft({ sessionId: 'sess-1', draftId: 'draft-999', action: 'approve' });
     const body = global.fetch.mock.calls[0][1].body;
-    expect(JSON.parse(body)).toMatchObject({ action: 'approve' });
+    expect(JSON.parse(body)).toMatchObject({ action: 'approve', draft_id: 'draft-999' });
   });
 
   it('sends the generate body as a single JSON object', async () => {

@@ -2,7 +2,6 @@ const supabaseAdmin = require('../config/supabaseAdminClient');
 const { createAndSendInvite } = require('../services/invite.service');
 const { findAuthUserByEmail } = require('../services/authUsers.service');
 const { assertAppointmentAccess } = require('../services/access.service');
-const { shareAllReportsWithAppointment } = require('../services/reportSharing.service');
 const logger = require('../utils/logger');
 
 /** A patient may only report that they have checked in; the rest is the clinic's call. */
@@ -231,15 +230,6 @@ async function updateAppointmentStatus(req, res, next) {
       .single();
 
     if (error) throw error;
-
-    // Checking in brings the patient's earlier reports to this visit. The
-    // client also shares them when check-in starts; this covers any path
-    // that skips that step. A sharing failure must not undo the check-in.
-    if (status === 'checked_in' && data.patient_id) {
-      await shareAllReportsWithAppointment(data.patient_id, data.id).catch((shareErr) =>
-        (req.log || logger).warn('could not share prior reports on check-in', { appointmentId: data.id, err: shareErr })
-      );
-    }
 
     res.json(data);
   } catch (err) {

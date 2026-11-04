@@ -255,5 +255,101 @@ describe('Clinical Notes Draft Service (Phase 8)', () => {
         })
       ).rejects.toMatchObject({ status: 403 });
     });
+
+    test('rejects stale review with 409 when a newer draft has already been created', async () => {
+      const mockSession = {
+        id: sessionId,
+        appointment_id: appointmentId,
+        doctor_id: doctorUserId,
+      };
+
+      const olderDraft = {
+        id: 'draft-old',
+        session_id: sessionId,
+        status: 'needs_review',
+        created_at: '2026-11-04T10:00:00Z',
+      };
+
+      const newerDraft = {
+        id: 'draft-newer',
+        session_id: sessionId,
+        created_at: '2026-11-04T10:05:00Z',
+      };
+
+      mockTables(supabaseAdmin, {
+        consult_sessions: ok(mockSession),
+        consult_drafts: [ok(olderDraft), ok([newerDraft])],
+      });
+
+      await expect(
+        draftService.reviewSessionDraft({
+          sessionId,
+          doctorUserId,
+          draftId: 'draft-old',
+          action: 'approve',
+        })
+      ).rejects.toMatchObject({ status: 409 });
+    });
+
+    test('fails approval if saving consultation_notes fails and leaves draft unapproved', async () => {
+      const mockSession = {
+        id: sessionId,
+        appointment_id: appointmentId,
+        doctor_id: doctorUserId,
+      };
+
+      const existingDraft = {
+        id: 'draft-uuid-1',
+        session_id: sessionId,
+        status: 'needs_review',
+        doctor_notes: {
+          chief_complaint: 'Routine ANC',
+        },
+      };
+
+      const { fail } = require('../helpers/supabaseMock');
+      mockTables(supabaseAdmin, {
+        consult_sessions: ok(mockSession),
+        consult_drafts: ok(existingDraft),
+        consultation_notes: fail('Database disk full or constraint violation'),
+      });
+
+      await expect(
+        draftService.reviewSessionDraft({
+          sessionId,
+          doctorUserId,
+          action: 'approve',
+        })
+      ).rejects.toThrow('Failed to save consultation notes');
+    });
+
+    test('returns existing draft safely on idempotent repeated approval', async () => {
+      const mockSession = {
+        id: sessionId,
+        appointment_id: appointmentId,
+        doctor_id: doctorUserId,
+      };
+
+      const alreadyApprovedDraft = {
+        id: 'draft-uuid-1',
+        session_id: sessionId,
+        status: 'approved',
+        doctor_notes: { chief_complaint: 'Routine ANC' },
+      };
+
+      mockTables(supabaseAdmin, {
+        consult_sessions: ok(mockSession),
+        consult_drafts: ok(alreadyApprovedDraft),
+      });
+
+      const result = await draftService.reviewSessionDraft({
+        sessionId,
+        doctorUserId,
+        action: 'approve',
+      });
+
+      expect(result).toBeDefined();
+      expect(result.status).toBe('approved');
+    });
   });
 });

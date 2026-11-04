@@ -44,8 +44,8 @@ export default function ReportsPage() {
     showToast('Uploading and reading your report…', 'info');
 
     try {
+      // Upload saves to the patient library without automatic sharing
       const result = await reportService.uploadReport(file, {
-        appointmentId: activeAppointment?.id,
         confirmNameMismatch,
       });
 
@@ -90,26 +90,30 @@ export default function ReportsPage() {
     }
   };
 
-  /** Optimistic toggle — a sharing switch that lags feels broken. */
-  const handleToggleShare = async (report, appointmentId, shouldShare) => {
-    const previous = report.shared_appointment_ids ?? [];
-    const next = shouldShare
-      ? [...previous, appointmentId]
-      : previous.filter((id) => id !== appointmentId);
+  /** Optimistic toggle with functional state updates to prevent stale closure races. */
+  const handleToggleShare = async (reportOrId, appointmentId, shouldShare) => {
+    const reportId = typeof reportOrId === 'object' ? reportOrId.id : reportOrId;
+    let previous = [];
 
-    setReports((current) =>
-      current.map((r) => (r.id === report.id ? { ...r, shared_appointment_ids: next } : r))
-    );
+    setReports((current) => {
+      const target = current.find((r) => r.id === reportId);
+      previous = target?.shared_appointment_ids ?? [];
+      const next = shouldShare
+        ? [...new Set([...previous, appointmentId])]
+        : previous.filter((id) => id !== appointmentId);
+
+      return current.map((r) => (r.id === reportId ? { ...r, shared_appointment_ids: next } : r));
+    });
 
     try {
       if (shouldShare) {
-        await reportService.shareWithAppointment(report.id, appointmentId);
+        await reportService.shareWithAppointment(reportId, appointmentId);
       } else {
-        await reportService.unshareFromAppointment(report.id, appointmentId);
+        await reportService.unshareFromAppointment(reportId, appointmentId);
       }
     } catch (err) {
       setReports((current) =>
-        current.map((r) => (r.id === report.id ? { ...r, shared_appointment_ids: previous } : r))
+        current.map((r) => (r.id === reportId ? { ...r, shared_appointment_ids: previous } : r))
       );
       showToast(err.message || 'Could not update sharing.', 'error');
     }

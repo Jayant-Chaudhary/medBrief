@@ -1380,8 +1380,8 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports, simi
               <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
               Cohort-Observed Actions ({similarityData?.topMatches?.length || 0} Comparable Cases)
             </span>
-            <span className="text-body-xs text-indigo-600 font-medium">
-              Decision-support reference
+            <span className="text-body-xs text-indigo-700 font-semibold bg-indigo-100/70 border border-indigo-200 px-2 py-0.5 rounded">
+              Synthetic example cases — actions are simulated reference only
             </span>
           </div>
           <div className="flex flex-wrap gap-1.5">

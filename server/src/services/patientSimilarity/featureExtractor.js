@@ -126,10 +126,10 @@ function normalizeStructuredFeatures(rawPatient = {}) {
   };
 
   // Gestational & Obstetric Baseline
-  setNum('gestational_weeks', rawPatient.gestationalWeeks ?? baseline.gestationalWeeks ?? vitals.gestational_weeks);
-  setNum('age_years', rawPatient.age ?? baseline.age ?? rawPatient.age_years);
+  setNum('gestational_weeks', rawPatient.gestationalWeeks ?? rawPatient.gestational_weeks ?? baseline.gestationalWeeks ?? baseline.gestational_weeks ?? vitals.gestational_weeks);
+  setNum('age_years', rawPatient.age ?? rawPatient.age_years ?? baseline.age ?? baseline.age_years);
   setNum('gravida', rawPatient.gravida ?? baseline.gravida);
-  setNum('para', rawPatient.para ?? baseline.para);
+  setNum('para', rawPatient.para ?? rawPatient.parity ?? baseline.para ?? baseline.parity);
   setNum('abortions', rawPatient.abortions ?? baseline.abortions);
   setNum('bmi', rawPatient.bmi ?? baseline.bmi ?? vitals.bmi);
 
@@ -421,14 +421,17 @@ function extractDeterministicSymptoms(rawPatient = {}) {
 
     for (const { key, patterns } of SYMPTOM_PATTERNS) {
       if (patterns.some((rx) => rx.test(combined))) {
-        if (q.answer === true) {
+        const isTrue = q.answer === true || q.answer === 'yes' || q.value === 'yes' || q.answer === 'true';
+        const isFalse = q.answer === false || q.answer === 'no' || q.value === 'no' || q.answer === 'false';
+
+        if (isTrue) {
           recordSymptom({
             symptom_key: key,
             status: 'present',
             severity: detectSeverityInClause(detailText || qText, 0),
             source: 'pre_visit',
           });
-        } else if (q.answer === false) {
+        } else if (isFalse) {
           // Special case: "Is baby moving normally?" -> true means normal, false means reduced movement
           if (key === 'reduced_fetal_movement' && /\bmoving\s+well|normal\s+movement/i.test(qText)) {
             recordSymptom({ symptom_key: key, status: 'present', source: 'pre_visit' });

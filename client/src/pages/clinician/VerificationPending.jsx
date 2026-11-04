@@ -1,18 +1,45 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import { useAuthContext } from '../../context/AuthContext';
 import { request } from '../../services/apiClient';
+import { profileService } from '../../services/profileService';
 
 export default function VerificationPending() {
   const { logout, refreshProfile } = useAuthContext();
   const navigate = useNavigate();
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState(null);
+  const [canSelfVerify, setCanSelfVerify] = useState(false);
+  const [loadingConfig, setLoadingConfig] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function checkVerificationCapability() {
+      try {
+        const data = await profileService.getProfile();
+        if (isMounted) {
+          setCanSelfVerify(Boolean(data?.canSelfVerify));
+        }
+      } catch (err) {
+        if (isMounted) {
+          setCanSelfVerify(false);
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingConfig(false);
+        }
+      }
+    }
+    checkVerificationCapability();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   /**
    * Demo only: verifies this account on the spot instead of waiting for an
-   * administrator. The API refuses once DEMO_SELF_VERIFY=false.
+   * administrator. The API refuses outside development or once DEMO_SELF_VERIFY=false.
    */
   async function handleDemoVerify() {
     setVerifying(true);
@@ -45,12 +72,16 @@ export default function VerificationPending() {
       </p>
 
       <div className="space-y-3">
-        <Button onClick={handleDemoVerify} isLoading={verifying} className="w-full">
-          {verifying ? 'Verifying…' : 'Verify my account (demo)'}
-        </Button>
-        <p className="text-xs text-ink-3">
-          Demo shortcut: skips the medical council check and verifies this account immediately.
-        </p>
+        {!loadingConfig && canSelfVerify && (
+          <>
+            <Button onClick={handleDemoVerify} isLoading={verifying} className="w-full">
+              {verifying ? 'Verifying…' : 'Verify my account (demo)'}
+            </Button>
+            <p className="text-xs text-ink-3">
+              Demo shortcut: skips the medical council check and verifies this account immediately.
+            </p>
+          </>
+        )}
         {error && <p className="text-sm text-attention-dark">{error}</p>}
 
         <Button onClick={handleLogout} variant="secondary" className="w-full" disabled={verifying}>

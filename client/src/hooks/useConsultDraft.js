@@ -78,12 +78,18 @@ export function useConsultDraft(appointmentId, enabled = true) {
   }, [appointmentId, enabled, draft]);
 
   const review = useCallback(
-    async (action) => {
+    async (action, options = {}) => {
       if (!sessionId) return;
       setBusy(true);
       setError(null);
       try {
-        const updated = await reviewConsultationDraft({ sessionId, action });
+        const updated = await reviewConsultationDraft({
+          sessionId,
+          draftId: options.draftId || draft?.id || null,
+          action,
+          editedDoctorNotes: options.editedDoctorNotes || null,
+          rejectionReason: options.rejectionReason || null,
+        });
         setDraft(updated);
         return updated;
       } catch (err) {
@@ -93,7 +99,7 @@ export function useConsultDraft(appointmentId, enabled = true) {
         setBusy(false);
       }
     },
-    [sessionId]
+    [sessionId, draft]
   );
 
   // Drafting runs on the server after the visit ends; if it failed, ask for it again.
@@ -115,5 +121,14 @@ export function useConsultDraft(appointmentId, enabled = true) {
 
   const waiting = finished && !draft && !stalled;
 
-  return { draft, busy, error, stalled, waiting, generate, approve: () => review('approve'), reject: () => review('reject') };
+  return {
+    draft,
+    busy,
+    error,
+    stalled,
+    waiting,
+    generate,
+    approve: (opts) => review('approve', opts),
+    reject: (opts) => review('reject', opts),
+  };
 }

@@ -51,6 +51,11 @@ async function resolveReferenceCohortProfiles(referenceCohort, options = {}, inc
     );
   }
 
+  // Check if synthetic reference cohort is disabled via feature flag
+  if (config.isSimilaritySyntheticDataAllowed && !config.isSimilaritySyntheticDataAllowed()) {
+    return [];
+  }
+
   const cohortSource = String(options.cohortSource || 'curated').toLowerCase();
   const generatedCount = Math.min(Math.max(Number(options.generatedCount) || config.defaultGeneratedCohortSize, 5), 500);
   const seed = Number(options.seed) || config.defaultCohortSeed;
@@ -248,17 +253,54 @@ async function evaluateDirectSimilarity({ queryPatient, referenceCohort = null, 
     useDenseEmbeddings
   );
 
+  if (!referenceProfiles || referenceProfiles.length === 0) {
+    const latencyMs = Date.now() - start;
+    return {
+      modelVersion: '1.0.0',
+      latencyMs,
+      cohortProvenance: 'none',
+      extractedQueryProfile: {
+        structured: extractedQueryProfile.structured,
+        extractedSymptoms: extractedQueryProfile.extractedSymptomsList,
+        standardizedNarrative: extractedQueryProfile.standardizedNarrative,
+        extractionMeta: extractedQueryProfile.extractionMeta,
+      },
+      topMatches: [],
+      uncheckedFactorsInQuery: [],
+      cohortSummary: {
+        totalCohortCount: 0,
+        matchedCohortCount: 0,
+        cohortProvenance: 'none',
+        isSynthetic: false,
+        provenanceDisclaimer: 'Synthetic reference cohort is disabled and no custom cohort provided',
+      },
+      isSyntheticAllowed: config.isSimilaritySyntheticDataAllowed ? config.isSimilaritySyntheticDataAllowed() : true,
+    };
+  }
+
   // 3. Fit numeric ranges strictly on reference cohort (never on queryPatient)
   const cohortModel = fitPatientCohortModel(referenceProfiles);
 
   // 4. Rank matches with Custom Parameter Weights & Bayesian Coverage Shrinkage
   const rankingResult = rankCohortMatches(cohortModel, extractedQueryProfile, options);
 
+  const cohortProvenance = options.cohortProvenance || (options.cohortSource === 'clinical' ? 'clinical' : 'synthetic');
+  const labeledMatches = rankingResult.topMatches.map((m) => ({
+    ...m,
+    isSynthetic: cohortProvenance === 'synthetic',
+    provenance: cohortProvenance,
+  }));
+
   // 5. Build descriptive cohort synthesis
   const cohortSummary = buildDescriptiveCohortSummary(
-    rankingResult.topMatches,
+    labeledMatches,
     rankingResult.uncheckedFactorsInQuery
   );
+  cohortSummary.cohortProvenance = cohortProvenance;
+  cohortSummary.isSynthetic = cohortProvenance === 'synthetic';
+  cohortSummary.provenanceDisclaimer = cohortProvenance === 'synthetic'
+    ? 'Synthetic example cases — Measurements, outcomes, and interventions are simulated.'
+    : 'Clinical reference cohort';
 
   const latencyMs = Date.now() - start;
 
@@ -276,6 +318,7 @@ async function evaluateDirectSimilarity({ queryPatient, referenceCohort = null, 
   return {
     modelVersion: rankingResult.modelVersion,
     latencyMs,
+    cohortProvenance,
     extractedQueryProfile: {
       structured: extractedQueryProfile.structured,
       extractedSymptoms: extractedQueryProfile.extractedSymptomsList,
@@ -284,6 +327,7 @@ async function evaluateDirectSimilarity({ queryPatient, referenceCohort = null, 
     },
     rankingMeta: {
       cohortSource: options.cohortSource || (referenceCohort ? 'custom' : 'curated'),
+      cohortProvenance,
       totalCandidatesEvaluated: rankingResult.totalCandidatesEvaluated,
       gestationalWindowWeeksUsed: rankingResult.gestationalWindowWeeksUsed,
       shrinkageStrengthK: options.shrinkageK ?? config.shrinkageStrengthK,
@@ -296,7 +340,7 @@ async function evaluateDirectSimilarity({ queryPatient, referenceCohort = null, 
       customFeatureWeightsApplied: options.featureWeights || {},
       customSymptomWeightsApplied: options.symptomItemWeights || {},
     },
-    topMatches: rankingResult.topMatches,
+    topMatches: labeledMatches,
     uncheckedFactorsInQuery: rankingResult.uncheckedFactorsInQuery,
     cohortSummary,
   };

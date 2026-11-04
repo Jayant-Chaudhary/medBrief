@@ -199,11 +199,12 @@ async function getSessionDraft(sessionId, callerUserId = null) {
 
 /**
  * Clinician reviews, edits, and approves or rejects a draft.
- * Approving commits the finalized note text into consultation_notes.
+ * Approving commits the finalized note text into consultation_notes atomically.
  *
  * @param {Object} params
  * @param {string} params.sessionId
- * @param {string} params.doctorUserId
+ * @param {string} [params.doctorUserId]
+ * @param {string} [params.draftId]
  * @param {string} params.action - 'approve' | 'reject'
  * @param {Object} [params.editedDoctorNotes]
  * @param {string} [params.rejectionReason]
@@ -211,11 +212,18 @@ async function getSessionDraft(sessionId, callerUserId = null) {
  */
 async function reviewSessionDraft({
   sessionId,
-  doctorUserId,
+  doctorUserId = null,
+  draftId = null,
   action,
   editedDoctorNotes = null,
   rejectionReason = null,
 }) {
+  if (!['approve', 'reject'].includes(action)) {
+    const err = new Error('Invalid review action. Must be "approve" or "reject"');
+    err.status = 400;
+    throw err;
+  }
+
   const { data: session, error: sessErr } = await supabaseAdmin
     .from('consult_sessions')
     .select('id, appointment_id, doctor_id')
@@ -234,46 +242,109 @@ async function reviewSessionDraft({
     throw err;
   }
 
-  const { data: latestDraft } = await supabaseAdmin
-    .from('consult_drafts')
-    .select('*')
-    .eq('session_id', sessionId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  let targetDraft = null;
 
-  if (!latestDraft) {
-    const err = new Error('No draft found to review');
-    err.status = 404;
-    throw err;
-  }
+  if (draftId) {
+    const { data: foundDraft, error: draftErr } = await supabaseAdmin
+      .from('consult_drafts')
+      .select('*')
+      .eq('id', draftId)
+      .eq('session_id', sessionId)
+      .maybeSingle();
 
-  const updates = {
-    updated_at: new Date().toISOString(),
-  };
-
-  if (action === 'approve') {
-    updates.status = 'approved';
-    if (editedDoctorNotes) {
-      updates.doctor_notes = editedDoctorNotes;
+    if (draftErr || !foundDraft) {
+      const err = new Error('Draft not found for this session');
+      err.status = 404;
+      throw err;
     }
 
-    // Commit final notes into consultation_notes table for the clinician dashboard
-    const finalNotes = editedDoctorNotes || latestDraft.doctor_notes;
-    const planText = (finalNotes.plan_and_recommendations || [])
-      .map((r) => `- ${r.recommendation}`)
-      .join('\n');
+    // Check if a newer draft exists (reject stale review)
+    const { data: newerDrafts } = await supabaseAdmin
+      .from('consult_drafts')
+      .select('id')
+      .eq('session_id', sessionId)
+      .gt('created_at', foundDraft.created_at)
+      .limit(1);
 
-    const formattedNotesText = [
-      finalNotes.chief_complaint ? `CHIEF COMPLAINT:\n${finalNotes.chief_complaint}\n` : '',
-      finalNotes.vitals_observed ? `VITALS OBSERVED:\n${finalNotes.vitals_observed}\n` : '',
-      finalNotes.assessment ? `ASSESSMENT:\n${finalNotes.assessment}\n` : '',
-      planText ? `PLAN & RECOMMENDATIONS:\n${planText}` : '',
-    ]
-      .filter(Boolean)
-      .join('\n');
+    if (newerDrafts && newerDrafts.length > 0) {
+      const err = new Error('Stale draft review: a newer draft exists');
+      err.status = 409;
+      throw err;
+    }
 
-    await supabaseAdmin
+    targetDraft = foundDraft;
+  } else {
+    const { data: latestDraft } = await supabaseAdmin
+      .from('consult_drafts')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!latestDraft) {
+      const err = new Error('No draft found to review');
+      err.status = 404;
+      throw err;
+    }
+
+    targetDraft = latestDraft;
+  }
+
+  // Idempotent repeated approval
+  if (targetDraft.status === 'approved' && action === 'approve') {
+    return targetDraft;
+  }
+
+  // Format notes text for consultation_notes
+  const finalNotes = editedDoctorNotes || targetDraft.doctor_notes || {};
+  const planText = (finalNotes.plan_and_recommendations || [])
+    .map((r) => `- ${r.recommendation}`)
+    .join('\n');
+
+  const formattedNotesText = [
+    finalNotes.chief_complaint ? `CHIEF COMPLAINT:\n${finalNotes.chief_complaint}\n` : '',
+    finalNotes.vitals_observed ? `VITALS OBSERVED:\n${finalNotes.vitals_observed}\n` : '',
+    finalNotes.assessment ? `ASSESSMENT:\n${finalNotes.assessment}\n` : '',
+    planText ? `PLAN & RECOMMENDATIONS:\n${planText}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  // Attempt atomic database transaction via RPC if available
+  if (typeof supabaseAdmin.rpc === 'function') {
+    try {
+      const { data: rpcData, error: rpcErr } = await supabaseAdmin.rpc('review_consult_draft_atomic', {
+        p_session_id: sessionId,
+        p_draft_id: targetDraft.id,
+        p_doctor_id: doctorUserId || session.doctor_id,
+        p_action: action,
+        p_edited_doctor_notes: editedDoctorNotes,
+        p_notes_text: formattedNotesText,
+        p_rejection_reason: rejectionReason,
+      });
+
+      if (!rpcErr && rpcData) {
+        return rpcData;
+      }
+
+      if (rpcErr && rpcErr.code !== 'PGRST202' && !rpcErr.message?.includes('could not find')) {
+        const err = new Error(rpcErr.message || 'Atomic draft review failed');
+        if (rpcErr.message?.includes('Stale draft')) err.status = 409;
+        else if (rpcErr.message?.includes('Only the attending doctor')) err.status = 403;
+        else if (rpcErr.message?.includes('not found')) err.status = 404;
+        else err.status = 500;
+        throw err;
+      }
+    } catch (rpcEx) {
+      if (rpcEx.status) throw rpcEx;
+      // Fall through to JS-managed operations if RPC function is missing/unsupported in current env
+    }
+  }
+
+  // Fallback: JS execution with strict error checking and transactional integrity
+  if (action === 'approve') {
+    const { error: notesErr } = await supabaseAdmin
       .from('consultation_notes')
       .upsert(
         {
@@ -284,27 +355,50 @@ async function reviewSessionDraft({
         },
         { onConflict: 'appointment_id' }
       );
-  } else if (action === 'reject') {
-    updates.status = 'rejected';
-    if (rejectionReason) {
-      updates.review_reasons = [...(latestDraft.review_reasons || []), `rejected: ${rejectionReason}`];
+
+    if (notesErr) {
+      const err = new Error(`Failed to save consultation notes: ${notesErr.message || notesErr}`);
+      err.status = 500;
+      throw err;
     }
-  } else {
-    const err = new Error('Invalid review action. Must be "approve" or "reject"');
-    err.status = 400;
-    throw err;
+
+    const { data: updatedDraft, error: updateErr } = await supabaseAdmin
+      .from('consult_drafts')
+      .update({
+        status: 'approved',
+        doctor_notes: editedDoctorNotes || targetDraft.doctor_notes,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', targetDraft.id)
+      .select()
+      .single();
+
+    if (updateErr) {
+      throw updateErr;
+    }
+
+    return updatedDraft;
+  } else if (action === 'reject') {
+    const reasons = [...(targetDraft.review_reasons || [])];
+    if (rejectionReason) {
+      reasons.push(`rejected: ${rejectionReason}`);
+    }
+
+    const { data: updatedDraft, error: updateErr } = await supabaseAdmin
+      .from('consult_drafts')
+      .update({
+        status: 'rejected',
+        review_reasons: reasons,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', targetDraft.id)
+      .select()
+      .single();
+
+    if (updateErr) throw updateErr;
+
+    return updatedDraft;
   }
-
-  const { data: updatedDraft, error: updateErr } = await supabaseAdmin
-    .from('consult_drafts')
-    .update(updates)
-    .eq('id', latestDraft.id)
-    .select()
-    .single();
-
-  if (updateErr) throw updateErr;
-
-  return updatedDraft;
 }
 
 module.exports = {

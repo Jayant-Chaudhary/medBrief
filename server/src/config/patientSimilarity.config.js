@@ -214,4 +214,14 @@ module.exports = Object.freeze({
     previous_gdm: { type: 'categorical', weight: 2.0, label: 'Previous Gestational Diabetes History' },
     known_thyroid_condition: { type: 'categorical', weight: 1.6, label: 'Known Thyroid History' },
   }),
+
+  // Feature Flags & Environment Evaluation
+  isPatientSimilarityEnabled: () => process.env.PATIENT_SIMILARITY_ENABLED !== 'false',
+  isSimilaritySyntheticDataAllowed: () => process.env.PATIENT_SIMILARITY_USE_SYNTHETIC_DATA !== 'false',
+  get enabled() {
+    return process.env.PATIENT_SIMILARITY_ENABLED !== 'false';
+  },
+  get useSyntheticData() {
+    return process.env.PATIENT_SIMILARITY_USE_SYNTHETIC_DATA !== 'false';
+  },
 });

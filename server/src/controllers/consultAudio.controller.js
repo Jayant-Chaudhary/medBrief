@@ -426,6 +426,7 @@ async function reviewDraft(req, res, next) {
     const { id: sessionId } = req.params;
     const doctorUserId = req.user?.id || req.sessionToken?.userId;
     const { action } = req.body;
+    const draftId = req.body.draftId ?? req.body.draft_id ?? null;
     const editedDoctorNotes = req.body.editedDoctorNotes ?? req.body.edited_doctor_notes ?? null;
     const rejectionReason = req.body.rejectionReason ?? req.body.rejection_reason ?? null;
 
@@ -436,6 +437,7 @@ async function reviewDraft(req, res, next) {
     const updated = await draftService.reviewSessionDraft({
       sessionId,
       doctorUserId,
+      draftId,
       action,
       editedDoctorNotes,
       rejectionReason,

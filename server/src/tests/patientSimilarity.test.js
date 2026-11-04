@@ -141,6 +141,26 @@ describe('Patient Similarity Model, Custom Weights & Dual Dataset Pipelines', ()
     expect(hbPriorityRes.body.topMatches[0].episodeId).toBe('cand-hb');
   });
 
+  it('accepts evaluate-direct with referenceCohort explicitly set to null or omitted', async () => {
+    const res = await request(app)
+      .post('/api/patient-similarity/evaluate-direct')
+      .send({
+        queryPatient: {
+          gestationalWeeks: 28,
+          age: 28,
+          vitals: { bp_systolic: 120, bp_diastolic: 80 },
+        },
+        referenceCohort: null,
+        options: {
+          extractorProvider: 'fake',
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('topMatches');
+    expect(Array.isArray(res.body.topMatches)).toBe(true);
+  });
+
   it('prevents sparse historical records from outranking rich clinical matches via Bayesian coverage shrinkage', async () => {
     const query = await extractPatientProfile(
       SAMPLE_DEMO_QUERIES.elevatedBpAndHeadacheScenario.queryPatient,

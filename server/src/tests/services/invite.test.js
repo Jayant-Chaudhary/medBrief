@@ -76,6 +76,7 @@ describe('Invite Service', () => {
       transport.sendMail.mockRejectedValue(new Error('Network timeout'));
 
       const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+      const debugSpy = jest.spyOn(logger, 'debug').mockImplementation(() => {});
 
       const result = await createAndSendInvite({
         appointmentId: 'appt-1',
@@ -89,7 +90,14 @@ describe('Invite Service', () => {
         expect.objectContaining({ scope: 'invite', appointmentId: 'appt-1', error: 'Network timeout' })
       );
 
+      // Verify debug logs never print the secret token or full URL
+      for (const call of debugSpy.mock.calls) {
+        expect(call[0]).not.toContain('/invite/');
+        expect(call[0]).not.toContain(result.token);
+      }
+
       warnSpy.mockRestore();
+      debugSpy.mockRestore();
     });
   });
 });

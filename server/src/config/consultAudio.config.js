@@ -85,5 +85,5 @@ module.exports = {
   draftTimeoutMs: Number(env.DRAFT_TIMEOUT_MS || 60000),
 
   // Audio Retention
-  audioRetentionAfterReviewHours: Number(env.AUDIO_RETENTION_AFTER_REVIEW_HOURS || 0),
+  audioRetentionAfterReviewHours: Number(env.AUDIO_RETENTION_AFTER_REVIEW_HOURS || 24),
 };

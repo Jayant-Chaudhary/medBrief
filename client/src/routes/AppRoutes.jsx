@@ -11,6 +11,7 @@ import HomePage from '../pages/home/HomePage';
 import ProfilePage from '../pages/profile/ProfilePage';
 import ReportsPage from '../pages/reports/ReportsPage';
 import VisitSummaryPage from '../pages/summary/VisitSummaryPage';
+import ReportsStep from '../pages/checkin/ReportsStep';
 import SymptomsStep from '../pages/checkin/SymptomsStep';
 import ChecklistStep from '../pages/checkin/ChecklistStep';
 import CheckinDonePage from '../pages/checkin/CheckinDonePage';
@@ -63,6 +64,7 @@ export function AppRoutes() {
 
       {/* Patient Check-in Flow Routes */}
       <Route element={<ProtectedRoute><CheckinLayout /></ProtectedRoute>}>
+        <Route path="/checkin/reports" element={<ReportsStep />} />
         <Route path="/checkin/symptoms" element={<SymptomsStep />} />
         <Route path="/checkin/checklist" element={<ChecklistStep />} />
       </Route>

@@ -85,13 +85,6 @@ async function persistReport({ patientId, appointmentId, storagePath, reportDate
     savedMetrics = insertedMetrics;
   }
 
-  // Uploading against an appointment shares it with that appointment too.
-  if (appointmentId) {
-    await supabaseAdmin
-      .from('appointment_lab_reports')
-      .upsert({ appointment_id: appointmentId, lab_report_id: labReport.id }, { onConflict: 'appointment_id,lab_report_id' });
-  }
-
   await maybeFlagReportForTriage({ labReport, metrics: savedMetrics });
 
   return { labReport, metrics: savedMetrics };

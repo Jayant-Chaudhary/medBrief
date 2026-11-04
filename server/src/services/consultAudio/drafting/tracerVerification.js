@@ -35,6 +35,35 @@ async function buildStructuredContext({ appointmentId, patientId }) {
   };
 
   try {
+    let verifiedPatientId = patientId;
+
+    // Verify appointment and patient alignment
+    if (appointmentId) {
+      const { data: appointment, error: apptError } = await supabaseAdmin
+        .from('appointments')
+        .select('id, patient_id, clinician_id')
+        .eq('id', appointmentId)
+        .maybeSingle();
+
+      if (apptError || !appointment) {
+        logger.warn('Appointment not found during structured context build', {
+          scope: 'consult-tracer',
+          appointmentId,
+        });
+        return structuredData;
+      }
+
+      if (patientId && appointment.patient_id && appointment.patient_id !== patientId) {
+        logger.warn('Mismatched patientId for appointment during structured context build', {
+          scope: 'consult-tracer',
+          appointmentId,
+        });
+        return structuredData;
+      }
+
+      verifiedPatientId = appointment.patient_id || patientId;
+    }
+
     // 1. Pre-visit questionnaire responses
     if (appointmentId) {
       const { data: qResponses } = await supabaseAdmin
@@ -58,11 +87,11 @@ async function buildStructuredContext({ appointmentId, patientId }) {
 
     // 2. Active pregnancy episode
     let episodeId = null;
-    if (patientId) {
+    if (verifiedPatientId) {
       const { data: episode } = await supabaseAdmin
         .from('pregnancy_episodes')
         .select('id, due_date, gravida, para, blood_group, history_notes')
-        .eq('patient_id', patientId)
+        .eq('patient_id', verifiedPatientId)
         .eq('status', 'ongoing')
         .order('created_at', { ascending: false })
         .limit(1)
@@ -81,13 +110,14 @@ async function buildStructuredContext({ appointmentId, patientId }) {
     }
 
     // 3. Verified lab metrics (needs_review = false OR reviewed_by IS NOT NULL)
-    if (patientId) {
-      const { data: labReports } = await supabaseAdmin
-        .from('lab_reports')
-        .select('id')
-        .eq('patient_id', patientId);
+    // Enforces explicit patient sharing: only reports explicitly shared with this appointment are included!
+    if (appointmentId) {
+      const { data: sharedRows } = await supabaseAdmin
+        .from('appointment_lab_reports')
+        .select('lab_report_id')
+        .eq('appointment_id', appointmentId);
 
-      const reportIds = (labReports || []).map((r) => r.id);
+      const reportIds = (sharedRows || []).map((r) => r.lab_report_id).filter(Boolean);
       if (reportIds.length > 0) {
         const { data: metrics } = await supabaseAdmin
           .from('lab_report_metrics')
@@ -152,11 +182,11 @@ async function buildStructuredContext({ appointmentId, patientId }) {
     }
 
     // 6. Vitals logs
-    if (patientId) {
+    if (verifiedPatientId) {
       const vitalsQuery = supabaseAdmin
         .from('vitals_logs')
         .select('id, metric_key, value, unit, recorded_at')
-        .eq('patient_id', patientId)
+        .eq('patient_id', verifiedPatientId)
         .order('recorded_at', { ascending: false })
         .limit(10);
 

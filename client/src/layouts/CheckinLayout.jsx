@@ -13,8 +13,21 @@ export default function CheckinLayout() {
   };
 
   const steps = [
-    { label: "Symptoms", isActive: location.pathname.includes('symptoms'), isCompleted: location.pathname.includes('checklist') || location.pathname.includes('done') },
-    { label: "Checklist", isActive: location.pathname.includes('checklist'), isCompleted: location.pathname.includes('done') }
+    {
+      label: "Reports",
+      isActive: location.pathname.includes('reports'),
+      isCompleted: location.pathname.includes('symptoms') || location.pathname.includes('checklist') || location.pathname.includes('done'),
+    },
+    {
+      label: "Symptoms",
+      isActive: location.pathname.includes('symptoms'),
+      isCompleted: location.pathname.includes('checklist') || location.pathname.includes('done'),
+    },
+    {
+      label: "Checklist",
+      isActive: location.pathname.includes('checklist'),
+      isCompleted: location.pathname.includes('done'),
+    },
   ];
 
   return (

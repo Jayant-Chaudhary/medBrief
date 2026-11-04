@@ -9,10 +9,17 @@
  * 5. Disclaimer allowance: permitting unverified numbers with required disclaimers.
  */
 
+const supabaseAdmin = require('../../config/supabaseAdminClient');
+const { ok, mockTables } = require('../helpers/supabaseMock');
 const {
+  buildStructuredContext,
   buildTracerCatalog,
   postCheckDraft,
 } = require('../../services/consultAudio/drafting/tracerVerification');
+
+jest.mock('../../config/supabaseAdminClient', () => ({
+  from: jest.fn(),
+}));
 
 describe('Tracer Verification Engine (Phase 8)', () => {
   describe('buildTracerCatalog', () => {
@@ -204,6 +211,90 @@ describe('Tracer Verification Engine (Phase 8)', () => {
       });
 
       expect(result.reviewReasons).not.toContain('unverified_numeric_claim');
+    });
+  });
+
+  describe('buildStructuredContext with explicit report sharing', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    test('only loads metrics from reports explicitly shared with the appointment', async () => {
+      const chains = mockTables(supabaseAdmin, {
+        appointments: ok({ id: 'appt-1', patient_id: 'patient-1', clinician_id: 'dr-1' }),
+        questionnaire_responses: ok([]),
+        pregnancy_episodes: ok(null),
+        appointment_lab_reports: ok([{ lab_report_id: 'rep-shared' }]),
+        lab_report_metrics: ok([
+          {
+            id: 'm-1',
+            standard_key: 'hemoglobin',
+            raw_key: 'hb',
+            parsed_value: 12.5,
+            needs_review: false,
+            reviewed_value: null,
+            reviewed_by: null,
+            unit_standard: 'g/dL',
+          },
+        ]),
+        vitals_logs: ok([]),
+      });
+
+      const context = await buildStructuredContext({
+        appointmentId: 'appt-1',
+        patientId: 'patient-1',
+      });
+
+      expect(chains.appointment_lab_reports[0].eq).toHaveBeenCalledWith('appointment_id', 'appt-1');
+      expect(chains.lab_report_metrics[0].in).toHaveBeenCalledWith('lab_report_id', ['rep-shared']);
+      expect(context.verifiedLabMetrics).toHaveLength(1);
+      expect(context.verifiedLabMetrics[0].metricKey).toBe('hemoglobin');
+      expect(context.verifiedLabMetrics[0].value).toBe(12.5);
+
+      // Verify that tracers built from this context only include the shared report metric
+      const catalog = buildTracerCatalog(context);
+      expect(catalog).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            tracer_id: 'TRACER_HEMOGLOBIN_12.5',
+            value: 12.5,
+          }),
+        ])
+      );
+    });
+
+    test('excludes unshared patient reports when no reports are shared with the visit', async () => {
+      mockTables(supabaseAdmin, {
+        appointments: ok({ id: 'appt-1', patient_id: 'patient-1', clinician_id: 'dr-1' }),
+        questionnaire_responses: ok([]),
+        pregnancy_episodes: ok(null),
+        appointment_lab_reports: ok([]), // Nothing shared
+        vitals_logs: ok([]),
+      });
+
+      const context = await buildStructuredContext({
+        appointmentId: 'appt-1',
+        patientId: 'patient-1',
+      });
+
+      expect(context.verifiedLabMetrics).toEqual([]);
+      const catalog = buildTracerCatalog(context);
+      expect(catalog).toEqual([]);
+    });
+
+    test('refuses data and returns safe empty context when patientId does not match appointment', async () => {
+      mockTables(supabaseAdmin, {
+        appointments: ok({ id: 'appt-1', patient_id: 'patient-OTHER', clinician_id: 'dr-1' }),
+      });
+
+      const context = await buildStructuredContext({
+        appointmentId: 'appt-1',
+        patientId: 'patient-ATTACKER',
+      });
+
+      expect(context.verifiedLabMetrics).toEqual([]);
+      expect(context.pregnancyEpisode).toBeUndefined();
+      expect(context.intakeQuestionnaires).toEqual([]);
     });
   });
 });

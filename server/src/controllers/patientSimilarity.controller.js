@@ -50,7 +50,7 @@ async function evaluateDirect(req, res, next) {
       return badRequest(res, 'Request body must include a valid queryPatient object');
     }
 
-    if (body.referenceCohort !== undefined && !Array.isArray(body.referenceCohort)) {
+    if (body.referenceCohort !== undefined && body.referenceCohort !== null && !Array.isArray(body.referenceCohort)) {
       return badRequest(res, 'referenceCohort must be an array when provided');
     }
 

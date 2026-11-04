@@ -45,7 +45,12 @@ export function ConsultSimilarCasesWidget({ similarityData, loading = false }) {
             </span>
           </div>
         </button>
-        <Chip status="optimal">{topMatches.length} Similar Cases</Chip>
+        <div className="flex items-center gap-1.5">
+          <span className="rounded-full bg-slate-100 border border-slate-300 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+            Synthetic example cases
+          </span>
+          <Chip status="optimal">{topMatches.length} Similar Cases</Chip>
+        </div>
       </div>
 
       <div className="text-body-xs text-ink-2 pl-6">
@@ -54,6 +59,9 @@ export function ConsultSimilarCasesWidget({ similarityData, loading = false }) {
 
       {open && (
         <div className="space-y-3 pt-2 pl-6 border-t border-line mt-2">
+          <div className="rounded-lg bg-subcanvas/70 border border-line p-2 text-label-xs text-ink-3">
+            Synthetic example cases — Measurements, outcomes, and interventions are simulated.
+          </div>
           {/* Matched Factors */}
           <div>
             <span className="text-label-xs font-semibold text-ink-3 uppercase tracking-wider block mb-1">

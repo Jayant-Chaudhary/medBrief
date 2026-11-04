@@ -59,8 +59,11 @@ async function createAndSendInvite({ appointmentId, patientEmail, patientFullNam
       appointmentId,
       error: emailErr.message,
     });
-    // The link embeds the invite secret, so it only shows at debug level.
-    log.debug(`invite link (share manually): ${inviteLink}`, { appointmentId });
+    // Record that manual handover is available without logging the raw secret token link.
+    log.debug('invite token generated for manual clinician handover', {
+      appointmentId,
+      inviteId: invite.id,
+    });
   }
 
   // The link is returned so the clinician UI can show and copy it. SMTP is

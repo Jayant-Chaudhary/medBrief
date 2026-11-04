@@ -259,43 +259,21 @@ describe('Appointments API', () => {
       expect(response.status).toBe(200);
     });
 
-    it("shares the patient's earlier reports with the appointment on check-in", async () => {
+    it('does not alter report sharing automatically on check-in', async () => {
       const chains = mockTables(supabaseAdmin, {
         profiles: profileRow('patient'),
         appointments: [
           ok({ ...ownAppointment, patient_id: mockUser.id }),
           ok({ id: 'appt-1', patient_id: mockUser.id, status: 'checked_in' }),
         ],
-        lab_reports: ok([{ id: 'report-old-1' }, { id: 'report-old-2' }]),
-        appointment_lab_reports: ok(null),
-      });
-
-      const response = await send('patch', '/api/appointments/appt-1/status').send({ status: 'checked_in' });
-
-      expect(response.status).toBe(200);
-      expect(chains.appointment_lab_reports[0].upsert).toHaveBeenCalledWith(
-        [
-          { appointment_id: 'appt-1', lab_report_id: 'report-old-1' },
-          { appointment_id: 'appt-1', lab_report_id: 'report-old-2' },
-        ],
-        expect.objectContaining({ onConflict: 'appointment_id,lab_report_id' })
-      );
-    });
-
-    it('still checks in when sharing earlier reports fails', async () => {
-      mockTables(supabaseAdmin, {
-        profiles: profileRow('patient'),
-        appointments: [
-          ok({ ...ownAppointment, patient_id: mockUser.id }),
-          ok({ id: 'appt-1', patient_id: mockUser.id, status: 'checked_in' }),
-        ],
-        lab_reports: { data: null, error: { message: 'db down' } },
       });
 
       const response = await send('patch', '/api/appointments/appt-1/status').send({ status: 'checked_in' });
 
       expect(response.status).toBe(200);
       expect(response.body.status).toBe('checked_in');
+      expect(chains.appointment_lab_reports).toBeUndefined();
+      expect(chains.lab_reports).toBeUndefined();
     });
 
     it('should not let a patient mark their appointment completed', async () => {

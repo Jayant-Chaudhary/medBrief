@@ -32,9 +32,16 @@ export function SimilarCasesTriageCard({
   loading = false,
   error = null,
   onRefresh,
+  onLoadDemo,
+  onResetPatient,
+  syntheticAllowed = true,
 }) {
   const [open, setOpen] = useState(true);
   const [selectedCaseIdx, setSelectedCaseIdx] = useState(0);
+
+  if (similarityData?.enabled === false) {
+    return null;
+  }
 
   if (loading) {
     return (
@@ -50,8 +57,64 @@ export function SimilarCasesTriageCard({
     );
   }
 
-  if (error || !similarityData?.topMatches) {
-    return null;
+  if (error) {
+    return (
+      <section className="card shrink-0 p-5 border border-amber-200 bg-surface">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-cypress" />
+            <h2 className="font-display text-head-sm text-ink">
+              Similar Historical Cases & Outcomes
+            </h2>
+          </div>
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="text-label-xs text-cypress font-medium px-2.5 py-1 rounded-lg border border-cypress/30 hover:bg-cypress/10 transition-colors"
+            >
+              Retry Calculation
+            </button>
+          )}
+        </div>
+        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 flex items-start gap-2.5">
+          <AlertCircle className="h-4 w-4 text-amber-700 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-label-md font-semibold text-amber-900">
+              Could Not Evaluate Similar Cases
+            </p>
+            <p className="text-body-sm text-amber-800 mt-0.5">{error}</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (!similarityData) {
+    return (
+      <section className="card shrink-0 p-5 border border-line bg-surface">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-cypress" />
+            <h2 className="font-display text-head-sm text-ink">
+              Similar Historical Cases & Outcomes
+            </h2>
+          </div>
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="text-label-xs text-cypress font-medium px-2.5 py-1 rounded-lg border border-cypress/30 hover:bg-cypress/10 transition-colors"
+            >
+              Evaluate Cohort
+            </button>
+          )}
+        </div>
+        <p className="text-body-sm text-ink-3 mt-2">
+          Compares this patient against historical pregnancy trajectories based on gestational age, vitals, and lab observations.
+        </p>
+      </section>
+    );
   }
 
   const { topMatches = [], uncheckedFactorsInQuery = [], cohortSummary } = similarityData;
@@ -81,6 +144,9 @@ export function SimilarCasesTriageCard({
           <span className="hidden sm:inline-flex rounded-full bg-cypress/10 px-2.5 py-0.5 text-label-xs font-semibold text-cypress">
             {topMatches.length} comparable mothers
           </span>
+          <span className="rounded-full bg-slate-100 border border-slate-300 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700">
+            Synthetic example cases
+          </span>
         </button>
 
         <div className="flex items-center gap-2">
@@ -104,6 +170,88 @@ export function SimilarCasesTriageCard({
       {/* ── Collapsible Body ────────────────────────────────────────────── */}
       {open && (
         <div className="space-y-4 border-t border-line px-5 py-4">
+          {/* Synthetic Provenance Disclaimer */}
+          <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5 text-xs text-slate-600 flex items-center justify-between">
+            <span className="font-medium text-slate-700">
+              Synthetic example cases — Measurements, outcomes, and interventions are simulated.
+            </span>
+            <span className="text-[11px] text-slate-500">Decision-support reference</span>
+          </div>
+
+          {/* Demo Scenario Active Notice */}
+          {similarityData.isDemoSample && (
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 p-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-indigo-600 shrink-0" />
+                <span className="text-label-sm font-semibold text-indigo-950">
+                  Demo Test Scenario Active (Simulated Maternal Query)
+                </span>
+              </div>
+              {onResetPatient && (
+                <button
+                  type="button"
+                  onClick={onResetPatient}
+                  className="text-label-xs text-indigo-700 font-semibold px-2.5 py-1 rounded-md bg-white border border-indigo-200 hover:bg-indigo-100 transition-colors shadow-2xs"
+                >
+                  Reset to Actual Patient
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Insufficient Observations Alert */}
+          {(similarityData.insufficientData || topMatches.length === 0) && !similarityData.isDemoSample && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 space-y-3">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="h-4 w-4 text-amber-700 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-label-md font-semibold text-amber-900">
+                    Insufficient Observations for Cohort Matching
+                  </p>
+                  <p className="text-body-sm text-amber-800 mt-1">
+                    Similarity matching compares clinical vitals (blood pressure), gestational age, and lab tests against historical outcomes. This patient record has no clinical measurements recorded yet.
+                  </p>
+                  {similarityData.missingFactors?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      <span className="text-[11px] font-medium text-amber-700 self-center mr-1">Missing factors:</span>
+                      {similarityData.missingFactors.map((f) => (
+                        <span key={f} className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900 border border-amber-200">
+                          {f.replace('_', ' ')}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {onLoadDemo && syntheticAllowed && (
+                <div className="border-t border-amber-200/80 pt-2.5">
+                  <span className="text-label-xs font-semibold text-amber-950 block mb-1.5">
+                    Test the Similarity Model using a sample clinical query:
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onLoadDemo('elevatedBpAndHeadacheScenario')}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-950 text-xs font-semibold hover:bg-amber-100 transition-all shadow-2xs"
+                    >
+                      <Sparkles className="h-3.5 w-3.5 text-amber-700" />
+                      Test Scenario 1: Rising BP + Headache (28w G2P1)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onLoadDemo('anemiaAndFatigueScenario')}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-950 text-xs font-semibold hover:bg-amber-100 transition-all shadow-2xs"
+                    >
+                      <Sparkles className="h-3.5 w-3.5 text-amber-700" />
+                      Test Scenario 2: Maternal Anemia Hb 8.9 (26w G2P1)
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Unchecked Factors in Current Visit Alert */}
           {uncheckedFactorsInQuery.length > 0 && (
             <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3.5">
@@ -139,16 +287,17 @@ export function SimilarCasesTriageCard({
           )}
 
           {/* Top Cases Tabs / Pill Selector */}
-          <div>
-            <div className="flex items-center justify-between pb-2">
-              <span className="text-label-xs font-semibold text-ink-3 uppercase tracking-wider">
-                Ranked Historical Matches
-              </span>
-              <span className="text-body-xs text-ink-3">
-                Select a case to inspect clinical trajectory
-              </span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {topMatches.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between pb-2">
+                <span className="text-label-xs font-semibold text-ink-3 uppercase tracking-wider">
+                  Ranked Historical Matches
+                </span>
+                <span className="text-body-xs text-ink-3">
+                  Select a case to inspect clinical trajectory
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {topMatches.map((m, idx) => {
                 const isSelected = idx === selectedCaseIdx;
                 return (
@@ -186,6 +335,7 @@ export function SimilarCasesTriageCard({
               })}
             </div>
           </div>
+          )}
 
           {/* Active Selected Case Details */}
           {topMatch && (

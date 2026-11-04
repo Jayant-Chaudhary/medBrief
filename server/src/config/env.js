@@ -46,8 +46,40 @@ module.exports = {
     pendingExtractionMax: Number(process.env.OCR_PENDING_EXTRACTION_MAX || 100),
   },
   maxUploadBytes: Number(process.env.MAX_UPLOAD_BYTES || 20 * 1024 * 1024),
+  nodeEnv: process.env.NODE_ENV || 'development',
+  _demoSelfVerify: process.env.DEMO_SELF_VERIFY === 'true',
+  isSelfVerifyPermitted() {
+    const currentEnv = process.env.NODE_ENV || this.nodeEnv || 'development';
+    if (currentEnv !== 'development' && currentEnv !== 'test') {
+      return false;
+    }
+    const configured = this._demoSelfVerify !== undefined
+      ? this._demoSelfVerify
+      : process.env.DEMO_SELF_VERIFY === 'true';
+    return Boolean(configured);
+  },
   // Demo only: lets a clinician verify their own account from the
-  // verification-pending page. Set DEMO_SELF_VERIFY=false to switch it off
-  // once real (administrator) verification is in place.
-  demoSelfVerify: process.env.DEMO_SELF_VERIFY !== 'false',
+  // verification-pending page in development. Requires both NODE_ENV=development (or test)
+  // and DEMO_SELF_VERIFY=true.
+  // Production unconditionally disables self-verification even if DEMO_SELF_VERIFY is set.
+  get demoSelfVerify() {
+    return this.isSelfVerifyPermitted();
+  },
+  set demoSelfVerify(val) {
+    this._demoSelfVerify = val;
+  },
+
+  // Patient Similarity Model Feature Flags
+  isPatientSimilarityEnabled() {
+    return process.env.PATIENT_SIMILARITY_ENABLED !== 'false';
+  },
+  isSimilaritySyntheticDataAllowed() {
+    return process.env.PATIENT_SIMILARITY_USE_SYNTHETIC_DATA !== 'false';
+  },
+  get patientSimilarityEnabled() {
+    return this.isPatientSimilarityEnabled();
+  },
+  get patientSimilarityUseSyntheticData() {
+    return this.isSimilaritySyntheticDataAllowed();
+  },
 };
