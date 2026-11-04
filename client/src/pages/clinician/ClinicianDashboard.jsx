@@ -413,7 +413,29 @@ export function ClinicianDashboard() {
         </div>
       );
     }
-    if (!selected) return renderTodaysCards();
+    if (selectedAppointmentId) {
+      if (queueLoading || (loading && !data)) {
+        return (
+          <div className="flex flex-1 items-center justify-center gap-3 text-ink-3" role="status" aria-label="Loading" aria-busy="true">
+            <Spinner /> Loading patient record…
+          </div>
+        );
+      }
+      if (queueError || error || !selected) {
+        return (
+          <div className="card flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+            <p className="font-display text-head-sm text-terracotta">Error loading patient details</p>
+            <p className="max-w-md text-body-md text-ink-2">{(queueError || error)?.message || 'Patient record could not be found.'}</p>
+            <button onClick={close} className="mt-4 text-primary font-medium">
+              Back to Dashboard
+            </button>
+          </div>
+        );
+      }
+      if (!data) return null;
+    } else if (!selected) {
+      return renderTodaysCards();
+    }
     if (loading && !data) {
       return (
         <div className="flex flex-1 items-center justify-center gap-3 text-ink-3">

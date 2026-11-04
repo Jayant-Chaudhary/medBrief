@@ -742,10 +742,21 @@ async function runAgentLoop({
       provider,
       settings,
     });
+    if (doneCheck.done || activeChecklist.every((c) => c.done)) {
+      return {
+        type: 'done',
+        message: doneCheck.message || 'All done.',
+        checklist: activeChecklist.map((c) => ({ ...c, done: true })),
+        note: nav.note,
+        steps: [],
+        source: 'agent',
+        attempts: 1,
+      };
+    }
     return {
-      type: 'done',
-      message: doneCheck.message || 'All done.',
-      checklist: activeChecklist.map((c) => ({ ...c, done: true })),
+      type: 'unsupported',
+      message: doneCheck.message || (settings && settings.unsupportedMessage) || config.unsupportedMessage,
+      checklist: activeChecklist,
       note: nav.note,
       steps: [],
       source: 'agent',
