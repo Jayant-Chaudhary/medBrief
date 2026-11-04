@@ -49,7 +49,7 @@ describe('Record Consultation & Safety Guards (T4 - Server)', () => {
             kind: 'button',
             name: 'Record Consultation',
             effect: 'send',
-            sideEffect: 'This will open the consultation recording window. Recording stays manual.',
+            sideEffect: 'Opens the recording window and starts a consultation session for this visit. You start the recording yourself.',
           },
         ],
       },
@@ -63,7 +63,7 @@ describe('Record Consultation & Safety Guards (T4 - Server)', () => {
     expect(press.id || press.ref).toMatch(/open_audio_consult|btn_rec/);
     expect(press.effect || press.risk).toMatch(/send|save|confirm/);
     expect(press.sideEffect || step.sideEffect).toBe(
-      'This will open the consultation recording window. Recording stays manual.'
+      'Opens the recording window and starts a consultation session for this visit. You start the recording yourself.'
     );
   });
 
@@ -72,7 +72,7 @@ describe('Record Consultation & Safety Guards (T4 - Server)', () => {
     expect(btn).toBeTruthy();
     expect(['save', 'send']).toContain(btn.effect);
     expect(btn.sideEffect).toBe(
-      'This will open the consultation recording window. Recording stays manual.'
+      'Opens the recording window and starts a consultation session for this visit. You start the recording yourself.'
     );
   });
 
@@ -87,7 +87,7 @@ describe('Record Consultation & Safety Guards (T4 - Server)', () => {
     );
     expect(res.formStep.press).toMatchObject({
       id: 'open_audio_consult',
-      sideEffect: 'This will open the consultation recording window. Recording stays manual.',
+      sideEffect: 'Opens the recording window and starts a consultation session for this visit. You start the recording yourself.',
     });
   });
 });

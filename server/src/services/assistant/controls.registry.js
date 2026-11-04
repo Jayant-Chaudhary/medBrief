@@ -217,7 +217,8 @@ const CONTROLS = {
       { id: 'close_notes', label: 'Close notes', effect: 'ui' },
       { id: 'save_notes', label: 'Save notes', effect: 'save', sideEffect: 'Saves consultation notes for this visit.' },
       // Opening the recording window starts a consultation session on the server; recording itself stays the doctor's.
-      { id: 'open_audio_consult', label: 'Open audio consult', effect: 'send', sideEffect: 'This will open the consultation recording window. Recording stays manual.', aliases: ['record consultation', 'open recording', 'open audio consult', 'audio consult'] },
+      { id: 'open_transcript_logs', label: 'Transcript Logs', effect: 'save', sideEffect: 'Opens the consultation window and starts a consultation session for this visit if none exists.' },
+      { id: 'open_audio_consult', label: 'Open audio consult', effect: 'save', sideEffect: 'Opens the recording window and starts a consultation session for this visit. You start the recording yourself.', aliases: ['record consultation', 'open recording', 'open audio consult', 'audio consult'] },
       // Only returns to the list of today's visits; it does not end the visit.
       { id: 'close_visit', label: 'Back to today\'s visits', effect: 'ui' },
     ],

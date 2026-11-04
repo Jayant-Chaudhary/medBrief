@@ -161,6 +161,15 @@ export function ClinicianDashboard() {
           summary: () => [{ label: 'Action', value: 'Save consultation notes' }],
           available: () => Boolean(selected),
         },
+        open_transcript_logs: {
+          run: () => {
+            setAudioConsultTab('TRANSCRIPT');
+            setAudioConsultOpen(true);
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Open transcript logs' }],
+          available: () => Boolean(selected),
+        },
         open_audio_consult: {
           run: () => {
             setAudioConsultTab('RECORD');
@@ -673,8 +682,8 @@ export function ClinicianDashboard() {
             }}
             className="flex items-center gap-2 rounded-full bg-rose-600 px-4 py-2 text-label-md font-semibold text-white shadow-sm transition-all hover:bg-rose-700 hover:shadow active:scale-95"
             data-assistant-id="dashboard.open_audio_consult"
-            data-assistant-effect="send"
-            data-assistant-side-effect="This will open the consultation recording window. Recording stays manual."
+            data-assistant-effect="save"
+            data-assistant-side-effect="Opens the recording window and starts a consultation session for this visit. You start the recording yourself."
             title="Record consultation audio with ambient speech-to-text"
           >
             <Mic className="h-4 w-4 shrink-0 text-white" />
@@ -688,7 +697,9 @@ export function ClinicianDashboard() {
               setAudioConsultOpen(true);
             }}
             className="flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-label-md font-semibold text-indigo-800 transition-all hover:bg-indigo-100 hover:border-indigo-300 active:scale-95"
-            data-assistant-effect="free"
+            data-assistant-id="dashboard.open_transcript_logs"
+            data-assistant-effect="save"
+            data-assistant-side-effect="Opens the consultation window and starts a consultation session for this visit if none exists."
             title="View consultation audio transcript and speech-to-text processing logs"
           >
             <FileAudio className="h-4 w-4 shrink-0 text-indigo-600" />

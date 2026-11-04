@@ -74,6 +74,7 @@ function classify(element, op) {
     return element.effect === 'save' || element.effect === 'send' ? 'confirm' : 'free';
   }
   if (element.effect === 'free') return 'free';
+  if (element.effect === 'save' || element.effect === 'send') return 'confirm';
   // Opening, showing and filtering stay harmless even inside a region that saves.
   if ((FREE_KINDS.has(element.kind) || FREE.test(element.name)) && !COMMITS.test(element.name)) return 'free';
   return 'confirm';
