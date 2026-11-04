@@ -63,3 +63,25 @@ test('compound starts at round zero, signed continuation stays in agent', async 
   const disabled = await assistant.handleStep({ ...base, settings: { ...settings, agentLoop: false }, message: 'open patients then open schedule', provider, round: 1, mode: first.mode, continuationToken: first.continuationToken });
   expect(disabled.type).toBe('unsupported');
 });
+
+test('agent loop config defaults to on, false turns it off', () => {
+  const orig = process.env.ASSISTANT_AGENT_LOOP;
+  try {
+    delete process.env.ASSISTANT_AGENT_LOOP;
+    jest.resetModules();
+    expect(require('../../config/assistant.config').agentLoop).toBe(true);
+
+    process.env.ASSISTANT_AGENT_LOOP = 'false';
+    jest.resetModules();
+    expect(require('../../config/assistant.config').agentLoop).toBe(false);
+
+    process.env.ASSISTANT_AGENT_LOOP = 'true';
+    jest.resetModules();
+    expect(require('../../config/assistant.config').agentLoop).toBe(true);
+  } finally {
+    if (orig !== undefined) process.env.ASSISTANT_AGENT_LOOP = orig;
+    else delete process.env.ASSISTANT_AGENT_LOOP;
+    jest.resetModules();
+  }
+});
+

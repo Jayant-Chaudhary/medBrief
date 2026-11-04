@@ -113,6 +113,11 @@ if (process.env.NODE_ENV !== 'test') {
     // Check ffmpeg availability
     await checkFfmpegInstalled();
 
+    const assistantConfig = require('./config/assistant.config');
+    logger.info(`Assistant agent loop is ${assistantConfig.agentLoop ? 'on' : 'off'}`, {
+      agentLoop: assistantConfig.agentLoop,
+    });
+
     // Start background transcription worker and orchestrator
     void audioCache.start();
     transcriptionWorker.startWorker();
