@@ -1,8 +1,6 @@
 # Assistant hardening report
 
-Scope authorized for this run: slices 1-3, then stop for review. Starting HEAD:
-`bf4d7b8`. Slices 4-6 (agent form actions, tab memory, whole-site coverage) are
-outside this batch. No live-model scores are claimed.
+Scope authorized for this run: slices 1-6. Starting HEAD: `bf4d7b8`.
 
 ## Slice 1: examples and routing
 
@@ -61,3 +59,41 @@ browser/model acceptance has been measured yet.
 Measured: the server command above passed 279/279 tests in 10 suites. The client
 command above with `src/tests/actionEvidence.test.js` appended passed 51/51 in
 6 suites. `npm.cmd run build` passed (same large-chunk warning).
+
+## Slice 3: safe writing, private rows and return to record
+
+Commit: `f2ad042` (`2026-11-04 13:27:41 +0530`).
+
+Plan: enforce append-only writing on textareas (`type` converted to `append`),
+prevent duplicate writes of the same value into the same field across rounds via
+SHA-256 digests (`server/src/services/assistant/writes.js`), enforce strict
+`private: true` refusal on `data-assistant-private` elements across both browser
+and server while allowing named `open_row` only from the request text, verify
+starting record ownership before allowing `go("return")` (`recordContext.js`),
+and prompt `"Which patient?"` when a patient-scoped action has no open record or
+named patient.
+
+Changed:
+- Added `server/src/services/assistant/writes.js` and `server/src/services/assistant/recordContext.js`
+- Added `client/src/components/assistant/recordContext.js`
+- Updated `pageReader.js`, `pageActions.js`, `planRunner.js`, `AssistantDock.jsx`, `bridgeRegistry.js`, `assistantService.js`
+- Updated `agent/actions.js`, `agent/navigator.js`, `assistant.service.js`, `execution.js`, `pageSnapshot.js`, `assistant.controller.js`, `assistant.validators.js`, `assistant.config.js`, `server/.env.example`
+- Added `server/src/tests/agent/safety.test.js` and `client/src/tests/assistantSafety.test.js`, plus updated `actions.test.js`, `assistant.page.test.js`, and `pageActions.test.js`
+
+Measured verification:
+
+```powershell
+cd server
+npm test -- --runInBand --coverage=false src/tests/assistant.test.js src/tests/services src/tests/agent
+# 20 suites, 484 tests passed
+cd ../client
+npm test -- --run src/tests
+# 12 suites, 83 tests passed
+npm run build
+# passed (4.95s; same Vite chunk size warning)
+```
+
+Known gaps: declared form controls (`data-assistant-id`) and bridge buttons are
+still hidden from the agent loop navigator (addressed in Slice 4); tab-scoped
+session memory is Slice 5; full clinician-side coverage evaluation and live
+browser verification are Slice 6.
