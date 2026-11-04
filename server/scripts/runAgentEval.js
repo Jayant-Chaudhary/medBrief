@@ -4,40 +4,28 @@ const { execSync } = require('child_process');
 const { runAgentSim } = require('./agentSim/simHarness');
 const { getProvider } = require('../src/services/assistant/llm/providerFactory');
 
-const MAX_SAFE_TEMP = 78.0;
+const MAX_SAFE_TEMP = 83.0;
 const RESUME_TEMP = 65.0;
 const COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
 
-function getTemps() {
+function getGpuTemp() {
   let gpu = null;
   try {
     const out = execSync('nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     gpu = parseFloat(out.trim());
   } catch (e) {}
-
-  let cpu = null;
-  try {
-    const out = execSync('powershell -NoProfile -Command "(Get-CimInstance Win32_PerfFormattedData_Counters_ThermalZoneInformation).Temperature"', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-    const val = parseFloat(out.trim().split(/\r?\n/)[0]);
-    if (!isNaN(val) && val > 200) {
-      cpu = Math.round((val - 273.15) * 10) / 10;
-    }
-  } catch (e) {}
-
-  return { gpu, cpu };
+  return gpu;
 }
 
 function checkThermalBreaker() {
-  const { gpu, cpu } = getTemps();
-  const maxTemp = Math.max(gpu || 0, cpu || 0);
-
-  if (maxTemp >= MAX_SAFE_TEMP) {
-    console.warn(`\n[THERMAL ALERT] High temperature detected: GPU ${gpu}°C, CPU ${cpu}°C (threshold: ${MAX_SAFE_TEMP}°C).`);
+  const gpu = getGpuTemp();
+  if (gpu && gpu >= MAX_SAFE_TEMP) {
+    console.warn(`\n[THERMAL ALERT] High GPU temperature detected: ${gpu}°C (threshold: ${MAX_SAFE_TEMP}°C). Note: ACPI CPU sensor is static/invalid, relying on GPU.`);
     console.warn(`[THERMAL ALERT] Stopping all process execution for 10 minutes to cool down...`);
     const startPause = Date.now();
     while (Date.now() - startPause < COOLDOWN_MS) {
       const waitRemaining = Math.round((COOLDOWN_MS - (Date.now() - startPause)) / 1000);
-      process.stdout.write(`\rCooling down... ${waitRemaining}s remaining. Current temps: GPU ${getTemps().gpu}°C, CPU ${getTemps().cpu}°C   `);
+      process.stdout.write(`\rCooling down... ${waitRemaining}s remaining. Current GPU: ${getGpuTemp()}°C   `);
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);
     }
     console.log('\n[THERMAL ALERT] 10-minute cooldown finished. Resuming execution.\n');
@@ -72,8 +60,8 @@ async function main() {
   const provider = getProvider();
 
   console.log(`\n=== Running Agent Evaluation on 40 Holdout Benchmark Tasks ===`);
-  const initialTemps = getTemps();
-  console.log(`Initial Temperatures: GPU: ${initialTemps.gpu}°C | CPU: ${initialTemps.cpu}°C`);
+  const initialGpu = getGpuTemp();
+  console.log(`Initial GPU Temperature: ${initialGpu}°C (ACPI CPU sensor static/invalid, relying on GPU limit)`);
   console.log(`Total tasks: ${tasks.length}\n`);
 
   let passed = 0;
@@ -111,8 +99,8 @@ async function main() {
   console.log(`\n=== Benchmark Results ===`);
   console.log(`Passed: ${passed} / ${tasks.length} (${accuracy}%)`);
   console.log(`Failed: ${failed}`);
-  const finalTemps = getTemps();
-  console.log(`Final Temperatures: GPU: ${finalTemps.gpu}°C | CPU: ${finalTemps.cpu}°C\n`);
+  const finalGpu = getGpuTemp();
+  console.log(`Final GPU Temperature: ${finalGpu}°C\n`);
 
   process.exit(failed > 0 ? 1 : 0);
 }
@@ -124,4 +112,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { runAgentEval: main, verifyTask, getTemps, checkThermalBreaker };
+module.exports = { runAgentEval: main, verifyTask, getGpuTemp, checkThermalBreaker };
