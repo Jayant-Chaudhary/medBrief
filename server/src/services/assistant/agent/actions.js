@@ -86,7 +86,32 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
 
     // 2. Open record: open_record(kind, patient)
     if (op === 'open_record') {
-      const patientName = String(act.patient || '').trim();
+      const isNotes = act.kind === 'consultation_notes' ||
+        act.ref === 'r_notes_btn' ||
+        /consultation.*notes|notes/i.test(String(act.name || act.kind || ''));
+      if (isNotes) {
+        const notesBtn = byRef.get(act.ref) ||
+          Array.from(byRef.values()).find((el) => /consultation notes/i.test(el.name) && (el.kind === 'button' || el.effect === 'free'));
+        if (notesBtn) {
+          pageActions.push({
+            ref: notesBtn.ref,
+            op: 'click',
+            name: notesBtn.name,
+            kind: notesBtn.kind,
+            risk: 'free',
+            effect: 'free',
+          });
+          continue;
+        }
+      }
+
+      let patientName = String(act.patient || act.name || act.value || '').trim();
+      if (!patientName && clinicianPatients.length > 0) {
+        const mentioned = clinicianPatients.find((p) => p.fullName && new RegExp(`\\b${p.fullName}\\b`, 'i').test(message));
+        if (mentioned) {
+          patientName = mentioned.fullName;
+        }
+      }
       let kind = act.kind || act.ref;
       if (!kind || !['last_visit', 'next_visit', 'maternity', 'new_appointment'].includes(kind)) {
         const lowerMsg = `${message} ${act.text || ''}`.toLowerCase();

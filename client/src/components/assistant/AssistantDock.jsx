@@ -27,28 +27,52 @@ const ROUND_SETTLE_MS = 700;
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function waitForSettle(quietMs = 300, timeoutMs = 3000) {
+function waitForSettle(quietMs = 350, timeoutMs = 4000) {
   return new Promise((resolve) => {
-    let timer = setTimeout(resolve, quietMs);
-    const timeout = setTimeout(() => {
-      observer.disconnect();
-      resolve();
-    }, timeoutMs);
+    const start = Date.now();
+    let timer = null;
+    let observer = null;
 
-    const observer = new MutationObserver(() => {
-      clearTimeout(timer);
+    const isLoading = () => {
+      if (typeof document === 'undefined') return false;
+      const spinners = document.querySelectorAll('[role="status"][aria-label="Loading"], .animate-spin');
+      return spinners.length > 0;
+    };
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      if (observer) observer.disconnect();
+    };
+
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      if (Date.now() - start >= timeoutMs) {
+        cleanup();
+        resolve();
+        return;
+      }
+      if (isLoading()) {
+        timer = setTimeout(schedule, 100);
+        return;
+      }
       timer = setTimeout(() => {
-        observer.disconnect();
-        clearTimeout(timeout);
+        if (isLoading()) {
+          schedule();
+          return;
+        }
+        cleanup();
         resolve();
       }, quietMs);
-    });
+    };
 
     if (typeof document !== 'undefined' && document.body) {
+      observer = new MutationObserver(() => {
+        schedule();
+      });
       observer.observe(document.body, { childList: true, subtree: true, attributes: true });
-    } else {
-      resolve();
     }
+
+    schedule();
   });
 }
 const DONE_VERB = { click: 'Pressed', type: 'Typed in', append: 'Added to', replace: 'Changed in', select: 'Chose in', check: 'Ticked' };

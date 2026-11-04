@@ -98,7 +98,7 @@ function buildNavigatorMessages({
     '- check(ref): Tick an unticked checkbox.',
     '- key(ref, "Enter"): Submit search box (Enter key).',
     '- go(page): Open a menu page by id.',
-    '- open_record(kind, patient): Open a patient visit, card, or appointment directly by name (kind: "last_visit"|"next_visit"|"maternity"|"new_appointment"). Always use open_record directly when asked to view/open a patient record or visit, instead of manually searching on the patients page.',
+    '- open_record(kind, patient): Open a patient visit, card, or appointment directly by name (kind: "last_visit"|"next_visit"|"maternity"|"new_appointment"). Always use open_record directly when asked to view/open a patient record or visit, instead of manually searching on the patients page. Note: Consultation notes is NOT a record kind; to open consultation notes, click the "Consultation notes" button on screen.',
     '- open_row(patient): Click a patient row in the directory table matching the patient name.',
     '',
     'Rules:',
@@ -106,7 +106,8 @@ function buildNavigatorMessages({
     '2. Safety: Never delete, clear, discard, sign out, or record audio. If asked to do so, set status: "cannot" with a clear explanation in reason.',
     '3. Progress: Do not repeat actions that already succeeded. Check the checklist ticks and prior results.',
     '4. When all items of the checklist are completed, return status: "done" and actions: [].',
-    '5. Return JSON only conforming to the response schema.',
+    '5. Consultation Notes: To open consultation notes or view notes, use click(ref) on the "Consultation notes" button visible on the visit page.',
+    '6. Return JSON only conforming to the response schema.',
     '',
     `Available Menu Pages:\n${pageList}`,
   ].join('\n');
