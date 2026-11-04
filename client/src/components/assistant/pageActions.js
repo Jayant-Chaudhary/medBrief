@@ -34,13 +34,16 @@ const escapeRef = (ref) => (typeof CSS !== 'undefined' && CSS?.escape ? CSS.esca
  */
 export function runPageAction(action, expectedName, doc = document) {
   if (action.op === 'open_row') {
-    const rows = [...doc.querySelectorAll('[data-assistant-row]')];
-    const wanted = String(action.patient || '').trim().toLowerCase();
+    let rows = [...doc.querySelectorAll('[data-assistant-row]')];
+    if (!rows.length) {
+      rows = [...doc.querySelectorAll('tbody[data-assistant-private] tr')];
+    }
+    const wanted = String(action.patient || action.value || action.name || '').trim().toLowerCase();
     const match = rows.find((r) => r.textContent.toLowerCase().includes(wanted));
     if (!match) throw new PageActionError('NOT_FOUND');
-    const clickable = match.querySelector('button, a, [role="button"]') || match;
+    const clickable = match.querySelector?.('button, a, [role="button"]') || match;
     clickable.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
-    clickable.click();
+    clickable.click?.();
     return;
   }
 

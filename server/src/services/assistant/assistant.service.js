@@ -910,6 +910,9 @@ async function handleStep({
 
   // 3. Clinician agent loop routing (when agent loop state is active or configured)
   if (role === 'clinician' && isPhase6Agent) {
+    if (!patients.length) {
+      patients = await Promise.resolve(directory(userId)).catch(() => []);
+    }
     return runAgentLoop({
       message,
       role,

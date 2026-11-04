@@ -243,7 +243,7 @@ export function ClinicianPatients() {
                   {shown.map((patient) => {
                     const latest = patient.nextVisit ?? patient.lastVisit;
                     return (
-                      <tr key={patient.id} className="hover:bg-subcanvas/30 transition-colors">
+                      <tr key={patient.id} data-assistant-row={patient.fullName || ''} className="hover:bg-subcanvas/30 transition-colors">
                         <td className="px-5 py-3.5">
                           <div className="flex items-center gap-3">
                             <div className="relative">

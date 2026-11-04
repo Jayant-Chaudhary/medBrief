@@ -87,7 +87,15 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
     // 2. Open record: open_record(kind, patient)
     if (op === 'open_record') {
       const patientName = String(act.patient || '').trim();
-      const kind = act.kind;
+      let kind = act.kind || act.ref;
+      if (!kind || !['last_visit', 'next_visit', 'maternity', 'new_appointment'].includes(kind)) {
+        const lowerMsg = `${message} ${act.text || ''}`.toLowerCase();
+        if (lowerMsg.includes('last')) kind = 'last_visit';
+        else if (lowerMsg.includes('next')) kind = 'next_visit';
+        else if (lowerMsg.includes('matern') || lowerMsg.includes('anc')) kind = 'maternity';
+        else if (lowerMsg.includes('appoint') || lowerMsg.includes('book')) kind = 'new_appointment';
+        else kind = 'last_visit';
+      }
       if (!patientName) {
         refused.push({ name: 'patient record', reason: REASONS.patientNotFound });
         continue;
@@ -153,7 +161,13 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
 
     // 3. Open row: open_row(patient)
     if (op === 'open_row') {
-      const patientName = String(act.patient || '').trim();
+      let patientName = String(act.patient || act.name || act.value || '').trim();
+      if (!patientName && clinicianPatients.length > 0) {
+        const mentioned = clinicianPatients.find((p) => p.fullName && new RegExp(`\\b${p.fullName}\\b`, 'i').test(message));
+        if (mentioned) {
+          patientName = mentioned.fullName;
+        }
+      }
       if (!patientName || !isGrounded(patientName, message)) {
         refused.push({ name: patientName || 'row', reason: REASONS.notInMessage });
         continue;
@@ -162,6 +176,7 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
         op: 'open_row',
         name: patientName,
         value: patientName,
+        patient: patientName,
         risk: 'free',
         effect: 'free',
       });
@@ -219,7 +234,8 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
       }
       value = matchOpt;
     } else if (op === 'key') {
-      if (act.key !== 'Enter' || element.effect === 'save' || element.effect === 'send') {
+      const keyName = String(act.key || act.text || 'Enter').trim();
+      if (keyName.toLowerCase() !== 'enter' || element.effect === 'save' || element.effect === 'send') {
         refused.push({ name: element.name, reason: REASONS.badKey });
         continue;
       }
