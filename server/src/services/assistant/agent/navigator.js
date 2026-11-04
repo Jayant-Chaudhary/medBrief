@@ -93,9 +93,10 @@ function formatResults(results = []) {
   return results
     .map((r) => {
       const target = r.ref || r.control || r.button || r.id ? ` ${r.ref || r.control || r.button || r.id}` : '';
+      const label = r.name ? ` "${r.name}"` : '';
       const op = r.op ? ` ${r.op}` : '';
       const reason = r.reason ? `: ${r.reason}` : '';
-      return `- ${op}${target} -> ${r.result}${reason}`;
+      return `- ${op}${target}${label} -> ${r.result}${reason}`;
     })
     .join('\n');
 }
@@ -109,6 +110,7 @@ function buildNavigatorMessages({
   onPage = null,
   clock = null,
   memory = [],
+  hasOpenRecord = null,
   role = 'clinician',
 }) {
   const pages = pagesFor(role);
@@ -116,6 +118,9 @@ function buildNavigatorMessages({
   const elements = page?.elements?.length ? describeElements(page.elements) : 'No interactive elements read from page.';
   const declared = describeDeclaredForm(role, onPage);
   const pageTitle = page?.title ? `Page Title: "${page.title}"` : 'Page Title: (unknown)';
+  const recordStatusLine = hasOpenRecord
+    ? `Current Record Status: The active patient's ${hasOpenRecord} is already open on this page.`
+    : '';
   const clockLines = role === 'clinician' && clock?.now
     ? [
         `- Now is ${nowInWords(clock.now, clock.timeZone)}. For date/datetime fields write the requested date and time as YYYY-MM-DDTHH:mm (or YYYY-MM-DD for date) in that time zone (24-hour clock), working out words like "tomorrow" or "kal" from now.`,
@@ -146,9 +151,9 @@ function buildNavigatorMessages({
     'Rules:',
     '1. Grounding: Never invent doses, numbers, text, or patient names. All text and values must come verbatim from the user request.',
     '2. Safety: Never delete, clear, discard, sign out, or record audio. If asked to do so, set status: "cannot" with a clear explanation in reason.',
-    '3. Progress: Do not repeat actions that already succeeded. Check the checklist ticks and prior results.',
+    '3. Progress: Do not repeat actions that already succeeded or checklist items already marked [✓]. Never append the same text to notes twice. Check the checklist ticks and prior results.',
     '4. When all items of the checklist are completed, return status: "done" and actions: [].',
-    '5. Consultation Notes: To open consultation notes or view notes, use click(ref) on the "Consultation notes" button visible on the visit page. To write observations into notes, use append(ref, text) on the notes textarea. To add medicines or routine prophylaxis (such as Folic Acid, IFA, Albendazole), click the corresponding prophylaxis bundle button or Add medicine button in the prescription section.',
+    '5. Consultation Notes & Prescription: To open consultation notes or view notes, use click(ref) on the "Consultation notes" button visible on the visit page. To write observations or general notes ("write ... in notes", "open notes and write ..."), ALWAYS use append(ref, text) on the "Consultancy notes" textarea (only use "Patient instructions / counseling" or "Follow-up advice / recommended investigations" when the user explicitly names "patient instructions" or "follow-up advice"). To add a medicine when no medicine row is visible yet, click the "Add medicine" button; once "Prescription · Medicine 1" fields (Name, Dose, Frequency, Duration) appear on screen, use type(ref, text) to fill Name, Dose, Frequency, and Duration.',
     '6. Ref format: Output only the exact ref identifier (e.g. "r1", "r2") for ref, never append labels, tags, or extra words to ref.',
     '7. Return JSON only conforming to the response schema.',
     '',
@@ -167,6 +172,7 @@ function buildNavigatorMessages({
     `Your Last Note: "${note || '(none)'}"`,
     '',
     `${pageTitle}`,
+    ...(recordStatusLine ? [recordStatusLine] : []),
     ...(declared ? [`${declared}\n`] : []),
     `Visible Page Elements:\n${elements}`,
   ].join('\n');
@@ -192,6 +198,7 @@ async function navigateRound({
   onPage = null,
   clock = null,
   memory = [],
+  hasOpenRecord = null,
   role = 'clinician',
   provider,
   settings = config,
@@ -205,7 +212,7 @@ async function navigateRound({
     };
   }
 
-  const messages = buildNavigatorMessages({ message, checklist, note, results, page, onPage, clock, memory, role });
+  const messages = buildNavigatorMessages({ message, checklist, note, results, page, onPage, clock, memory, hasOpenRecord, role });
 
   const timeoutMs = settings.modelCallTimeoutMs || settings.timeoutMs || 30000;
   for (let attempt = 0; attempt < 2; attempt += 1) {

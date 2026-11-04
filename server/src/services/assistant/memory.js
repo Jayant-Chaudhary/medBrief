@@ -211,6 +211,7 @@ function resolveMemoryFollowUp(message, memory = [], patients = []) {
     const targetPatient = resolved.status === 'one' ? resolved.patient : namedNow;
     const prevName = last.patient?.fullName || last.patient?.name || '';
     const prevFirst = prevName.split(' ')[0];
+    const stripForPatient = (str) => String(str || '').replace(/\s+(?:for|of)\s+\p{L}[\p{L}'.-]*(?:\s+\p{L}[\p{L}'.-]*){0,3}$/iu, '').trim();
     const replaceName = (str) => {
       if (!prevName) return `${str} for ${targetPatient?.fullName || targetName}`;
       let out = str;
@@ -219,12 +220,12 @@ function resolveMemoryFollowUp(message, memory = [], patients = []) {
       return out;
     };
     const checklist = (last.checklist?.length ? last.checklist : [{ text: last.message, done: false }]).map((c) => ({
-      text: replaceName(c.text),
+      text: stripForPatient(replaceName(c.text)),
       done: false,
     }));
     return {
       kind: 'rewrite',
-      expandedMessage: `${replaceName(last.message)}`,
+      expandedMessage: stripForPatient(replaceName(last.message)),
       checklist,
       patient: targetPatient ? { id: targetPatient.id, name: targetPatient.fullName, fullName: targetPatient.fullName } : null,
       allowEarlierValues: true,
@@ -266,10 +267,13 @@ function resolveMemoryFollowUp(message, memory = [], patients = []) {
   // 6. Contextual patient inheritance (e.g., "also add calcium"):
   // If a different patient is named now, it always beats memory!
   if (!namedNow && lastWithPatient?.patient && ALSO_FOLLOWUP.test(text)) {
+    const cleanStep = text.replace(/^(?:and\s+|also\s+|now\s+)+/i, '').trim();
+    const capitalized = cleanStep ? cleanStep.charAt(0).toUpperCase() + cleanStep.slice(1) : text;
     return {
       kind: 'inherit_context',
       patient: lastWithPatient.patient,
       record: lastWithPatient.record,
+      checklist: [{ text: capitalized, done: false }],
     };
   }
 
@@ -283,3 +287,4 @@ module.exports = {
   effectiveGroundingMessage,
   resolveMemoryFollowUp,
 };
+

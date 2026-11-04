@@ -232,6 +232,9 @@ const FILLER = new Set(['the', 'a', 'an', 'my', 'this', 'please', 'button', 'on'
 const VERBS = /^(press|click|tap|hit|open|show|select)\s+/;
 const TICK = /^(?:please\s+)?(?:tick|check|mark)\s+(.+)$/i;
 const FIELD_VALUE = /^([^:]{3,60}):\s*(.+)$/;
+const TYPED_IN_FIELD = /^(?:please\s+)?(?:type|search(?:\s+for)?)\s+["“']?(.+?)["”']?\s+(?:in|into)\s+(?:the\s+)?(.+?)(?:\s+(?:field|box|input|bar))?$/i;
+const SELECT_OPTION = /^(?:please\s+)?(?:select|choose|filter\s+by)\s+["“']?(.+?)["”']?\s+(?:in|from|on)\s+(?:the\s+)?(.+?)(?:\s+(?:dropdown|select|filter|menu))?$/i;
+const ADD_TO_LIST = /^(?:please\s+)?add\s+["“']?(.+?)["”']?\s+to\s+(?:the\s+)?(consultation\s+checklist|next\s+steps(?:\s+for\s+the\s+patient)?)$/i;
 
 const words = (text) => norm(text).replace(/[^\p{L}\p{N}\s/-]/gu, ' ').split(/\s+/).filter((w) => w && !FILLER.has(w)).join(' ');
 
@@ -403,6 +406,35 @@ function matchPageCommand(message, snapshot) {
     const label = words(field[1]);
     const hits = elements.filter((el) => TEXT_KINDS.has(el.kind) && (words(el.name) === label || words(el.name).startsWith(`${label} `)));
     if (label && hits.length === 1) return { actions: [{ ref: hits[0].ref, op: 'type', value: field[2].trim() }] };
+  }
+
+  const typed = TYPED_IN_FIELD.exec(text);
+  if (typed) {
+    const label = words(typed[2]);
+    const hits = elements.filter((el) => TEXT_KINDS.has(el.kind) && (words(el.name) === label || words(el.name).startsWith(`${label} `)));
+    if (label && hits.length === 1) return { actions: [{ ref: hits[0].ref, op: 'type', value: typed[1].trim() }] };
+  }
+
+  const sel = SELECT_OPTION.exec(text);
+  if (sel) {
+    const optWanted = norm(sel[1]);
+    const label = words(sel[2]);
+    const hits = elements.filter((el) => el.kind === 'select' && (words(el.name) === label || words(el.name).startsWith(`${label} `)));
+    if (hits.length === 1) {
+      const opt = (hits[0].options || []).find((o) => norm(o) === optWanted);
+      if (opt) return { actions: [{ ref: hits[0].ref, op: 'select', value: opt }] };
+    }
+  }
+
+  const addList = ADD_TO_LIST.exec(text);
+  if (addList) {
+    const val = addList[1].trim();
+    const isChecklist = /checklist/i.test(addList[2]);
+    const inputEl = elements.find((el) => TEXT_KINDS.has(el.kind) && (isChecklist ? /add an item for this consultation/i.test(el.name) : /write an action for this patient/i.test(el.name)));
+    const btnEl = elements.find((el) => CLICK_KINDS.has(el.kind) && /^add$/i.test(el.name) && (isChecklist ? /checklist/i.test(el.section || '') : /next steps/i.test(el.section || '')));
+    if (inputEl && btnEl) {
+      return { actions: [{ ref: inputEl.ref, op: 'type', value: val }, { ref: btnEl.ref, op: 'click', value: '' }] };
+    }
   }
 
   const whole = words(text);

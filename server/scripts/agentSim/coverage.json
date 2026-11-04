@@ -1,0 +1,243 @@
+{
+  "version": "1.0.0",
+  "role": "clinician",
+  "description": "Exhaustive clinician-side coverage inventory for MedBrief assistant (Slice 6). Read from clinician JSX pages and controls.registry.js.",
+  "pages": [
+    {
+      "id": "dashboard",
+      "path": "/clinician",
+      "label": "Dashboard",
+      "declaredControls": [],
+      "declaredButtons": [
+        { "id": "open_notes", "label": "Open consultation notes", "effect": "ui" },
+        { "id": "close_notes", "label": "Close consultation notes", "effect": "ui" },
+        { "id": "save_notes", "label": "Save consultation notes", "effect": "save" },
+        { "id": "open_audio_consult", "label": "Open audio consult", "effect": "save" },
+        { "id": "close_visit", "label": "Back to today's visits", "effect": "ui" }
+      ],
+      "pageElements": [
+        { "ref": "btn_open_visit", "kind": "button", "name": "[patient row]", "section": "Today's visits", "private": true, "effect": "free" },
+        { "ref": "btn_new_app", "kind": "button", "name": "New visit", "section": "Today's visits", "effect": "free" },
+        { "ref": "r_notes_btn", "kind": "button", "name": "Consultation notes", "section": "Consultation", "effect": "free" },
+        { "ref": "r_mat_link", "kind": "link", "name": "Maternity card", "section": "Consultation", "effect": "free" },
+        { "ref": "r_end_visit", "kind": "button", "name": "End visit", "section": "Consultation", "effect": "send" },
+        { "ref": "r_filter_all", "kind": "button", "name": "All", "section": "Flowsheet", "effect": "free" },
+        { "ref": "r_filter_changed", "kind": "button", "name": "Changed since last report 0", "section": "Flowsheet", "effect": "free" },
+        { "ref": "r_filter_review", "kind": "button", "name": "Needs review 0", "section": "Flowsheet", "effect": "free" },
+        { "ref": "r_transcript_logs", "kind": "button", "name": "Transcript Logs", "section": "Consultation", "effect": "free" },
+        { "ref": "r_record_mic", "kind": "button", "name": "Record Consultation", "section": "Consultation", "effect": "never" }
+      ],
+      "panelElements": [
+        { "ref": "r_close_panel", "kind": "button", "name": "Close panel", "section": "Consultation notes", "effect": "free" },
+        { "ref": "r_templates_link", "kind": "button", "name": "Templates", "section": "Prescription", "effect": "free" },
+        { "ref": "r_allergies", "kind": "text", "name": "Patient allergies", "section": "Prescription", "effect": "save" },
+        { "ref": "r_edit_factors", "kind": "button", "name": "Edit / add factors", "section": "Prescription", "effect": "free" },
+        { "ref": "r_bundle_folic", "kind": "button", "name": "1st Trimester Folic Acid (400 mcg)", "section": "Prescription", "effect": "save" },
+        { "ref": "r_bundle_ifa", "kind": "button", "name": "2nd & 3rd Trimester IFA + Calcium", "section": "Prescription", "effect": "save" },
+        { "ref": "r_bundle_alb", "kind": "button", "name": "2nd Trimester Albendazole (400 mg)", "section": "Prescription", "effect": "save" },
+        { "ref": "r_use_tpl", "kind": "button", "name": "Use a template", "section": "Prescription", "effect": "free" },
+        { "ref": "r_tpl_search", "kind": "search", "name": "Search templates", "section": "Prescription", "effect": "free" },
+        { "ref": "r_tpl_opt", "kind": "button", "name": "Best matching template: First trimester ANC", "section": "Prescription", "effect": "save" },
+        { "ref": "r_add_med", "kind": "button", "name": "Add medicine", "section": "Prescription", "effect": "free" },
+        { "ref": "r_med_name_1", "kind": "text", "name": "Name", "section": "Prescription · Medicine 1", "effect": "save" },
+        { "ref": "r_med_dose_1", "kind": "text", "name": "Dose", "section": "Prescription · Medicine 1", "effect": "save" },
+        { "ref": "r_med_freq_1", "kind": "text", "name": "Frequency", "section": "Prescription · Medicine 1", "effect": "save" },
+        { "ref": "r_med_dur_1", "kind": "text", "name": "Duration", "section": "Prescription · Medicine 1", "effect": "save" },
+        { "ref": "r_med_str_1", "kind": "text", "name": "Strength", "section": "Prescription · Medicine 1", "effect": "save" },
+        { "ref": "r_med_route_1", "kind": "text", "name": "Route", "section": "Prescription · Medicine 1", "effect": "save" },
+        { "ref": "r_med_type_1", "kind": "select", "name": "Item type", "options": ["Medicine", "Injection", "Vaccination"], "section": "Prescription · Medicine 1", "effect": "save" },
+        { "ref": "r_med_inst_1", "kind": "text", "name": "Instructions", "section": "Prescription · Medicine 1", "effect": "save" },
+        { "ref": "r_med_done_1", "kind": "button", "name": "Done editing", "section": "Prescription · Medicine 1", "effect": "free" },
+        { "ref": "r_med_del_1", "kind": "button", "name": "Remove item 1", "section": "Prescription · Medicine 1", "effect": "never" },
+        { "ref": "r_pat_inst", "kind": "textarea", "name": "Patient instructions / counseling", "section": "Prescription", "effect": "save" },
+        { "ref": "r_followup_adv", "kind": "textarea", "name": "Follow-up advice / recommended investigations", "section": "Prescription", "effect": "save" },
+        { "ref": "r_browse_files", "kind": "button", "name": "Browse files", "section": "Prescription", "effect": "never" },
+        { "ref": "r_chk_bp", "kind": "checkbox", "name": "BP check", "section": "Consultation checklist", "effect": "save" },
+        { "ref": "r_chk_iron", "kind": "checkbox", "name": "Iron advice", "section": "Consultation checklist", "effect": "save" },
+        { "ref": "r_chk_input", "kind": "text", "name": "Add an item for this consultation…", "section": "Consultation checklist", "effect": "free" },
+        { "ref": "r_chk_add", "kind": "button", "name": "Add", "section": "Consultation checklist", "effect": "save" },
+        { "ref": "r_next_usg", "kind": "checkbox", "name": "Ultrasound at 20 weeks", "section": "Next steps for the patient", "effect": "send" },
+        { "ref": "r_next_input", "kind": "text", "name": "Write an action for this patient…", "section": "Next steps for the patient", "effect": "free" },
+        { "ref": "r_next_add", "kind": "button", "name": "Add", "section": "Next steps for the patient", "effect": "send" },
+        { "ref": "r_notes_area", "kind": "textarea", "name": "Consultancy notes", "section": "Consultancy notes", "effect": "save" }
+      ]
+    },
+    {
+      "id": "schedule",
+      "path": "/clinician/schedule",
+      "label": "Schedule",
+      "declaredControls": [
+        { "id": "date", "label": "Schedule date", "kind": "date" },
+        { "id": "statusFilter", "label": "Appointment status filter", "kind": "select", "options": ["all", "checked_in", "active", "completed", "cancelled"] }
+      ],
+      "declaredButtons": [
+        { "id": "jump_today", "label": "Jump to today", "effect": "ui" },
+        { "id": "next_day", "label": "Next day", "effect": "ui" },
+        { "id": "prev_day", "label": "Previous day", "effect": "ui" },
+        { "id": "new_appointment", "label": "Schedule new appointment", "effect": "ui" }
+      ],
+      "pageElements": [
+        { "ref": "s_earlier", "kind": "button", "name": "Earlier days", "section": "Calendar", "effect": "free" },
+        { "ref": "s_later", "kind": "button", "name": "Later days", "section": "Calendar", "effect": "free" },
+        { "ref": "s_sched_visit", "kind": "button", "name": "Schedule Visit", "section": "Calendar", "effect": "free" },
+        { "ref": "s_row_1", "kind": "button", "name": "[patient row]", "section": "Today", "private": true, "effect": "free" }
+      ]
+    },
+    {
+      "id": "patients",
+      "path": "/clinician/patients",
+      "label": "Patients",
+      "declaredControls": [
+        { "id": "query", "label": "Search patients", "kind": "text" },
+        { "id": "filterTab", "label": "Patient filter tab", "kind": "select", "options": ["all", "upcoming", "past"] }
+      ],
+      "declaredButtons": [
+        { "id": "clear_search", "label": "Clear patient search", "effect": "ui" },
+        { "id": "new_patient", "label": "Add new patient / appointment", "effect": "ui" }
+      ],
+      "pageElements": [
+        { "ref": "p_new_visit", "kind": "button", "name": "New Visit", "section": "Patient directory", "effect": "free" },
+        { "ref": "row_pat_1", "kind": "button", "name": "[patient row]", "section": "Patients list", "private": true, "effect": "free" },
+        { "ref": "row_pat_2", "kind": "button", "name": "[patient row]", "section": "Patients list", "private": true, "effect": "free" },
+        { "ref": "row_pat_3", "kind": "button", "name": "[patient row]", "section": "Patients list", "private": true, "effect": "free" },
+        { "ref": "row_pat_4", "kind": "button", "name": "[patient row]", "section": "Patients list", "private": true, "effect": "free" }
+      ]
+    },
+    {
+      "id": "new_appointment",
+      "path": "/clinician/appointments/new",
+      "label": "New appointment",
+      "declaredControls": [
+        { "id": "scheduledAt", "label": "Date and time", "kind": "datetime", "future": true },
+        { "id": "patientFullName", "label": "New patient name", "kind": "text" },
+        { "id": "patientEmail", "label": "New patient email", "kind": "email" },
+        { "id": "newQuestion", "label": "New pre-visit question", "kind": "text" },
+        { "id": "newQuestionType", "label": "How the patient answers", "kind": "select", "options": ["yes_no", "text"] },
+        { "id": "saveQuestionToLibrary", "label": "Also save this question to my library", "kind": "checkbox" }
+      ],
+      "declaredButtons": [
+        { "id": "add_question", "label": "Add question", "effect": "ui" },
+        { "id": "create_visit", "label": "Create visit and invite", "effect": "send" }
+      ],
+      "pageElements": []
+    },
+    {
+      "id": "maternity",
+      "path": "/clinician/maternity",
+      "label": "Maternity card",
+      "declaredControls": [
+        { "id": "patient.attendance", "label": "Patient section · 1st attendance date", "kind": "date" },
+        { "id": "patient.gravida", "label": "Patient section · Gravida (G)", "kind": "number" },
+        { "id": "patient.para", "label": "Patient section · Para (P)", "kind": "number" },
+        { "id": "patient.living", "label": "Patient section · Living (L)", "kind": "number" },
+        { "id": "patient.abortions", "label": "Patient section · Abortions (A)", "kind": "number" },
+        { "id": "patient.lmp", "label": "Patient section · Last menstrual period (LMP)", "kind": "date" },
+        { "id": "patient.edd", "label": "Patient section · Expected delivery date (EDD)", "kind": "date" },
+        { "id": "patient.history", "label": "Patient section · Past history & allergies", "kind": "text" },
+        { "id": "baseline.blood", "label": "Baseline · Blood group & Rh", "kind": "select", "options": ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"] },
+        { "id": "baseline.resultsDate", "label": "Baseline · Results date", "kind": "date" },
+        { "id": "baseline.hb", "label": "Baseline · Baseline Hb (g/dL)", "kind": "number" },
+        { "id": "baseline.tsh", "label": "Baseline · Baseline TSH (mIU/L)", "kind": "number" },
+        { "id": "baseline.chest", "label": "Baseline · Chest", "kind": "text" },
+        { "id": "baseline.cvs", "label": "Baseline · CVS", "kind": "text" },
+        { "id": "baseline.results", "label": "Baseline · Other baseline results", "kind": "text" },
+        { "id": "visit.date", "label": "Antenatal visit · Visit date", "kind": "date" },
+        { "id": "visit.weeks", "label": "Antenatal visit · Gestational weeks", "kind": "number" },
+        { "id": "visit.days", "label": "Antenatal visit · Gestational days", "kind": "number" },
+        { "id": "visit.weight", "label": "Antenatal visit · Weight (kg)", "kind": "number" },
+        { "id": "visit.fundal", "label": "Antenatal visit · Fundal height (cm)", "kind": "number" },
+        { "id": "visit.systolic", "label": "Antenatal visit · BP systolic", "kind": "number" },
+        { "id": "visit.diastolic", "label": "Antenatal visit · BP diastolic", "kind": "number" },
+        { "id": "visit.presentation", "label": "Antenatal visit · Presentation", "kind": "select", "options": ["Cephalic", "Breech", "Transverse", "Oblique", "Not assessed"] },
+        { "id": "visit.brim", "label": "Antenatal visit · Relation to brim", "kind": "select", "options": ["Free", "Entering", "Engaged", "Not assessed"] },
+        { "id": "visit.fhr", "label": "Antenatal visit · FHR (bpm)", "kind": "number" },
+        { "id": "visit.albumin", "label": "Antenatal visit · Urine albumin", "kind": "select", "options": ["Nil", "Trace", "+", "++", "+++"] },
+        { "id": "visit.sugar", "label": "Antenatal visit · Urine sugar", "kind": "select", "options": ["Negative", "Trace", "+", "++", "+++"] },
+        { "id": "visit.hb", "label": "Antenatal visit · Visit Hb (g/dL)", "kind": "number" },
+        { "id": "visit.tsh", "label": "Antenatal visit · Visit TSH (mIU/L)", "kind": "number" },
+        { "id": "visit.next", "label": "Antenatal visit · Next visit date", "kind": "date" },
+        { "id": "visit.clinician", "label": "Antenatal visit · Seen by", "kind": "text" },
+        { "id": "visit.advice", "label": "Antenatal visit · Remarks & advice", "kind": "text" },
+        { "id": "lab.date", "label": "Lab result · Date", "kind": "date" },
+        { "id": "lab.test", "label": "Lab result · Test name", "kind": "text" },
+        { "id": "lab.result", "label": "Lab result · Result", "kind": "text" },
+        { "id": "lab.unit", "label": "Lab result · Unit", "kind": "text" },
+        { "id": "lab.notes", "label": "Lab result · Notes", "kind": "text" },
+        { "id": "scan.date", "label": "Ultrasound scan · Scan date", "kind": "date" },
+        { "id": "scan.weeks", "label": "Ultrasound scan · GA weeks", "kind": "number" },
+        { "id": "scan.days", "label": "Ultrasound scan · GA days", "kind": "number" },
+        { "id": "scan.report", "label": "Ultrasound scan · Findings & summary", "kind": "text" },
+        { "id": "vaccine.name", "label": "Vaccination · Vaccine", "kind": "text" },
+        { "id": "vaccine.dose", "label": "Vaccination · Dose", "kind": "text" },
+        { "id": "vaccine.date", "label": "Vaccination · Date given", "kind": "date" },
+        { "id": "vaccine.next", "label": "Vaccination · Next due date", "kind": "date" },
+        { "id": "vaccine.notes", "label": "Vaccination · Notes", "kind": "text" },
+        { "id": "delivery.type", "label": "Delivery · Mode of delivery", "kind": "select", "options": ["Normal vaginal", "Assisted (forceps / vacuum)", "Caesarean", "VBAC"] },
+        { "id": "delivery.when", "label": "Delivery · Delivery date & time", "kind": "datetime" },
+        { "id": "delivery.indication", "label": "Delivery · Outcome / indication", "kind": "text" },
+        { "id": "delivery.sex", "label": "Delivery · Baby sex", "kind": "select", "options": ["Female", "Male", "Other"] },
+        { "id": "delivery.weight", "label": "Delivery · Birth weight (kg)", "kind": "number" },
+        { "id": "delivery.apgar1", "label": "Delivery · APGAR 1 min", "kind": "number" },
+        { "id": "delivery.apgar5", "label": "Delivery · APGAR 5 min", "kind": "number" },
+        { "id": "delivery.next", "label": "Delivery · Postnatal visit date", "kind": "date" },
+        { "id": "delivery.advice", "label": "Delivery · Postnatal notes & advice", "kind": "text" }
+      ],
+      "declaredButtons": [
+        { "id": "save_visit", "label": "Add visit", "effect": "save" },
+        { "id": "save_lab", "label": "Add result", "effect": "save" },
+        { "id": "save_scan", "label": "Add scan", "effect": "save" },
+        { "id": "save_vaccine", "label": "Add vaccination", "effect": "save" }
+      ],
+      "pageElements": []
+    },
+    {
+      "id": "checklists",
+      "path": "/clinician/checklists",
+      "label": "Checklists",
+      "declaredControls": [
+        { "id": "questionText", "label": "New pre-visit question", "kind": "text" },
+        { "id": "questionType", "label": "Question response type", "kind": "select", "options": ["yes_no", "text"] },
+        { "id": "consultationItem", "label": "New consultation checklist item", "kind": "text" },
+        { "id": "actionItem", "label": "New patient action item", "kind": "text" }
+      ],
+      "declaredButtons": [
+        { "id": "add_question", "label": "Add pre-visit question to library", "effect": "save" },
+        { "id": "add_consultation_item", "label": "Add consultation checklist item", "effect": "save" },
+        { "id": "add_action_item", "label": "Add patient action item", "effect": "save" }
+      ],
+      "pageElements": []
+    },
+    {
+      "id": "medication_templates",
+      "path": "/clinician/templates",
+      "label": "Medication templates",
+      "declaredControls": [],
+      "declaredButtons": [],
+      "pageElements": [
+        { "ref": "t_new", "kind": "button", "name": "New template", "section": "Medication templates", "effect": "free" },
+        { "ref": "t_search", "kind": "search", "name": "Search templates", "section": "Medication templates", "effect": "free" },
+        { "ref": "t_stage", "kind": "select", "name": "Pregnancy stage", "options": ["All stages", "First trimester", "Second trimester", "Third trimester", "Postpartum"], "section": "Medication templates", "effect": "free" },
+        { "ref": "t_edit_1", "kind": "button", "name": "Edit", "section": "First trimester ANC", "effect": "free" },
+        { "ref": "t_dup_1", "kind": "button", "name": "Duplicate", "section": "First trimester ANC", "effect": "save" },
+        { "ref": "t_arch_1", "kind": "button", "name": "Archive", "section": "First trimester ANC", "effect": "never" }
+      ]
+    },
+    {
+      "id": "profile",
+      "path": "/clinician/profile",
+      "label": "Profile",
+      "declaredControls": [],
+      "declaredButtons": [],
+      "pageElements": [
+        { "ref": "prof_name", "kind": "text", "name": "Full name", "section": "Profile", "effect": "free" },
+        { "ref": "prof_phone", "kind": "text", "name": "Phone", "section": "Profile", "effect": "free" },
+        { "ref": "prof_spec", "kind": "text", "name": "Specialty", "section": "Profile", "effect": "free" },
+        { "ref": "prof_lic", "kind": "text", "name": "Medical licence number", "section": "Profile", "effect": "free" },
+        { "ref": "prof_council", "kind": "text", "name": "State medical council", "section": "Profile", "effect": "free" },
+        { "ref": "prof_save", "kind": "button", "name": "Save changes", "section": "Profile", "effect": "save" },
+        { "ref": "prof_signout", "kind": "button", "name": "Sign out", "section": "Profile", "effect": "never" }
+      ]
+    }
+  ]
+}
+

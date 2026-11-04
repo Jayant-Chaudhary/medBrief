@@ -45,3 +45,4 @@ export function appendMemory(entries = [], newEntry, options = {}) {
   if (!newEntry) return pruned;
   return pruneMemory([...pruned, newEntry], options);
 }
+

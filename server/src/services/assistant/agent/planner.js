@@ -44,7 +44,8 @@ const PLANNER_SYSTEM = [
   'Rules:',
   '- Keep the original intent and wording where possible.',
   '- Resolve pronouns ("his", "her", "their", "uska", "unki") to the patient named in the request (e.g. "open his visit" -> "Open Soham\'s visit").',
-  '- Split composite instructions into individual distinct actions (search, open record, open notes, add template, write note).',
+  '- Split composite instructions into individual distinct actions (search, open record, open notes, add template, write in notes).',
+  '- When an instruction writes into consultation notes (e.g. "open notes and write ..."), include "in notes" on the write item (e.g. "Write ... in notes").',
   '- At most 8 items, each <= 160 characters.',
   '- Reply with JSON matching the response schema only.',
 ].join('\n');
@@ -62,7 +63,7 @@ const PLANNER_EXAMPLES = [
         "Open Soham's last visit",
         'Open consultation notes',
         'Add the most similar template',
-        'Write review in 2 weeks',
+        'Write review in 2 weeks in notes',
       ],
     }),
   },

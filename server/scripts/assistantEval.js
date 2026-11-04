@@ -264,6 +264,11 @@ function gpuMemory() {
 
 async function main() {
   const provider = getProvider(settings);
+  if ('coverage' in args) {
+    const { runCoverageEval } = require('./agentSim/coverageEval');
+    await runCoverageEval({ provider, settings });
+    return;
+  }
   console.log(`provider=${settings.provider} model=${settings.model} cases=${CASES.length}\n`);
 
   if (args.cold !== undefined && settings.provider === 'ollama') {

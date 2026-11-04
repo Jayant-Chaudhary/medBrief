@@ -58,3 +58,4 @@ describe('Slice 5 client memoryState', () => {
     expect(cleared).toEqual([]);
   });
 });
+

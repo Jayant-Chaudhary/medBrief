@@ -22,6 +22,7 @@ const { checkValue, norm } = require('../resolvers/values');
 const { findPage } = require('../pages.registry');
 const { formFor, findControl, findButton } = require('../controls.registry');
 const { resolvePatient, describePatient } = require('../resolvers/patients');
+const writes = require('../writes');
 
 const REASONS = {
   never: 'that action must be performed manually',
@@ -115,14 +116,16 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
 
     // 1. Menu navigation: go(pageId)
     if (op === 'go') {
-      if (act.page === 'return') {
+      const goTarget = act.page || act.ref || act.name || act.control || '';
+      if (['return', 'return_record', 'starting_record', 'back'].includes(String(goTarget).trim().toLowerCase())) {
         if (context.originRecord) navigationSteps.push({ op: 'return_record', recordTarget: context.originRecord, recordId: context.originRecord.id, label: 'Return to starting record' });
         else disambiguation = { type: 'clarify', message: 'Which patient?', options: [] };
         continue;
       }
-      const targetPage = findPage(role, act.page);
+      const rawPage = String(goTarget || '').trim().toLowerCase().replace(/_card$|_page$/, '');
+      const targetPage = findPage(role, goTarget) || findPage(role, rawPage);
       if (!targetPage) {
-        refused.push({ name: act.page || 'page', reason: REASONS.unknownPage });
+        refused.push({ name: goTarget || 'page', reason: REASONS.unknownPage });
         continue;
       }
       navigationSteps.push({
@@ -149,7 +152,17 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
       const match = resolvePatient(patientName, clinicianPatients);
       const fromCurrent = !named && match.status === 'one' && match.patient.id === context.currentRecord?.patientId;
       if (!isGrounded(patientName, message) && !fromCurrent) { refused.push({ name: 'patient record', reason: REASONS.notInMessage }); continue; }
-      const kind = act.kind || act.ref;
+      let kind = String(act.kind || act.ref || act.page || '').trim().toLowerCase();
+      if (!kind) {
+        if (/\b(?:maternity|antenatal)\b/i.test(message)) kind = 'maternity';
+        else if (/\b(?:new\s+appointment|book|invite)\b/i.test(message)) kind = 'new_appointment';
+        else if (/\b(?:next\s+visit|upcoming\s+visit)\b/i.test(message)) kind = 'next_visit';
+        else if (/\b(?:last\s+visit|previous\s+visit|past\s+visit|visit|record)\b/i.test(message)) kind = 'last_visit';
+      }
+      if (['maternity_card', 'antenatal', 'card'].includes(kind)) kind = 'maternity';
+      else if (['visit', 'previous_visit', 'past_visit', 'record'].includes(kind)) kind = 'last_visit';
+      else if (['upcoming_visit'].includes(kind)) kind = 'next_visit';
+      else if (['appointment', 'book'].includes(kind)) kind = 'new_appointment';
       if (!['last_visit', 'next_visit', 'maternity', 'new_appointment'].includes(kind)) { refused.push({ name: 'record', reason: REASONS.badPatientRecord }); continue; }
       const build = (p) => {
         const visit = kind === 'last_visit' ? p.lastVisit : p.nextVisit;
@@ -174,7 +187,11 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
 
     // 3. Open row: open_row(patient)
     if (op === 'open_row') {
-      let patientName = String(act.patient || act.name || act.value || '').trim();
+      let patientName = String(act.patient || act.name || act.value || act.text || '').trim();
+      if (!patientName) {
+        const named = clinicianPatients.flatMap((p) => [p.fullName, String(p.fullName || '').split(' ')[0]]).find((name) => name && isGrounded(name, message));
+        if (named) patientName = named;
+      }
       if (!patientName || !isGrounded(patientName, message)) {
         refused.push({ name: 'patient row', reason: REASONS.notInMessage }); continue;
       }
@@ -281,6 +298,19 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
 
     if (element.private) { refused.push({ name: 'private control', reason: REASONS.never }); continue; }
     if (op === 'type' && element.kind === 'textarea') op = 'append';
+    // If the user asked to write in notes (and did not explicitly mention follow-up advice or patient instructions),
+    // route textarea writes to the Consultancy notes textarea rather than Follow-up advice or Patient instructions.
+    if ((op === 'append' || op === 'type') && element.kind === 'textarea' && /follow-up advice|patient instructions/i.test(element.name)) {
+      const asksOtherBox = /\b(follow[-\s]?up\s+advice|recommended\s+investigations|patient\s+instructions|counseling)\b/i.test(message);
+      const asksNotes = /\bnotes?\b/i.test(message);
+      if (asksNotes && !asksOtherBox) {
+        const notesEl = elements.find((el) => el.kind === 'textarea' && /\bnotes?\b/i.test(el.name));
+        if (notesEl) {
+          element = notesEl;
+          ref = notesEl.ref;
+        }
+      }
+    }
     const fits = ({ click: ['button', 'link', 'summary', 'tab', 'checkbox', 'radio', 'textarea', 'text'], type: ['text', 'search', 'email', 'tel', 'number', 'date', 'datetime'], append: ['textarea', 'text'], replace: ['textarea', 'text'], select: ['select'], check: ['checkbox', 'radio'], key: ['search'] })[op]?.includes(element.kind);
     if (!fits) { refused.push({ name: element.name, reason: REASONS.wrongOp }); continue; }
     if (element.disabled) {
@@ -324,6 +354,17 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
       if (op === 'replace' && (!find || !isGrounded(find, message))) {
         refused.push({ name: element.name, reason: REASONS.notInMessage });
         continue;
+      }
+      if (Array.isArray(context.writtenState) && context.writtenState.length > 0) {
+        const probe = writes.guard(
+          [{ ref: element.ref, op, name: element.name, section: element.section, value }],
+          context.writtenState,
+          { record: context.currentRecord, path: context.currentPath }
+        );
+        if (!probe.actions.length) {
+          refused.push(...probe.refused);
+          continue;
+        }
       }
     } else if (op === 'select') {
       const option = act.option || value;

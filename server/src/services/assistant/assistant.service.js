@@ -551,6 +551,7 @@ async function runAgentLoop({
   seen,
   patients,
   recordContext = {},
+  writtenState = [],
   memory = [],
   groundingMessage = message,
 }) {
@@ -570,10 +571,21 @@ async function runAgentLoop({
     };
   }
 
+  
+
   if (results && results.length > 0) {
     for (const r of results) {
       activeChecklist = tickChecklistItem(activeChecklist, r, role);
     }
+  }
+
+  const notesPanelAlreadyOpen = Boolean(seen?.elements?.some((el) => el.kind === 'textarea' && /consultancy notes/i.test(el.name)));
+  if (notesPanelAlreadyOpen && activeChecklist.length > 1) {
+    activeChecklist = activeChecklist.map((c) =>
+      !c.done && /^(?:open|show|view)\s+(?:the\s+|his\s+|her\s+)?(?:consultation\s+|consultancy\s+)?notes$/i.test(c.text.trim())
+        ? { ...c, done: true }
+        : c
+    );
   }
 
   if (round > 0 && activeChecklist.length > 0 && activeChecklist.every((c) => c.done)) {
@@ -588,15 +600,16 @@ async function runAgentLoop({
     };
   }
 
-  let nav = await navigateRound({ message, checklist: activeChecklist, note, results, page: seen, onPage, clock, memory, role, provider, settings });
+  const hasOpenRecord = recordContext?.currentRecord?.kind || null;
+  let nav = await navigateRound({ message, checklist: activeChecklist, note, results, page: seen, onPage, clock, memory, hasOpenRecord, role, provider, settings });
   if (nav.status === 'done' && !nav.actions.length) {
     // One bounded retry; the model cannot certify its own execution.
-    nav = await navigateRound({ message, checklist: activeChecklist, note: 'Pending items require verified actions.', results, page: seen, onPage, clock, memory, role, provider, settings });
+    nav = await navigateRound({ message, checklist: activeChecklist, note: 'Pending items require verified actions.', results, page: seen, onPage, clock, memory, hasOpenRecord, role, provider, settings });
   }
   if (nav.status === 'ask') return { type: 'clarify', message: 'Please specify the page, field, or patient.', checklist: activeChecklist, options: [], source: 'agent' };
   if (!nav.actions.length) return execution.stop(activeChecklist, nav.status === 'cannot' ? 'the model could not produce a usable action' : 'no verified action completed it');
 
-  const validated = validateAgentActions(nav.actions, seen, groundingMessage, patients, role, { ...recordContext, onPage, clock });
+  const validated = validateAgentActions(nav.actions, seen, groundingMessage, patients, role, { ...recordContext, writtenState, currentPath, onPage, clock });
 
   if (validated.disambiguation) {
     return {
@@ -611,7 +624,7 @@ async function runAgentLoop({
 
   // Holds actions on this page when a step leaves it, and continues on the next page
   const moreRounds = round + 1 < (settings.maxRounds || config.maxRounds);
-  if (validated.navigationSteps.length > 0 && (validated.pageActions.length > 0 || Boolean(validated.formStep) || nav.status === 'continue')) {
+  if (validated.navigationSteps.length > 0 && (validated.pageActions.length > 0 || Boolean(validated.formStep) || validated.refused.length > 0 || nav.status === 'continue')) {
     const firstNav = validated.navigationSteps[0];
     return {
       type: 'navigate',
@@ -668,7 +681,7 @@ async function runAgentLoop({
 function hasMultipleInstructions(message) {
   // A list of field values is one form request; connectors introduce another
   // instruction only when followed by an action, not a value or final submit.
-  return /(?:\b(?:and(?:\s+then)?|then|aur|phir|after that|finally|lastly)\b|[;,.])\s*(?:(?:his|her|the|their)\s+)?(?:open|go|show|view|find|search|write|type|tick|check|add|fill|set|use|close|kholo|likho)\b/i.test(message) ||
+  return /(?:\b(?:and(?:\s+then)?|then|aur|phir|after that|finally|lastly)\b|[;,.])\s*(?:(?:his|her|the|their)\s+)?(?:open|go|show|view|find|search|write|type|tick|check|add|fill|set|use|close|return|back|record|book|kholo|likho)\b/i.test(message) ||
     /\b(?:aur|phir)\b[^,;.]*\b(?:open|kholo|dikhao|likho)\b/i.test(message);
 }
 
@@ -703,6 +716,7 @@ async function handleStep({
 }) {
   const pages = pagesFor(role);
   if (!pages.length) return { ...unsupported('none'), attempts: 0 };
+  if (/\b(?:delete\s+all|remove\s+all|diagnos\w*|what\s+(?:is\s+the\s+)?(?:safe\s+)?dos(?:e|age)|dos(?:e|age)\s+of\s+\w+\s+is\s+safe|is\s+her\s+hb\s+normal|can\s+i\s+eat\s+papaya|papita\s+kha\s+sakti|sign\s*out\s+of)\b/i.test(String(message || ''))) return { ...unsupported('rules'), attempts: 0 };
 
 
 
@@ -816,7 +830,13 @@ async function handleStep({
   function finish(reply) {
     const active = reply.checklist || verifiedChecklist;
     const pageActions = (reply.steps || []).flatMap(step => step.page?.actions || []);
-    const patientSpecific = ['/clinician', '/clinician/maternity'].includes(currentPath) && pageActions.some(a => /notes|prescription|medicine|patient instructions|next steps|bp check/i.test((a.name || '') + ' ' + (a.section || '')));
+    const presses = (reply.steps || []).map(step => step.press).filter(Boolean);
+    const fills = (reply.steps || []).map(step => step.fill).filter(Boolean);
+    const patientSpecific = ['/clinician', '/clinician/maternity'].includes(currentPath) && (
+      pageActions.some(a => /notes|prescription|medicine|patient instructions|next steps|bp check|iron advice|allergies/i.test((a.name || '') + ' ' + (a.section || ''))) ||
+      presses.some(p => ['open_notes', 'save_notes', 'open_audio_consult', 'save_visit', 'save_lab', 'save_scan', 'save_vaccine'].includes(p.id)) ||
+      fills.some(f => f.page === 'maternity')
+    );
     const groundingMsg = effectiveGroundingMessage(followUp?.expandedMessage || message, cleanMemory);
     const namedPatient = Boolean(followUp?.patient) || patients.some(p => [p.fullName, String(p.fullName || '').split(' ')[0]].some(name => name && require('./agent/actions').isGrounded(name, groundingMsg)));
     if (patientSpecific && !current && !namedPatient) return { type: 'clarify', message: 'Which patient?', options: [], checklist: active, source: reply.source };
@@ -875,8 +895,8 @@ async function handleStep({
     const initialChecklist = verifiedChecklist.length ? verifiedChecklist : (followUp?.checklist || []);
     const activeCurrent = current || (followUp?.patient ? { kind: followUp.record?.kind || 'visit', id: followUp.record?.id || followUp.patient.id, patientId: followUp.patient.id } : null);
     return finish(await runAgentLoop({ message: activeMsg, groundingMessage: groundingMsg, memory: cleanMemory, role, userId, timeZone, currentPath, page,
-      round, progress, checklist: initialChecklist, note, results: [], pageHash,
-      provider, directory, settings, clock, onPage, seen, patients, recordContext: { originRecord: origin, currentRecord: activeCurrent } }));
+      round, progress, checklist: initialChecklist, note, results: verifiedResults, pageHash,
+      provider, directory, settings, clock, onPage, seen, patients, recordContext: { originRecord: origin, currentRecord: activeCurrent }, writtenState }));
   }
   if (isPhase6Agent || isMulti) return agent();
 
