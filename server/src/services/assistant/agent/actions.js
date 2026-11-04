@@ -66,7 +66,7 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
 
   for (const act of rawActions) {
     if (!act || typeof act !== 'object' || !act.op) continue;
-    const op = act.op;
+    let op = act.op;
 
     // 1. Menu navigation: go(pageId)
     if (op === 'go') {
@@ -177,6 +177,10 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
     if (element.disabled) {
       refused.push({ name: element.name, reason: REASONS.disabled });
       continue;
+    }
+
+    if (element.kind === 'checkbox' && (op === 'click' || op === 'check')) {
+      op = 'check';
     }
 
     // Risk check

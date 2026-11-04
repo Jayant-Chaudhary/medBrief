@@ -9,7 +9,7 @@ const config = require('../../src/config/assistant.config');
 async function runAgentSim(prompt, {
   initialPage = 'visit',
   initialPatient = 'Asha Example',
-  maxRounds = 8,
+  maxRounds = config.maxRounds || 15,
   provider = getProvider(),
   settings = config,
 } = {}) {

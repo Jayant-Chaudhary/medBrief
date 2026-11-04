@@ -148,6 +148,14 @@ class ClinicSimulator {
     }
 
     if (op === 'click') {
+      if (ref === 'r_chk_bp') {
+        this.checklist.add('BP check');
+        return { op: 'check', ref, result: 'ok' };
+      }
+      if (ref === 'r_chk_iron') {
+        this.checklist.add('Iron advice');
+        return { op: 'check', ref, result: 'ok' };
+      }
       if (ref === 'r_notes_btn') {
         this.notesOpen = true;
         return { op, ref, result: 'ok' };

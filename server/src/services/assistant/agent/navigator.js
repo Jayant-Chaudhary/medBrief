@@ -166,6 +166,7 @@ async function navigateRound({
         timeoutMs,
       });
 
+
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
       if (parsed && typeof parsed === 'object') {
         let actions = Array.isArray(parsed.actions) ? parsed.actions.slice(0, 3) : [];
@@ -181,6 +182,9 @@ async function navigateRound({
           })).slice(0, 3);
         }
         let status = ['continue', 'done', 'ask', 'cannot'].includes(parsed.status) ? parsed.status : null;
+        if (actions.length > 0 && status === 'cannot') {
+          status = 'continue';
+        }
         if (!status) {
           status = parsed.next || parsed.action === 'run' ? 'continue' : 'done';
         }

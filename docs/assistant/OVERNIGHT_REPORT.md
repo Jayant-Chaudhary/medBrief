@@ -158,7 +158,7 @@ Tonight's fuzzing used local Ollama (`gemma4:e4b`) on the laptop GPU as a stand-
 
 1. **Schema Compliance**: The structured JSON grammar (`NAVIGATOR_SCHEMA`, `CHECKLIST_SCHEMA`, `DONE_CHECK_SCHEMA`) produced valid parsable output on >99% of rounds.
 2. **Safety Integrity**: Strict refusal rules for diagnoses, drug dosages, and destructive operations held 100% under adversarial fuzzing.
-3. **Drop-in Transition**: Switching to Google Gemini (`gemini-1.5-flash` or `gemini-1.5-pro`) requires only setting `LLM_PROVIDER=gemini` and `GEMINI_API_KEY` in `.env`. Latency will decrease from ~3.5s per round to ~0.4s–0.8s, eliminating round budget timeouts.
+3. **Drop-in Transition**: Switching to Google Gemini (`gemini-flash-lite-latest`, fallback `gemini-3.1-flash-lite`) requires only setting `LLM_PROVIDER=gemini` and `GEMINI_API_KEY` in `.env`. Latency will decrease from ~3.5s per round to ~0.4s–0.8s, eliminating round budget timeouts.
 
 ---
 
@@ -167,3 +167,4 @@ Tonight's fuzzing used local Ollama (`gemma4:e4b`) on the laptop GPU as a stand-
 1. **Apply Chained Navigation Routing Fix**: Update `assistant.service.js` so multi-page prompts bypass the `clarify` rule when `isPhase6Agent` is active.
 2. **Navigation Checklist Tick**: Allow navigation results (`op === 'go'`) to advance checklist items when the item text describes opening a page.
 3. **Run Targeted Verification**: Execute a focused check on Level 2 and Level 3 chained navigation prompts to verify 100% resolution.
+

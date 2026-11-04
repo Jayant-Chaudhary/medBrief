@@ -101,4 +101,65 @@ describe('Phase 1 Bug Fixes', () => {
       expect(reply.message).toMatch(/the model didn't answer/i);
     });
   });
+
+  describe('Bug 4 & 5: Action batching and phrasing normalization', () => {
+    it('normalizes checkbox click to check operation for safety and state consistency', async () => {
+      const page = {
+        title: 'Consultation',
+        elements: [
+          { ref: 'r_chk_bp', kind: 'checkbox', name: 'BP check', checked: false, effect: 'save' },
+        ],
+      };
+
+      const provider = new FakeProvider();
+      provider.complete = jest.fn().mockResolvedValue(JSON.stringify({
+        note: 'Marking BP check as done',
+        actions: [{ op: 'click', ref: 'r_chk_bp' }],
+        status: 'done',
+      }));
+
+      const reply = await assistant.handleStep({
+        message: 'mark BP check as done',
+        role: 'clinician',
+        userId: 'dr-1',
+        round: 0,
+        page,
+        provider,
+        settings: { agentLoop: true },
+      });
+
+      expect(reply.steps[0].page.actions[0].op).toBe('check');
+      expect(reply.steps[0].page.actions[0].ref).toBe('r_chk_bp');
+    });
+  });
+
+  describe('Bug 6: Strict grounding on typos and safety evaluation', () => {
+    it('grounds verbatim typos like paracetmol without ungrounded autocorrect', async () => {
+      const page = {
+        title: 'Consultation',
+        elements: [
+          { ref: 'r_med_name_1', kind: 'text', name: 'Medicine name', effect: 'save', section: 'Prescription' },
+        ],
+      };
+
+      const provider = new FakeProvider();
+      provider.complete = jest.fn().mockResolvedValue(JSON.stringify({
+        note: 'Adding paracetmol as requested',
+        actions: [{ op: 'type', ref: 'r_med_name_1', text: 'paracetmol' }],
+        status: 'done',
+      }));
+
+      const reply = await assistant.handleStep({
+        message: 'add paracetmol 500 mg',
+        role: 'clinician',
+        userId: 'dr-1',
+        round: 0,
+        page,
+        provider,
+        settings: { agentLoop: true },
+      });
+
+      expect(reply.steps[0].page.actions[0].value).toBe('paracetmol');
+    });
+  });
 });

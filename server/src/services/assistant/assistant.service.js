@@ -705,7 +705,7 @@ async function runAgentLoop({
     if (text) return { type: 'answer', text, source: 'model' };
   }
 
-  if (nav.status === 'done' || (nav.actions.length === 0 && round > 0)) {
+  if ((nav.status === 'done' && nav.actions.length === 0) || (nav.actions.length === 0 && round > 0)) {
     const doneCheck = await checkDone(message, activeChecklist, {
       note: nav.note,
       lastResults: results,
