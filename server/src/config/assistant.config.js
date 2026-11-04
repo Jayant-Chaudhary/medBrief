@@ -23,6 +23,8 @@ module.exports = {
   // Separate switch for pressing buttons that save or send (always after the
   // user confirms). Off: the assistant fills forms and the user presses.
   actionsEnabled: env.ASSISTANT_ACTIONS_ENABLED === 'true',
+  // Phase 6 Agent Loop switch:
+  agentLoop: env.ASSISTANT_AGENT_LOOP === 'true',
 
   // 'ollama' (native API, local), 'gemini' (Google Gemini API),
   // 'openai-compatible' (hosted/vLLM), or 'fake' (tests).

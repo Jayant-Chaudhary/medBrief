@@ -33,6 +33,10 @@ async function step(req, res, next) {
       note: req.validated.note,
       results: req.validated.results,
       pageHash: req.validated.pageHash,
+      settings: {
+        ...config,
+        ...(req.validated.agentLoop !== undefined ? { agentLoop: req.validated.agentLoop } : {}),
+      },
     });
     const { attempts, errorCode, source, ...reply } = result;
     const pageSteps = (reply.steps || []).filter((s) => s.page);

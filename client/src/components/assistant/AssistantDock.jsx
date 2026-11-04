@@ -215,10 +215,19 @@ export default function AssistantDock({ enabled = ENABLED }) {
     let actionResults = [];
     if (reply.type === 'navigate') {
       go(reply.path, id, reply.continue);
-      actionResults = [{ result: 'ok' }];
+      actionResults = [{ op: reply.op || 'go', ref: reply.pageId || reply.path, page: reply.pageId, kind: reply.kind, result: 'ok' }];
     } else if (reply.type === 'run') {
       outcome = await execute(reply.steps, id, requestId, names);
-      actionResults = (reply.steps || []).map(() => ({ result: outcome === 'done' ? 'ok' : 'refused' }));
+      actionResults = [];
+      for (const step of reply.steps || []) {
+        if (step.page?.actions?.length) {
+          for (const a of step.page.actions) {
+            actionResults.push({ op: a.op, ref: a.ref, result: outcome === 'done' ? 'ok' : 'refused' });
+          }
+        } else {
+          actionResults.push({ result: outcome === 'done' ? 'ok' : 'refused' });
+        }
+      }
     }
     await continueAfter(reply, outcome, {
       message,

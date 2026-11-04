@@ -78,6 +78,8 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
       navigationSteps.push({
         path: targetPage.path,
         label: targetPage.label,
+        pageId: targetPage.id,
+        op: 'go',
       });
       continue;
     }
@@ -145,7 +147,7 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
         }
       }
 
-      navigationSteps.push({ path, label });
+      navigationSteps.push({ path, label, op: 'open_record', kind, patient: p.fullName });
       continue;
     }
 

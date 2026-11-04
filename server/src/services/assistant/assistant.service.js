@@ -647,7 +647,7 @@ async function runAgentLoop({
   patients,
 }) {
   let activeChecklist = Array.isArray(checklist) && checklist.length > 0 ? [...checklist] : [];
-  if (round === 0 && activeChecklist.length === 0) {
+  if (activeChecklist.length === 0) {
     activeChecklist = await planChecklist(message, { provider, settings });
   }
 
@@ -770,6 +770,9 @@ async function runAgentLoop({
       type: 'navigate',
       path: firstNav.path,
       label: firstNav.label,
+      pageId: firstNav.pageId,
+      op: firstNav.op || 'go',
+      kind: firstNav.kind,
       checklist: activeChecklist,
       note: nav.note,
       ...(moreRounds ? { continue: true } : {}),

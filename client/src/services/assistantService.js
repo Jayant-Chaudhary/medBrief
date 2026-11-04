@@ -12,6 +12,7 @@ export const assistantService = {
         message,
         currentPath,
         timeZone,
+        agentLoop: true,
         ...(page && { page }),
         ...(round !== undefined && { round }),
         ...(progress && { progress }),
