@@ -47,12 +47,12 @@ const assistantStepSchema = z.object({
   // The browser's IANA time zone, so filled dates match the user's clock.
   timeZone: z.string().max(64).optional(),
   page: pageSchema.optional(),
-  agentLoop: z.boolean().optional(),
+  mode: z.literal('agent').optional(),
+  continuationToken: z.string().max(32000).optional(),
   // Follow-up rounds of the same request: which round, and what was done so far.
   round: z.number().int().min(0).max(config.maxRounds).optional(),
   progress: z.array(label(160)).max(40).optional(),
-  // Legacy / fast path partsDone.
-  partsDone: z.array(z.number().int().min(0).max(10)).max(10).optional(),
+
   // Phase 6 Agent Loop state:
   checklist: z.array(checklistItemSchema).max(8).optional(),
   note: label(200).optional(),

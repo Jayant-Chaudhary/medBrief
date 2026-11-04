@@ -215,14 +215,14 @@ export default function AssistantDock({ enabled = ENABLED }) {
    * run what comes back. If the server says the request isn't finished (a
    * panel had to open, a page had to load), read the page again and go on.
    */
-  async function runRound({ message, requestId, round, progress, partsDone = [], checklist = [], note = '', results = [] }) {
+  async function runRound({ message, requestId, round, progress, mode, continuationToken, checklist = [], note = '', results = [] }) {
     const id = crypto.randomUUID();
-    setSteps((current) => [...current, { id, requestId, message, round, progress, partsDone, checklist, note, results, continued: round > 0, reply: null }]);
+    setSteps((current) => [...current, { id, requestId, message, round, progress, mode, continuationToken, checklist, note, results, continued: round > 0, reply: null }]);
     const { page, names } = role === 'clinician' ? readPage() : { page: undefined, names: new Map() };
     let reply;
     setBusy(true);
     try {
-      reply = await assistantService.ask(message, pathRef.current, { page, round, progress, partsDone, checklist, note, results });
+      reply = await assistantService.ask(message, pathRef.current, { page, round, progress, mode, continuationToken, checklist, note, results });
     } catch (err) {
       const errNote = err?.status === 429 ? 'Too many requests. Please wait a moment.' : UNAVAILABLE;
       update(id, { reply: { type: 'unavailable', message: errNote } });
@@ -258,14 +258,14 @@ export default function AssistantDock({ enabled = ENABLED }) {
       requestId,
       round,
       progress,
-      partsDone,
+      mode, continuationToken,
       checklist: currentChecklist,
       note: currentNote,
       results: actionResults,
     });
   }
 
-  async function continueAfter(reply, outcome, { message, requestId, round, progress, partsDone = [], checklist = [], note = '', results = [] }) {
+  async function continueAfter(reply, outcome, { message, requestId, round, progress, mode, continuationToken, checklist = [], note = '', results = [] }) {
     if (!reply.continue || outcome !== 'done' || stopped.current.has(requestId)) {
       if (outcome === 'done' && !reply.continue && window.innerWidth < 640) setOpen(false);
       // Back to the message box only when the request is over: moving focus mid-request would
@@ -275,13 +275,12 @@ export default function AssistantDock({ enabled = ENABLED }) {
     }
     await waitForSettle(350, 4000);
     if (stopped.current.has(requestId)) return;
-    const finishedPart = reply.part !== undefined && reply.partDone;
     await runRound({
       message,
       requestId,
       round: round + 1,
       progress: [...progress, ...doneLines(reply)],
-      partsDone: finishedPart ? [...partsDone, reply.part] : partsDone,
+      mode: reply.mode, continuationToken: reply.continuationToken,
       checklist,
       note,
       results,

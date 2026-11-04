@@ -22,11 +22,13 @@ const { resolvePatient, describePatient } = require('./resolvers/patients');
 const { norm } = require('./resolvers/values');
 const { listClinicianPatients } = require('../patientDirectory.service');
 const { nowInWords, wallClock, safeTimeZone } = require('./resolvers/datetime');
-const { redact, applyTokenBudget, classify, confirmGroup, describeElements, checkPageActions, checkAnswer, matchPageCommand, splitParts, doneLine } = require('./pageSnapshot');
+const { redact, applyTokenBudget, classify, confirmGroup, describeElements, checkPageActions, checkAnswer, matchPageCommand, doneLine } = require('./pageSnapshot');
 
 const { planChecklist, checkDone, fallbackChecklist } = require('./agent/planner');
 const { navigateRound } = require('./agent/navigator');
 const { validateAgentActions } = require('./agent/actions');
+
+const continuation = require('./continuation');
 
 const NOT_FOUND = 'I could not find a patient with that name among your patients. Try the full name, or open Patients to search.';
 const ONE_PATIENT = 'I can only work with one patient per request. Please ask about each patient separately.';
@@ -233,6 +235,7 @@ function buildMessages(message, role, clock, onPage = null, page = null, progres
         ...example('find Test Person', run([step({ do: 'find_patient', patient: 'Test Person' })])),
         ...example(`book Test Person on 14 March ${exampleYear} at 4 pm`, run([step({ do: 'open_new_appointment', patient: 'Test Person', when: `${exampleYear}-03-14T16:00` })])),
         ...example('new appointment for Test Person next week', run([step({ do: 'open_new_appointment', patient: 'Test Person' })])),
+        ...(onBookingForm ? example('kal 11 baje', run([fill([{ control: 'scheduledAt', value: `${tomorrow}T11:00` }])])) : []),
         ...(forms.includes('new_appointment')
           ? [
               ...example(
@@ -251,15 +254,19 @@ function buildMessages(message, role, clock, onPage = null, page = null, progres
           : []),
         ...(forms.includes('maternity')
           ? [
+              ...example('baseline Hb 10.5, blood group O negative, G2 P1', run([fillCard([
+                { control: 'baseline.hb', value: '10.5' }, { control: 'baseline.blood', value: 'O negative' },
+                { control: 'patient.gravida', value: '2' }, { control: 'patient.para', value: '1' },
+              ])])),
               ...example(
-                "open Test Person's maternity card and record blood pressure 110/70 and weight 62 kg",
+                "open Test Person's maternity card and record blood pressure 110/70 and weight 62 kg and add the visit",
                 run([
                   step({ do: 'open_maternity_card', patient: 'Test Person' }),
                   fillCard([
                     { control: 'visit.systolic', value: '110' },
                     { control: 'visit.diastolic', value: '70' },
-                    { control: 'visit.weightKg', value: '62' },
-                  ]),
+                    { control: 'visit.weight', value: '62' },
+                  ], 'save_visit'),
                 ])
               ),
             ]
@@ -500,59 +507,6 @@ function pageRules(message, page, { role, onPage, round, progress, settings }) {
     finished: !unfinished,
     ...(unfinished && another && { continue: true }),
   };
-}
-
-async function nextPart(parts, partsDone, run) {
-  const index = parts.findIndex((_, i) => !partsDone.includes(i));
-  if (index < 0) return { type: 'done' };
-  const later = parts.some((_, i) => i > index && !partsDone.includes(i));
-  const result = await run(parts[index]);
-  if (result.type === 'unavailable' || result.type === 'clarify') return result;
-  const acted = ['run', 'navigate', 'choose'].includes(result.type);
-  const outcome = acted || result.type === 'done'
-    ? result
-    : { type: 'run', steps: [{ label: 'Skipped', page: { actions: [], refused: [{ name: parts[index], reason: 'I could not do this part here' }] } }], finished: true };
-  const finished = outcome.type === 'done' || (outcome.finished ?? !outcome.continue);
-  const { finished: _, ...reply } = outcome;
-  const goOn = Boolean(outcome.continue) || later;
-  return { ...reply, type: reply.type === 'done' ? 'run' : reply.type, steps: reply.steps || [], part: index, partDone: finished, ...(goOn ? { continue: true } : { continue: undefined }) };
-}
-
-const POSSESSIVE = /\b(?:his|their|uska|uski|unka|unki)\b|\bher\b(?=\s+\p{L})/giu;
-const OBJECT = /\b(?:him|them|her)\b/giu;
-const OPENS_RECORD = /\b(?:visits?|appointments?|cards?|records?|charts?|profiles?|files?)\b/i;
-const NAMED = [
-  /\b(?:find|search(?:\s+for)?|look\s+up|open|show)\s+(\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,2}?)\s+(?:in|on|from|among)\s+(?:the\s+|my\s+)?patients?\b/iu,
-  /\b(?:patient|mariz)\s+(\p{L}[\p{L}'-]*(?:\s+\p{L}[\p{L}'-]*){0,2}?)\b/iu,
-];
-const NOT_A_NAME = /\b(the|a|an|my|next|last|his|her|their|new|card|visit|appointment|maternity|record)\b/i;
-
-function namedPatient(message, patients = []) {
-  const fromList = patients.find((p) => {
-    const full = norm(p.fullName || '');
-    return full && norm(message).includes(full);
-  });
-  if (fromList) return fromList.fullName;
-  for (const pattern of NAMED) {
-    const name = pattern.exec(message)?.[1];
-    if (name && !name.split(/\s+/).some((w) => NOT_A_NAME.test(w))) return name;
-  }
-  return null;
-}
-
-function withPatient(parts, message, patients) {
-  const name = parts.length > 1 ? namedPatient(message, patients) : null;
-  if (!name) return parts;
-  return parts.map((part, i) => {
-    if (i === 0) return part;
-    const opensRecord = OPENS_RECORD.test(part);
-    return part
-      .replace(POSSESSIVE, opensRecord ? `${name}'s` : '')
-      .replace(OBJECT, opensRecord ? name : '')
-      .replace(/\s+(?:for|to|of)\s*$/i, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-  });
 }
 
 const pressesToSave = (steps = []) => (Array.isArray(steps) ? steps : []).some((s) => s && ((s.press && s.press.effect !== 'ui') || s.page?.actions?.some((a) => a.risk === 'confirm')));
@@ -853,20 +807,11 @@ async function runAgentLoop({
   };
 }
 
-function hasMultipleInstructions(message, ruled, pages) {
-  if (ruled?.pageIds && ruled.pageIds.length > 1) return true;
-  if (pages && pages.length) {
-    let mentioned = 0;
-    for (const p of pages) {
-      if (p.aliases.some((alias) => new RegExp(`\\b${alias}\\b`, 'i').test(message))) {
-        mentioned += 1;
-        if (mentioned > 1) return true;
-      }
-    }
-  }
-  const items = fallbackChecklist(message);
-  if (items.length > 1) return true;
-  return false;
+function hasMultipleInstructions(message) {
+  // A list of field values is one form request; connectors introduce another
+  // instruction only when followed by an action, not a value or final submit.
+  return /(?:\b(?:and(?:\s+then)?|then|aur|phir|after that|finally|lastly)\b|[;,.])\s*(?:(?:his|her|the|their)\s+)?(?:open|go|show|view|find|search|write|type|tick|check|add|fill|set|use|close|kholo|likho)\b/i.test(message) ||
+    /\b(?:aur|phir)\b[^,;.]*\b(?:open|kholo|dikhao|likho)\b/i.test(message);
 }
 
 /**
@@ -881,7 +826,8 @@ async function handleStep({
   page,
   round = 0,
   progress = [],
-  partsDone = null,
+  mode,
+  continuationToken,
   checklist = [],
   note = '',
   results = [],
@@ -896,17 +842,16 @@ async function handleStep({
 
 
 
-  const isPhase6Agent = Boolean(
-    settings.agentLoop === true ||
-    (Array.isArray(checklist) && checklist.length > 0) ||
-    (Array.isArray(results) && results.length > 0) ||
-    (typeof note === 'string' && note.length > 0)
-  );
-
+  settings = { ...config, ...settings };
+  const canAgent = role === 'clinician' && settings.agentLoop === true;
+  const saved = continuation.read(continuationToken, userId, message);
+  if (mode && (!canAgent || mode !== 'agent' || !saved || saved.round !== round)) {
+    return unsupported('none', 'This request has expired. Please start again.');
+  }
+  const isPhase6Agent = canAgent && mode === 'agent';
   const ruled = round > 0 ? null : matchIntent(message, pages);
-  const isMulti = isPhase6Agent && hasMultipleInstructions(message, ruled, pages);
-
-  if (!isMulti) {
+  const isMulti = canAgent && hasMultipleInstructions(message);
+  if (!isMulti && !isPhase6Agent) {
     if (ruled?.kind === 'open') return { ...flagSubmit(navigate(role, ruled.pageIds[0], 'rules'), message), attempts: 0 };
     if (ruled?.kind === 'clarify') return { ...clarify(role, ruled.pageIds, 'rules'), attempts: 0 };
   }
@@ -933,13 +878,13 @@ async function handleStep({
 
 
   // 1. Fast path: Page phrase rules
-  if (seen && !isPhase6Agent) {
+  if (seen && !isPhase6Agent && !isMulti) {
     const ruledPage = pageRules(message, seen, { role, onPage, round, progress, settings });
-    if (ruledPage) return { ...ruledPage, source: 'rules', attempts: 0 };
+    if (ruledPage) return finish({ ...ruledPage, source: 'rules', attempts: 0 });
   }
 
   // 2. Fast path: Single patient search
-  if (role === 'clinician' && round === 0 && !isPhase6Agent) {
+  if (role === 'clinician' && round === 0 && !isPhase6Agent && !isMulti) {
     const find = FIND_IN_PATIENTS.exec(message);
     if (find) {
       const plan = { action: 'run', steps: [{ do: 'find_patient', page: 'none', patient: find[1], which: 'none', when: '', fields: [], press: 'none' }], options: [], more: false };
@@ -948,33 +893,19 @@ async function handleStep({
     }
   }
 
-  // 3. Clinician agent loop routing (when agent loop state is active or configured)
-  if (role === 'clinician' && isPhase6Agent) {
-    if (!patients.length) {
-      patients = await Promise.resolve(directory(userId)).catch(() => []);
-    }
-    return runAgentLoop({
-      message,
-      role,
-      userId,
-      timeZone,
-      currentPath,
-      page,
-      round,
-      progress,
-      checklist,
-      note,
-      results,
-      pageHash,
-      provider,
-      directory,
-      settings,
-      clock,
-      onPage,
-      seen,
-      patients,
-    });
+  function finish(reply) {
+    if (!canAgent || !reply.continue) return reply;
+    return { ...reply, mode: 'agent', continuationToken: continuation.issue(userId, message, {
+      round: round + 1, checklist: reply.checklist || [{ text: message, done: false }],
+    }) };
   }
+  async function agent() {
+    if (!patients.length) patients = await Promise.resolve(directory(userId)).catch(() => []);
+    return finish(await runAgentLoop({ message, role, userId, timeZone, currentPath, page,
+      round, progress, checklist: saved?.checklist || [], note, results, pageHash,
+      provider, directory, settings, clock, onPage, seen, patients }));
+  }
+  if (isPhase6Agent || isMulti) return agent();
 
   // Fallback: Patient or initial clinician path
   async function resolve(text, { navRules = false } = {}) {
@@ -1014,15 +945,10 @@ async function handleStep({
     return { type: 'unavailable', message: settings.unavailableMessage, source: 'model', attempts: 2, errorCode };
   }
 
-  if (Array.isArray(partsDone)) {
-    const parts = seen ? withPatient(splitParts(message), message, patients) : [message];
-    if (parts.length > 1) {
-      const result = await nextPart(parts, partsDone, (part) => resolve(part, { navRules: true }));
-      return { ...result, source: result.source || 'rules', attempts: result.attempts ?? 0 };
-    }
-  }
   const { finished, ...result } = await resolve(message);
-  return result;
+  if (canAgent && page && result.type === 'unsupported' && result.message === config.unsupportedMessage &&
+      !/\b(delete|remove|untick|discard|archive|diagnos\w*|dosage|safe dose|treat\w*|cure|record audio|consent|sign out|upload)\b/i.test(message)) return agent();
+  return finish(result);
 }
 
 /** Loads the model in the background so the first real request is fast. */
@@ -1035,4 +961,4 @@ function resetForTests() {
   lastModelSuccessAt = 0;
 }
 
-module.exports = { handleStep, warmUp, interpret, planSchema, buildMessages, resetForTests, NOT_FOUND, ONE_PATIENT, ONE_SAVE };
+module.exports = { handleStep, warmUp, interpret, planSchema, buildMessages, hasMultipleInstructions, resetForTests, NOT_FOUND, ONE_PATIENT, ONE_SAVE };

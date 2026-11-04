@@ -2,21 +2,20 @@ import { request } from './apiClient';
 
 export const assistantService = {
   /** One typed request: returns navigate, clarify, unsupported or unavailable. */
-  async ask(message, currentPath, { page, round, progress, partsDone, checklist, note, results, pageHash } = {}) {
+  async ask(message, currentPath, { page, round, progress, mode, continuationToken, checklist, note, results, pageHash } = {}) {
     // The browser's time zone, so "tomorrow at 10" means 10:00 on the user's clock.
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    // `page`: the open page's labels (doctors); `round`/`progress`/`partsDone`: later rounds of the same request.
+    // `page`: the open page's labels (doctors); `round`/`progress`/`mode, continuationToken`: later rounds of the same request.
     return request('/api/assistant/step', {
       method: 'POST',
       body: {
         message,
         currentPath,
         timeZone,
-        agentLoop: true,
         ...(page && { page }),
         ...(round !== undefined && { round }),
         ...(progress && { progress }),
-        ...(partsDone && { partsDone }),
+        ...(mode && { mode, continuationToken }),
         ...(checklist && { checklist }),
         ...(note !== undefined && { note }),
         ...(results && { results }),

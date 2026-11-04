@@ -30,6 +30,7 @@ describe('Phase 1 Bug Fixes', () => {
           message: msg,
           role: 'clinician',
           userId: 'dr-1',
+        directory: async () => [],
           provider,
           settings: { agentLoop: true },
         });
@@ -59,7 +60,10 @@ describe('Phase 1 Bug Fixes', () => {
         message: 'open schedule and then view patients',
         role: 'clinician',
         userId: 'dr-1',
+        directory: async () => [],
         round: 1,
+        mode: 'agent',
+        continuationToken: require('../../services/assistant/continuation').issue('dr-1', 'open schedule and then view patients', { round: 1, checklist }),
         checklist,
         results: [{ op: 'go', pageId: 'schedule', result: 'ok' }],
         provider,
@@ -84,9 +88,10 @@ describe('Phase 1 Bug Fixes', () => {
       });
 
       const reply = await assistant.handleStep({
-        message: 'write follow up in notes',
+        message: 'write follow up in notes then open schedule',
         role: 'clinician',
         userId: 'dr-1',
+        directory: async () => [],
         round: 0,
         provider,
         settings: {
@@ -122,6 +127,7 @@ describe('Phase 1 Bug Fixes', () => {
         message: 'mark BP check as done',
         role: 'clinician',
         userId: 'dr-1',
+        directory: async () => [],
         round: 0,
         page,
         provider,
@@ -153,6 +159,7 @@ describe('Phase 1 Bug Fixes', () => {
         message: 'add paracetmol 500 mg',
         role: 'clinician',
         userId: 'dr-1',
+        directory: async () => [],
         round: 0,
         page,
         provider,

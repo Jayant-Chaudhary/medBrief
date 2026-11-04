@@ -421,37 +421,6 @@ function matchPageCommand(message, snapshot) {
 
 // Parts of a longer request, split where a new instruction starts ("… and add …", "…, then open …",
 // "… and lastly add …", "… then his notes"). Filler words between parts are dropped.
-const VERB = String.raw`(?:please\s+)?(?:open|add|write|tick|change|replace|close|hide|press|click|show|use|put|type|select|include|give|start|go|take\s+me|move|switch|navigate|back|find|search|look\s+up|view|see|fill|enter|set|save|apply|choose|pick|load|insert|in\s+(?:the\s+)?(?:consultation\s+|consultancy\s+)?notes?|notes?\s*[:\-])`;
-// A part about the patient named earlier: "then his consultation notes".
-const PRONOUN = String.raw`(?:his|her|their|uska|uski|unka|unki)\b`;
-const PART_FILLER = String.raw`(?:(?:lastly|finally|also|next|after\s+that|afterwards|then|and)\b,?\s*)*`;
-// Words that only order steps ("then", "after that") may also start a part with "the …";
-// a plain "and" or comma needs a verb or pronoun ("paracetamol and the folic acid" stays one part).
-const SEQUENCE = String.raw`(?:then|phir|after\s+that|afterwards|lastly|finally)`;
-const NEXT_PART = new RegExp(
-  String.raw`\s*(?:`
-  + String.raw`(?:,\s*|\s+)(?:and\s+)?${SEQUENCE},?\s+${PART_FILLER}(?=${VERB}|${PRONOUN}|the\b)`
-  + String.raw`|(?:[,;]\s*|\.\s+|\s+(?:and|aur)\s+)${PART_FILLER}(?=${VERB}|${PRONOUN})`
-  + ')',
-  'i',
-);
-const STARTS_WITH_VERB = new RegExp(`^${VERB}`, 'i');
-// The verb a later part without one borrows from the part before it ("add X then the folic acid").
-const LENT_VERB = /^(?:please\s+)?(open|add|write|tick|show|view|close|select|include|put|use)\b/i;
-
-/**
- * "open consultation notes and add the best template and …" → ["open consultation notes", "add the best template", …].
- * A later part with no verb takes the previous part's ("open his visit then his notes" → "open his notes"), else "open".
- */
-function splitParts(message) {
-  const parts = String(message || '').split(NEXT_PART).map((part) => part.trim().replace(/[.,;]+$/, '')).filter(Boolean).slice(0, 6);
-  for (let i = 1; i < parts.length; i += 1) {
-    if (!STARTS_WITH_VERB.test(parts[i])) parts[i] = `${(LENT_VERB.exec(parts[i - 1])?.[1] || 'open').toLowerCase()} ${parts[i]}`;
-  }
-  return parts;
-}
-
-/** How an action reads in "already done" ("Added to \"Consultancy notes\""), so a later round does not repeat it. */
 const doneLine = (op, name) => `${DONE[op]} "${name}"`;
 
 // App-help replies may explain the website, never health. Anything that sounds like
@@ -466,5 +435,5 @@ function checkAnswer(text, maxChars) {
 }
 
 module.exports = {
-  redact, applyTokenBudget, classify, confirmGroup, describeElements, checkPageActions, checkAnswer, matchPageCommand, splitParts, doneLine, NOTES_BUTTON, NEVER,
+  redact, applyTokenBudget, classify, confirmGroup, describeElements, checkPageActions, checkAnswer, matchPageCommand, doneLine, NOTES_BUTTON, NEVER,
 };

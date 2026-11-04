@@ -308,47 +308,12 @@ describe('handleStep: acting on the open page (doctor)', () => {
 });
 
 describe('requests in several parts', () => {
-  const { splitParts, matchPageCommand } = require('../../services/assistant/pageSnapshot');
-
-  it.each([
-    ['find asha in patients then open her last visit then her consultation notes and lastly add the most similar template into the medicine',
-      ['find asha in patients', 'open her last visit', 'open her consultation notes', 'add the most similar template into the medicine']],
-    ['open her last visit, after that the notes, finally use the best template', ['open her last visit', 'open the notes', 'use the best template']],
-    ['go to patients. search for Asha. then open her maternity card', ['go to patients', 'search for Asha', 'open her maternity card']],
-    ['write fever since 2.5 days in the notes and save', ['write fever since 2.5 days in the notes', 'save']],
-    ['add paracetamol 500 mg twice daily and folic acid 5 mg once daily', ['add paracetamol 500 mg twice daily and folic acid 5 mg once daily']],
-  ])('splits "%s"', (message, parts) => {
-    expect(splitParts(message)).toEqual(parts);
-  });
+  const { matchPageCommand } = require('../../services/assistant/pageSnapshot');
 
   it('treats "open notes" as done when the notes are showing, and a plain "write" as notes', () => {
     expect(matchPageCommand('open the consultation notes', PAGE)).toEqual({ actions: [], done: true });
     expect(matchPageCommand('write review in 2 weeks', PAGE)).toEqual({ actions: [{ ref: 'r2', op: 'append', value: 'review in 2 weeks' }] });
     expect(matchPageCommand('write rest well in patient instructions', PAGE)).toBeNull();
-  });
-
-  it('runs one part per round and gives later parts the patient named first', async () => {
-    const message = 'find asha in patients then open her last visit then her consultation notes';
-    const run = (partsDone) => {
-      const provider = new FakeProvider('{"action":"unsupported","steps":[],"options":[],"more":false}');
-      return assistant
-        .handleStep({ message, role: 'clinician', userId: 'dr-1', currentPath: '/clinician', page: PAGE, partsDone, provider, directory, settings })
-        .then((result) => ({ ...result, provider }));
-    };
-
-    const first = await run([]);
-    expect(first).toMatchObject({ part: 0, partDone: true, continue: true, source: 'rules' });
-    expect(first.steps[0]).toMatchObject({ path: '/clinician/patients', state: { assistantQuery: 'asha' } });
-    expect(first.provider.calls).toHaveLength(0);
-
-    const second = await run([0]);
-    expect(second.part).toBe(1);
-    expect(JSON.stringify(second.provider.calls[0].messages)).toContain("open asha's last visit");
-
-    // The notes are already showing on this page, so the last part is done without the model.
-    const third = await run([0, 1]);
-    expect(third).toMatchObject({ part: 2, partDone: true });
-    expect(third.provider.calls).toHaveLength(0);
   });
 
   it('opens a page once when a search on it follows', async () => {

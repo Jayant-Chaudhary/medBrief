@@ -28,15 +28,13 @@ async function step(req, res, next) {
       page: req.validated.page,
       round: req.validated.round,
       progress: req.validated.progress,
-      partsDone: req.validated.partsDone,
+      mode: req.validated.mode,
+      continuationToken: req.validated.continuationToken,
       checklist: req.validated.checklist,
       note: req.validated.note,
       results: req.validated.results,
       pageHash: req.validated.pageHash,
-      settings: {
-        ...config,
-        ...(req.validated.agentLoop !== undefined ? { agentLoop: req.validated.agentLoop } : {}),
-      },
+      settings: config,
     });
     const { attempts, errorCode, source, ...reply } = result;
     const pageSteps = (reply.steps || []).filter((s) => s.page);
