@@ -8,6 +8,7 @@ function matchingItem(checklist, action) {
     const text = canonical(item.text);
     // A malformed composite checklist item cannot be certified by one action.
     if (/\b(and|then|aur|phir)\b.*\b(open|go|write|type|add|tick|check|fill|save|send)\b/.test(text)) return false;
+    if (action.op === 'return_record') return Boolean(action.recordId) && /\b(return|back)\b/.test(text);
     if (action.op === 'go') {
       const page = findPage('clinician', action.pageId || action.page);
       return /\b(open|go|show|view|kholo|return|back)\b/i.test(item.text) &&
@@ -34,12 +35,12 @@ function pendingActions(reply, checklist, round, currentPath) {
     action.actionId = `${round}:${pending.length}`;
     const itemIndex = matchingItem(checklist, action);
     const { value, find } = action;
-    const safe = Object.fromEntries(['actionId','op','ref','name','section','control','page','pageId','path','kind','recordId'].filter(k => action[k] !== undefined).map(k => [k, action[k]]));
+    const safe = Object.fromEntries(['actionId','op','ref','name','section','control','page','pageId','path','kind','recordId','field','hash'].filter(k => action[k] !== undefined).map(k => [k, action[k]]));
     pending.push({ ...safe, itemIndex, fingerprint: digest(JSON.stringify([currentPath, action.op, action.pageId || action.path || action.section, action.name || action.control || action.ref, value, find])) });
   }
   if (reply.type === 'navigate') add(reply);
   for (const step of reply.steps || []) {
-    if (step.path) { step.op ||= 'go'; add(step); }
+    if (step.path || step.recordTarget) { step.op ||= 'go'; add(step); }
     for (const a of step.page?.actions || []) add(a);
     if (step.fill) {
       step.fill.actionIds = {};

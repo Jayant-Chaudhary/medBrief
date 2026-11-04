@@ -1,3 +1,4 @@
+import { recordPath } from './recordContext';
 /**
  * Carries out a plan from the server, one step at a time: open the page, fill
  * the page's declared controls, press at most one of its declared buttons.
@@ -26,7 +27,8 @@
 export async function runPlan(plan, io, { stepDelayMs = 500 } = {}) {
   for (let i = 0; i < plan.length; i += 1) {
     if (io.stopped()) return 'stopped';
-    const { path, state, fill, press, page } = plan[i];
+    const { state, fill, press, page } = plan[i];
+    const path = plan[i].recordTarget ? recordPath(plan[i].recordTarget) : plan[i].path;
     const result = {};
     // No path: the page is already open, and what the user chose on it stays.
     if (path) {

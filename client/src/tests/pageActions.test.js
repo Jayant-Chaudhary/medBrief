@@ -9,7 +9,7 @@ function createMockDoc(elements = [], rows = []) {
       return elements.find((el) => el.dataset?.assistantRef === match[1] || el.ref === match[1]) || null;
     },
     querySelectorAll: (selector) => {
-      if (selector === '[data-assistant-row]') return rows;
+      if (selector.includes('tbody[data-assistant-private]')) return rows;
       return [];
     },
   };

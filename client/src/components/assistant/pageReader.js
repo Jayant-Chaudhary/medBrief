@@ -63,6 +63,7 @@ function textOf(node, except = null) {
   const parts = [];
   const walker = node.ownerDocument.createTreeWalker(node, NodeFilter.SHOW_TEXT);
   for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+    if (text.parentElement?.closest('[data-assistant-private]')) continue;
     if (!except || !except.contains(text)) parts.push(text.nodeValue);
   }
   return cleanLabel(parts.join(' '));
@@ -70,6 +71,7 @@ function textOf(node, except = null) {
 
 /** What a person would read as this control's name. */
 export function nameOf(el) {
+  if (el.closest?.('[data-assistant-private]')) return '[patient row]';
   const explicit = el.getAttribute('aria-label') || el.dataset.assistantLabel;
   if (explicit) return cleanLabel(explicit);
   const labelledBy = el.getAttribute('aria-labelledby');
@@ -150,8 +152,9 @@ export function readPage(doc = document) {
     const ref = `r${elements.length + 1}`;
     el.setAttribute('data-assistant-ref', ref);
     names.set(ref, name);
-    const row = el.closest('[data-assistant-row]')?.dataset.assistantRow;
-    const section = menu.includes(el) ? 'Menu' : [sectionOf(el), cleanLabel(row, 40)].filter(Boolean).join(' · ');
+    const privateRegion = Boolean(el.closest('[data-assistant-private]'));
+    const row = privateRegion ? '' : el.closest('[data-assistant-row]')?.dataset.assistantRow;
+    const section = privateRegion ? '' : menu.includes(el) ? 'Menu' : [sectionOf(el), cleanLabel(row, 40)].filter(Boolean).join(' · ');
     const effect = effectOf({
       mark: el.closest('[data-assistant-effect]')?.dataset.assistantEffect,
       opensSomething: el.hasAttribute('aria-haspopup') || el.hasAttribute('aria-expanded'),
@@ -177,6 +180,7 @@ export function readPage(doc = document) {
 
     elements.push({
       ref, kind, name,
+      ...(isPrivate && { private: true }),
       ...(nearbyText && { text: nearbyText }),
       ...(section && { section }),
       ...(options && { options }),

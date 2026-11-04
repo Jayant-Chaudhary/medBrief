@@ -15,7 +15,7 @@ const PAGE = {
     el('r3', 'button', 'Save notes', { effect: 'save' }),
     el('r4', 'button', 'Delete consultation', { effect: 'never' }),
     el('r5', 'select', 'Item type', { options: ['medicine', 'injection', 'vaccination'], effect: 'free' }),
-    el('r6', 'text', 'Search patient', { effect: 'free' }),
+    el('r6', 'search', 'Search patient', { effect: 'free' }),
   ],
 };
 

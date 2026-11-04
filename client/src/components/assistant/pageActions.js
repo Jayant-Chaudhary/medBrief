@@ -34,13 +34,14 @@ const escapeRef = (ref) => (typeof CSS !== 'undefined' && CSS?.escape ? CSS.esca
  */
 export function runPageAction(action, expectedName, doc = document) {
   if (action.op === 'open_row') {
-    let rows = [...doc.querySelectorAll('[data-assistant-row]')];
-    if (!rows.length) {
-      rows = [...doc.querySelectorAll('tbody[data-assistant-private] tr')];
-    }
+    const rows = [...doc.querySelectorAll('tbody[data-assistant-private] tr, [data-assistant-private] [data-assistant-row]')];
     const wanted = String(action.patient || action.value || action.name || '').trim().toLowerCase();
-    const match = rows.find((r) => r.textContent.toLowerCase().includes(wanted));
-    if (!match) throw new PageActionError('NOT_FOUND');
+    if (!wanted) throw new PageActionError('NOT_FOUND');
+    const escaped = wanted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu');
+    const matches = rows.filter(r => pattern.test(r.textContent));
+    if (matches.length !== 1) throw new PageActionError('NOT_FOUND');
+    const match = matches[0];
     const clickable = match.querySelector?.('button, a, [role="button"]') || match;
     clickable.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
     clickable.click?.();
@@ -49,6 +50,8 @@ export function runPageAction(action, expectedName, doc = document) {
 
   const el = doc.querySelector(`[data-assistant-ref="${escapeRef(action.ref)}"]`);
   if (!el || !el.isConnected) throw new PageActionError('GONE');
+  if (el.closest?.('[data-assistant-private]')) throw new PageActionError('PRIVATE');
+  if (action.op === 'type' && el.tagName === 'TEXTAREA') action = { ...action, op: 'append' };
   if (expectedName && nameOf(el) !== expectedName) throw new PageActionError('CHANGED');
   if (el.disabled || el.getAttribute('aria-disabled') === 'true') throw new PageActionError('DISABLED');
   el.scrollIntoView({ block: 'center', behavior: 'smooth' });

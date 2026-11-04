@@ -29,6 +29,9 @@ async function step(req, res, next) {
       round: req.validated.round,
       progress: req.validated.progress,
       startedAt: req.validated.startedAt,
+      originRecord: req.validated.originRecord,
+      currentRecord: req.validated.currentRecord,
+      written: req.validated.written,
       mode: req.validated.mode,
       continuationToken: req.validated.continuationToken,
       checklist: req.validated.checklist,
@@ -68,7 +71,7 @@ async function step(req, res, next) {
     res.json({ ...reply, source });
   } catch (err) {
     log.warn('assistant failed', { reqId: req.id, errorCode: 'ASSISTANT_FAILED' });
-    next(err);
+    next(Object.assign(new Error('Assistant request failed'), { status: 500, code: 'ASSISTANT_FAILED' }));
   }
 }
 

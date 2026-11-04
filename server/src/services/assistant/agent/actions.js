@@ -38,10 +38,8 @@ function isGrounded(text, message) {
   if (!text) return true;
   const rawText = String(text).trim();
   if (!rawText) return true;
-  if (norm(message).includes(norm(rawText))) return true;
-  const parts = rawText.split(/\s+/).filter((w) => w.length > 2);
-  if (!parts.length) return true;
-  return mentions(message, parts);
+  const escaped = rawText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp('(?<![\\p{L}\\p{N}])' + escaped + '(?![\\p{L}\\p{N}])', 'iu').test(String(message));
 }
 
 /**
@@ -54,7 +52,7 @@ function isGrounded(text, message) {
  * @param {string} role - 'clinician' | 'patient'
  * @returns {object} { pageActions, navigationSteps, disambiguation, refused, cut }
  */
-function validateAgentActions(rawActions = [], page = {}, message = '', clinicianPatients = [], role = 'clinician') {
+function validateAgentActions(rawActions = [], page = {}, message = '', clinicianPatients = [], role = 'clinician', context = {}) {
   const elements = page?.elements || [];
   const byRef = new Map(elements.map((el) => [el.ref, el]));
 
@@ -71,6 +69,11 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
 
     // 1. Menu navigation: go(pageId)
     if (op === 'go') {
+      if (act.page === 'return') {
+        if (context.originRecord) navigationSteps.push({ op: 'return_record', recordTarget: context.originRecord, recordId: context.originRecord.id, label: 'Return to starting record' });
+        else disambiguation = { type: 'clarify', message: 'Which patient?', options: [] };
+        continue;
+      }
       const targetPage = findPage(role, act.page);
       if (!targetPage) {
         refused.push({ name: act.page || 'page', reason: REASONS.unknownPage });
@@ -87,116 +90,51 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
 
     // 2. Open record: open_record(kind, patient)
     if (op === 'open_record') {
-      const isNotes = act.kind === 'consultation_notes' ||
-        act.ref === 'r_notes_btn' ||
-        /consultation.*notes|notes/i.test(String(act.name || act.kind || ''));
-      if (isNotes) {
-        const notesBtn = byRef.get(act.ref) ||
-          Array.from(byRef.values()).find((el) => /consultation notes/i.test(el.name) && (el.kind === 'button' || el.effect === 'free'));
-        if (notesBtn) {
-          pageActions.push({
-            ref: notesBtn.ref,
-            op: 'click',
-            name: notesBtn.name,
-            kind: notesBtn.kind,
-            risk: 'free',
-            effect: 'free',
-          });
-          continue;
-        }
-      }
-
-      let patientName = String(act.patient || act.name || act.value || '').trim();
-      if (!patientName && clinicianPatients.length > 0) {
-        const mentioned = clinicianPatients.find((p) => p.fullName && new RegExp(`\\b${p.fullName}\\b`, 'i').test(message));
-        if (mentioned) {
-          patientName = mentioned.fullName;
-        }
-      }
-      let kind = act.kind || act.ref;
-      if (!kind || !['last_visit', 'next_visit', 'maternity', 'new_appointment'].includes(kind)) {
-        const lowerMsg = `${message} ${act.text || ''}`.toLowerCase();
-        if (lowerMsg.includes('last')) kind = 'last_visit';
-        else if (lowerMsg.includes('next')) kind = 'next_visit';
-        else if (lowerMsg.includes('matern') || lowerMsg.includes('anc')) kind = 'maternity';
-        else if (lowerMsg.includes('appoint') || lowerMsg.includes('book')) kind = 'new_appointment';
-        else kind = 'last_visit';
-      }
-      if (!patientName) {
-        refused.push({ name: 'patient record', reason: REASONS.patientNotFound });
+      if (act.kind === 'consultation_notes') {
+        const button = elements.find(el => el.kind === 'button' && /consultation notes/i.test(el.name) && !el.private);
+        if (button) pageActions.push({ ref: button.ref, op: 'click', name: button.name, kind: button.kind, risk: classify(button, 'click'), effect: button.effect });
+        else refused.push({ name: 'notes', reason: REASONS.gone });
         continue;
       }
-
+      let patientName = String(act.patient || '').trim();
+      const named = clinicianPatients.flatMap(p => [p.fullName, String(p.fullName || '').split(' ')[0]]).find(name => name && isGrounded(name, message));
+      if (!patientName) patientName = named || clinicianPatients.find(p => p.id === context.currentRecord?.patientId)?.fullName || '';
+      if (!patientName) { disambiguation = { type: 'clarify', message: 'Which patient?', options: [] }; break; }
       const match = resolvePatient(patientName, clinicianPatients);
-      if (match.status === 'none') {
-        refused.push({ name: patientName, reason: REASONS.patientNotFound });
-        continue;
-      }
-
+      const fromCurrent = !named && match.status === 'one' && match.patient.id === context.currentRecord?.patientId;
+      if (!isGrounded(patientName, message) && !fromCurrent) { refused.push({ name: 'patient record', reason: REASONS.notInMessage }); continue; }
+      const kind = act.kind || act.ref;
+      if (!['last_visit','next_visit','maternity','new_appointment'].includes(kind)) { refused.push({ name: 'record', reason: REASONS.badPatientRecord }); continue; }
+      const build = p => {
+        const visit = kind === 'last_visit' ? p.lastVisit : p.nextVisit;
+        if (['last_visit','next_visit'].includes(kind) && !visit?.appointmentId) return null;
+        const recordId = ['last_visit','next_visit'].includes(kind) ? visit.appointmentId : p.id;
+        const path = kind === 'maternity' ? '/clinician/maternity?patientId=' + encodeURIComponent(p.id)
+          : kind === 'new_appointment' ? '/clinician/appointments/new?patient=' + encodeURIComponent(p.id)
+          : '/clinician?appointment=' + encodeURIComponent(recordId);
+        return { path, label: 'Open record', op: 'open_record', kind, recordId };
+      };
       if (match.status === 'many') {
-        // Disambiguation needed
-        disambiguation = {
-          type: 'choose',
-          prompt: 'Which patient do you mean?',
-          options: match.matches.map((p) => {
-            let path = '/clinician';
-            if (kind === 'maternity') path = `/clinician/maternity?patientId=${p.id}`;
-            else if (kind === 'new_appointment') path = `/clinician/appointments/new?patient=${p.id}`;
-            else if (kind === 'next_visit' && p.nextVisit?.appointmentId) path = `/clinician?appointment=${p.nextVisit.appointmentId}`;
-            else if (kind === 'last_visit' && p.lastVisit?.appointmentId) path = `/clinician?appointment=${p.lastVisit.appointmentId}`;
-            return {
-              label: p.fullName,
-              detail: describePatient(p),
-              steps: [{ path, label: `${p.fullName} · record` }],
-            };
-          }),
-        };
+        disambiguation = { type: 'choose', prompt: 'Which patient do you mean?', options: match.matches.flatMap(p => {
+          const step = build(p); return step ? [{ label: p.fullName, detail: describePatient(p), steps: [step] }] : [];
+        }) };
         break;
       }
-
-      const p = match.patient;
-      let path = '/clinician';
-      let label = `Open ${p.fullName}`;
-      if (kind === 'maternity') {
-        path = `/clinician/maternity?patientId=${p.id}`;
-        label = `Maternity card · ${p.fullName}`;
-      } else if (kind === 'new_appointment') {
-        path = `/clinician/appointments/new?patient=${p.id}`;
-        label = `New appointment · ${p.fullName}`;
-      } else if (kind === 'next_visit') {
-        if (p.nextVisit?.appointmentId) {
-          path = `/clinician?appointment=${p.nextVisit.appointmentId}`;
-          label = `Next visit · ${p.fullName}`;
-        } else {
-          path = '/clinician';
-          label = `Visit · ${p.fullName}`;
-        }
-      } else if (kind === 'last_visit') {
-        if (p.lastVisit?.appointmentId) {
-          path = `/clinician?appointment=${p.lastVisit.appointmentId}`;
-          label = `Last visit · ${p.fullName}`;
-        } else {
-          path = '/clinician';
-          label = `Visit · ${p.fullName}`;
-        }
-      }
-
-      navigationSteps.push({ path, label, op: 'open_record', kind, patient: p.fullName });
+      const step = match.status === 'one' ? build(match.patient) : null;
+      if (step) navigationSteps.push(step);
+      else refused.push({ name: 'patient record', reason: REASONS.patientNotFound });
       continue;
     }
 
     // 3. Open row: open_row(patient)
     if (op === 'open_row') {
       let patientName = String(act.patient || act.name || act.value || '').trim();
-      if (!patientName && clinicianPatients.length > 0) {
-        const mentioned = clinicianPatients.find((p) => p.fullName && new RegExp(`\\b${p.fullName}\\b`, 'i').test(message));
-        if (mentioned) {
-          patientName = mentioned.fullName;
-        }
-      }
       if (!patientName || !isGrounded(patientName, message)) {
-        refused.push({ name: patientName || 'row', reason: REASONS.notInMessage });
-        continue;
+        refused.push({ name: 'patient row', reason: REASONS.notInMessage }); continue;
+      }
+      const match = resolvePatient(patientName, clinicianPatients);
+      if (match.status !== 'one') {
+        disambiguation = { type: 'clarify', message: 'Which patient?', options: [] }; break;
       }
       pageActions.push({
         op: 'open_row',
@@ -235,6 +173,10 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
       continue;
     }
 
+    if (element.private) { refused.push({ name: 'private control', reason: REASONS.never }); continue; }
+    if (op === 'type' && element.kind === 'textarea') op = 'append';
+    const fits = ({ click: ['button','link','summary','tab','checkbox','radio','textarea','text'], type: ['text','search','email','tel','number','date','datetime'], append: ['textarea','text'], replace: ['textarea','text'], select: ['select'], check: ['checkbox','radio'], key: ['search'] })[op]?.includes(element.kind);
+    if (!fits) { refused.push({ name: element.name, reason: REASONS.wrongOp }); continue; }
     if (element.disabled) {
       refused.push({ name: element.name, reason: REASONS.disabled });
       continue;
@@ -269,11 +211,11 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
 
     // Grounding check for text operations
     if (['type', 'append', 'replace'].includes(op)) {
-      if (value && !isGrounded(value, message)) {
+      if (!value || !isGrounded(value, message)) {
         refused.push({ name: element.name, reason: REASONS.notInMessage });
         continue;
       }
-      if (op === 'replace' && find && !isGrounded(find, message)) {
+      if (op === 'replace' && (!find || !isGrounded(find, message))) {
         refused.push({ name: element.name, reason: REASONS.notInMessage });
         continue;
       }

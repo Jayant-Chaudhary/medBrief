@@ -12,6 +12,7 @@ const pageElementSchema = z.object({
   options: z.array(label(80)).max(30).optional(),
   effect: z.enum(['save', 'send', 'never', 'free']).optional(),
   required: z.boolean().optional(),
+  private: z.boolean().optional(),
   // Many buttons enable once a field is filled ("Add" next to a text box).
   disabled: z.boolean().optional(),
   // Non-patient nearby text (descriptions, status messages, template scores).
@@ -43,6 +44,9 @@ const actionResultSchema = z.object({
 });
 
 const assistantStepSchema = z.object({
+  originRecord: z.object({ kind: z.enum(['visit','maternity','new_appointment']), id: label(100) }).nullable().optional(),
+  currentRecord: z.object({ kind: z.enum(['visit','maternity','new_appointment']), id: label(100) }).nullable().optional(),
+  written: z.array(z.object({ field: label(64), op: z.enum(['type','append','replace','fill']), hash: z.string().regex(/^[a-f0-9]{64}$/) })).max(config.maxWrittenEntries).optional(),
   message: z.string().trim().min(1).max(config.maxMessageChars),
   currentPath: z.string().max(200).optional(),
   // The browser's IANA time zone, so filled dates match the user's clock.

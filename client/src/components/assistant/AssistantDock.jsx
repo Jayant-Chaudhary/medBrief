@@ -8,6 +8,7 @@ import { useAssistantBridge } from './AssistantBridge.jsx';
 import { runPlan } from './planRunner';
 import { readPage } from './pageReader';
 import { executeAction } from './pageActions';
+import { readRecord, recordPath, hashWrittenValue } from './recordContext';
 import { capturePage, observeAction } from './actionEvidence';
 import ConfirmCard from './ConfirmCard.jsx';
 import AssistantMark from './AssistantMark.jsx';
@@ -223,14 +224,14 @@ export default function AssistantDock({ enabled = ENABLED }) {
    * run what comes back. If the server says the request isn't finished (a
    * panel had to open, a page had to load), read the page again and go on.
    */
-  async function runRound({ message, requestId, round, progress, mode, continuationToken, startedAt = Date.now(), checklist = [], note = '', results = [] }) {
+  async function runRound({ message, requestId, round, progress, mode, continuationToken, startedAt = Date.now(), originRecord = null, written = [], checklist = [], note = '', results = [] }) {
     const id = crypto.randomUUID();
-    setSteps((current) => [...current, { id, requestId, message, round, progress, mode, continuationToken, startedAt, checklist, note, results, continued: round > 0, reply: null }]);
+    setSteps((current) => [...current, { id, requestId, message, round, progress, mode, continuationToken, startedAt, originRecord, written, checklist, note, results, continued: round > 0, reply: null }]);
     const { page, names } = role === 'clinician' ? readPage() : { page: undefined, names: new Map() };
     let reply;
     setBusy(true);
     try {
-      reply = await assistantService.ask(message, pathRef.current, { page, round, progress, mode, continuationToken, startedAt, checklist, note, results });
+      reply = await assistantService.ask(message, pathRef.current, { page, currentRecord: readRecord(window.location, bridge), round, progress, mode, continuationToken, startedAt, originRecord, written, checklist, note, results });
     } catch (err) {
       const errNote = err?.status === 429 ? 'Too many requests. Please wait a moment.' : UNAVAILABLE;
       update(id, { reply: { type: 'unavailable', message: errNote } });
@@ -245,26 +246,34 @@ export default function AssistantDock({ enabled = ENABLED }) {
     let outcome = 'done';
     let actionResults = [];
     if (reply.type === 'navigate') {
-      go(reply.path, id, reply.continue);
+      const targetPath = reply.recordTarget ? recordPath(reply.recordTarget) : reply.path;
+      if (!targetPath) { setBusy(false); return; }
+      go(targetPath, id, reply.continue);
       await waitForSettle();
-      const arrived = window.location.pathname + window.location.search === reply.path && !document.querySelector('[aria-busy="true"], [role="status"][aria-label="Loading"]');
+      const arrived = window.location.pathname + window.location.search === targetPath && !document.querySelector('[aria-busy="true"], [role="status"][aria-label="Loading"]');
       actionResults = [{ actionId: reply.actionId, result: arrived ? 'ok' : 'no_change' }];
     } else if (reply.type === 'run') {
       ({ outcome, actionResults } = await execute(reply.steps, id, requestId, names));
+    }
+    const nextWritten = [...written];
+    for (const action of (reply.steps || []).flatMap(step => step.page?.actions || [])) {
+      if (!action.field || !actionResults.some(r => r.actionId === action.actionId && r.result === 'ok')) continue;
+      const hash = await hashWrittenValue(action.value);
+      if (!nextWritten.some(w => w.field === action.field && w.hash === hash)) nextWritten.push({ field: action.field, op: action.op, hash });
     }
     await continueAfter(reply, outcome, {
       message,
       requestId,
       round,
       progress,
-      mode, continuationToken, startedAt,
+      mode, continuationToken, startedAt, originRecord, written: nextWritten,
       checklist: currentChecklist,
       note: currentNote,
       results: actionResults,
     });
   }
 
-  async function continueAfter(reply, outcome, { message, requestId, round, progress, mode, continuationToken, startedAt = Date.now(), checklist = [], note = '', results = [] }) {
+  async function continueAfter(reply, outcome, { message, requestId, round, progress, mode, continuationToken, startedAt = Date.now(), originRecord = null, written = [], checklist = [], note = '', results = [] }) {
     if (!reply.continue || stopped.current.has(requestId)) {
       setBusy(false);
       if (outcome === 'done' && !reply.continue && window.innerWidth < 640) setOpen(false);
@@ -280,7 +289,7 @@ export default function AssistantDock({ enabled = ENABLED }) {
       requestId,
       round: round + 1,
       progress,
-      mode: reply.mode, continuationToken: reply.continuationToken, startedAt,
+      mode: reply.mode, continuationToken: reply.continuationToken, startedAt, originRecord, written,
       checklist,
       note,
       results,
@@ -299,7 +308,7 @@ export default function AssistantDock({ enabled = ENABLED }) {
     const message = text.trim();
     if (!message || busy) return;
     setText('');
-    runRound({ message, requestId: crypto.randomUUID(), round: 0, progress: [] });
+    runRound({ message, requestId: crypto.randomUUID(), round: 0, progress: [], originRecord: readRecord(window.location, bridge) });
   }
 
   return (

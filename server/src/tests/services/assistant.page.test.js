@@ -31,7 +31,7 @@ const act = (ref, op, value = '') => ({ ref, op, value });
 const step = (message, modelReply, { page = PAGE, role = 'clinician', round = 0, progress = [] } = {}) => {
   const provider = new FakeProvider(modelReply);
   return assistant
-    .handleStep({ message, role, userId: 'dr-1', currentPath: '/clinician', page, round, progress, provider, directory, settings })
+    .handleStep({ message, role, userId: 'dr-1', currentPath: '/clinician', currentRecord: { kind: 'visit', id: 'test-visit' }, recordLookup: async () => ({ id: 'test-visit', patient_id: 'p-asha' }), page, round, progress, provider, directory, settings })
     .then((result) => ({ ...result, provider }));
 };
 
@@ -249,7 +249,7 @@ describe('handleStep: acting on the open page (doctor)', () => {
   it('sends the redacted page to the model and returns checked actions to run', async () => {
     const result = await step('open notes and write mild headache for 2 days', reply([act('r1', 'click'), act('r2', 'append', 'mild headache for 2 days')]));
     expect(result.type).toBe('run');
-    expect(result.steps).toEqual([{
+    expect(result.steps).toMatchObject([{
       label: 'This page',
       page: {
         actions: [

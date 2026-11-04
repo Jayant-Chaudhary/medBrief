@@ -68,6 +68,7 @@ const COMMITS = /\b(save|submit|send|add|create|confirm|apply|share|end|approve|
 
 /** How risky an action on this element is: 'never' | 'free' | 'confirm'. */
 function classify(element, op) {
+  if (element.private) return 'never';
   if (element.effect === 'never' || NEVER.test(element.name)) return 'never';
   if (WRITES.has(op)) {
     return element.effect === 'save' || element.effect === 'send' ? 'confirm' : 'free';
@@ -159,7 +160,8 @@ function checkPageActions(proposed, snapshot, message, { maxActions }) {
   for (const raw of (Array.isArray(proposed) ? proposed : []).slice(0, maxActions)) {
     const element = byRef.get(raw?.ref);
     if (!element) continue;
-    const op = OPS.includes(raw.op) ? raw.op : null;
+    let op = OPS.includes(raw.op) ? raw.op : null;
+    if (op === 'type' && element.kind === 'textarea') op = 'append';
     const fits = op && (
       (op === 'click' && CLICK_KINDS.has(element.kind))
       // A search box that only opens a list of results (marked free) can be clicked open.

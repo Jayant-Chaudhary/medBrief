@@ -30,6 +30,8 @@ const { validateAgentActions } = require('./agent/actions');
 
 const continuation = require('./continuation');
 const execution = require('./execution');
+const writes = require('./writes');
+const { resolveRecord, appointmentOwner } = require('./recordContext');
 
 const NOT_FOUND = 'I could not find a patient with that name among your patients. Try the full name, or open Patients to search.';
 const ONE_PATIENT = 'I can only work with one patient per request. Please ask about each patient separately.';
@@ -547,6 +549,7 @@ async function runAgentLoop({
   onPage,
   seen,
   patients,
+  recordContext = {},
 }) {
   let activeChecklist = Array.isArray(checklist) && checklist.length > 0 ? [...checklist] : [];
   if (activeChecklist.length === 0) {
@@ -590,7 +593,7 @@ async function runAgentLoop({
   if (nav.status === 'ask') return { type: 'clarify', message: 'Please specify the page, field, or patient.', checklist: activeChecklist, options: [], source: 'agent' };
   if (!nav.actions.length) return execution.stop(activeChecklist, nav.status === 'cannot' ? 'the model could not produce a usable action' : 'no verified action completed it');
 
-  const validated = validateAgentActions(nav.actions, seen, message, patients, role);
+  const validated = validateAgentActions(nav.actions, seen, message, patients, role, recordContext);
 
   if (validated.disambiguation) {
     return {
@@ -615,6 +618,7 @@ async function runAgentLoop({
       op: firstNav.op || 'go',
       kind: firstNav.kind,
       recordId: firstNav.recordId,
+      recordTarget: firstNav.recordTarget,
       checklist: activeChecklist,
       note: nav.note,
       ...(moreRounds ? { continue: true } : {}),
@@ -677,6 +681,10 @@ async function handleStep({
   mode,
   continuationToken,
   startedAt,
+  originRecord,
+  currentRecord,
+  written = [],
+  recordLookup = appointmentOwner,
   checklist = [],
   note = '',
   results = [],
@@ -750,6 +758,15 @@ async function handleStep({
 
 
 
+  if (role === 'clinician' && (originRecord || currentRecord || saved?.originRecord) && !patients.length) patients = await directory(userId).catch(() => []);
+  const lookup = id => execution.boundProvider({ complete: () => recordLookup(id, userId) }, deadline, settings, now).complete({});
+  const origin = await resolveRecord(saved ? saved.originRecord : originRecord, patients, userId, lookup);
+  const current = await resolveRecord(currentRecord, patients, userId, lookup);
+  const writtenState = [...(saved?.written || [])];
+  for (const result of verifiedResults) {
+    if (result.result === 'ok' && result.field && result.hash && !writtenState.some(w => w.field === result.field && w.hash === result.hash)) writtenState.push({ field: result.field, op: result.op, hash: result.hash });
+  }
+
   // 1. Fast path: Page phrase rules
   if (seen && !isPhase6Agent && !isMulti) {
     const ruledPage = pageRules(message, seen, { role, onPage, round, progress, settings });
@@ -768,6 +785,22 @@ async function handleStep({
 
   function finish(reply) {
     const active = reply.checklist || verifiedChecklist;
+    const pageActions = (reply.steps || []).flatMap(step => step.page?.actions || []);
+    const patientSpecific = ['/clinician', '/clinician/maternity'].includes(currentPath) && pageActions.some(a => /notes|prescription|medicine|patient instructions|next steps|bp check/i.test((a.name || '') + ' ' + (a.section || '')));
+    const namedPatient = patients.some(p => [p.fullName, String(p.fullName || '').split(' ')[0]].some(name => name && require('./agent/actions').isGrounded(name, message)));
+    if (patientSpecific && !current && !namedPatient) return { type: 'clarify', message: 'Which patient?', options: [], checklist: active, source: reply.source };
+    if (writtenState.length >= settings.maxWrittenEntries) return execution.stop(active, 'the write limit was reached');
+    for (const step of reply.steps || []) {
+      if (!step.page) continue;
+      const guarded = writes.guard(step.page.actions, writtenState, { record: current, path: currentPath });
+      step.page.actions = guarded.actions;
+      step.page.refused = [...(step.page.refused || []), ...guarded.refused];
+    }
+    if (reply.type === 'run' && (reply.steps || []).some(step => step.page?.refused?.length) && !(reply.steps || []).some(step => step.path || step.recordTarget || step.fill || step.press || step.page?.actions?.length)) {
+      const reasons = (reply.steps || []).flatMap(step => step.page?.refused || []).map(r => r.reason);
+      return execution.stop(active.length ? active : [{ text: message, done: false }], reasons.includes('already written') ? 'already written' : 'the requested action was refused');
+    }
+
     if (now() >= deadline) return execution.stop(active.length ? active : [{ text: message, done: false }], 'the request time limit was reached');
     if (!canAgent || (!reply.continue && reply.source !== 'agent')) return reply;
     if (!['run','navigate','choose'].includes(reply.type)) return reply;
@@ -776,14 +809,14 @@ async function handleStep({
     reply.continue = true;
     const pending = execution.pendingActions(reply, checklist, round, currentPath);
     return { ...reply, checklist, mode: 'agent', continuationToken: continuation.issue(userId, message, {
-      round: round + 1, startedAt: initialTime, checklist, pending, history,
+      round: round + 1, startedAt: initialTime, checklist, pending, history, originRecord: origin, written: writtenState,
     }) };
   }
   async function agent() {
     if (!patients.length) patients = await Promise.resolve(directory(userId)).catch(() => []);
     return finish(await runAgentLoop({ message, role, userId, timeZone, currentPath, page,
       round, progress, checklist: verifiedChecklist, note, results: [], pageHash,
-      provider, directory, settings, clock, onPage, seen, patients }));
+      provider, directory, settings, clock, onPage, seen, patients, recordContext: { originRecord: origin, currentRecord: current } }));
   }
   if (isPhase6Agent || isMulti) return agent();
 

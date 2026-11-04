@@ -11,6 +11,7 @@ export function createBridgeRegistry() {
   const waiters = new Map();
 
   return {
+    context: pageId => actionsByPage.get(pageId)?.context?.() ?? null,
     /** Returns a function that unregisters, for use as an effect cleanup. */
     register(pageId, actions) {
       actionsByPage.set(pageId, actions);
