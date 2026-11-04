@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useId } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Search, X, Copy, Archive, Check, ArrowRight, BookOpen, Pencil, ChevronRight, ChevronDown, ChevronUp, FileText, SlidersHorizontal, Pill, CheckCircle2, Layers } from 'lucide-react';
+import { Plus, Search, X, Copy, Archive, Check, ArrowRight, BookOpen, Pencil, ChevronRight, ChevronDown, ChevronUp, FileText, SlidersHorizontal, Pill, CheckCircle2, Layers, Sparkles } from 'lucide-react';
 import { useAuthContext } from '../../context/AuthContext.jsx';
 import { Sidebar } from '../layout/Sidebar.jsx';
 import { blankDraft, blankMedication, blankTemplate, templateFromDraft, evaluateTemplate, buildPatientContext, rankTemplates, allergyReview, storageKeys, readLocal, validDraft, validLibrary } from './templateModel.js';
@@ -743,11 +743,11 @@ function BrowseTemplates({ ranked, onClose, onPreview, onEdit, onArchive, onCrea
   </Dialog>;
 }
 
-export function PrescriptionTemplates({ patient, appointment, appointmentId, reports = [] }) {
+export function PrescriptionTemplates({ patient, appointment, appointmentId, reports = [], similarityData = null }) {
   const { user } = useAuthContext();
   if (!user?.id) return null;
   if (!patient?.id || !appointmentId) return <p className="rx-muted">Select a patient visit to open its prescription.</p>;
-  return <Workspace key={`${user.id}:${patient.id}:${appointmentId}`} ownerId={user.id} patient={patient} appointment={appointment} appointmentId={appointmentId} reports={reports}/>;
+  return <Workspace key={`${user.id}:${patient.id}:${appointmentId}`} ownerId={user.id} patient={patient} appointment={appointment} appointmentId={appointmentId} reports={reports} similarityData={similarityData}/>;
 }
 
 export function MedicationTemplateLibraryPage() {
@@ -1056,7 +1056,7 @@ export function MedicationTemplateLibraryPage() {
   );
 }
 
-function Workspace({ ownerId, patient, appointment, appointmentId, reports }) {
+function Workspace({ ownerId, patient, appointment, appointmentId, reports, similarityData = null }) {
   const [templates, setTemplates] = useState([]);
   const [draft, setDraft] = useState(blankDraft());
   const [serverContext, setServerContext] = useState({ allergyReview: { status: 'not_assessed' }, allergies: [] });
@@ -1079,6 +1079,28 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports }) {
   const context = useMemo(() => ({ ...contextWithFactors(buildPatientContext(patient, appointment), factors.definitions, factors.records), ...serverContext }), [patient, appointment, factors.definitions, factors.records, serverContext]);
   const activeFactors = factors.definitions.filter(definition => definition.enabled);
   const populatedFactors = activeFactors.filter(definition => usableFactor(definition, factors.records[definition.id]));
+
+  // Moment 3: Extract clinical interventions recorded in top comparable historical cases
+  const cohortInterventions = useMemo(() => {
+    if (!similarityData?.topMatches || !Array.isArray(similarityData.topMatches)) return [];
+    const actions = [];
+    const seen = new Set();
+    for (const match of similarityData.topMatches) {
+      const interventions = match.clinicalProgression?.interventionsRecorded || [];
+      for (const item of interventions) {
+        const clean = typeof item === 'string' ? item.trim() : '';
+        if (clean && !seen.has(clean.toLowerCase())) {
+          seen.add(clean.toLowerCase());
+          actions.push({
+            action: clean,
+            similarityPercent: match.similarityPercent,
+            caseLabel: match.caseLabel,
+          });
+        }
+      }
+    }
+    return actions.slice(0, 5);
+  }, [similarityData]);
 
   useEffect(() => {
     let active = true;
@@ -1349,6 +1371,35 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports }) {
           </button>
         </div>
       </div>
+
+      {/* Moment 3: Cohort-Informed Interventions & Actions */}
+      {cohortInterventions.length > 0 && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-3 mb-3">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-label-xs font-semibold text-indigo-900 flex items-center gap-1.5">
+              <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
+              Cohort-Observed Actions ({similarityData?.topMatches?.length || 0} Comparable Cases)
+            </span>
+            <span className="text-body-xs text-indigo-600 font-medium">
+              Decision-support reference
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {cohortInterventions.map((ci, idx) => (
+              <span
+                key={idx}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-label-xs text-indigo-950 border border-indigo-200 shadow-2xs"
+                title={`Recorded in ${ci.caseLabel} (${ci.similarityPercent}% match)`}
+              >
+                <CheckCircle2 className="h-3 w-3 text-indigo-600 shrink-0" />
+                <span className="font-medium">{ci.action}</span>
+                <span className="text-indigo-400 font-normal">· {ci.similarityPercent}%</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       <TemplateAutocomplete query={templateQuery} onQueryChange={setTemplateQuery}
         onStart={() => setTemplateSearchStarted(true)} matches={confirmedSuggestions}
         loading={templateSearch.loading} error={templateSearch.error} onRetry={templateSearch.retry}

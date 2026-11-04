@@ -5,6 +5,7 @@ import { Topbar } from '../../components/layout/Topbar.jsx';
 import { PatientHeaderCard } from '../../components/clinician/PatientHeaderCard.jsx';
 import { PreVisitQuestionnairePanel } from '../../components/clinician/PreVisitQuestionnairePanel.jsx';
 import { PreVisitAiBriefCard } from '../../components/clinician/PreVisitAiBriefCard.jsx';
+import { SimilarCasesTriageCard } from '../../components/clinician/SimilarCasesTriageCard.jsx';
 import { OcrTriageAlert } from '../../components/clinician/OcrTriageAlert.jsx';
 import { HistoryGrid } from '../../components/clinician/HistoryGrid.jsx';
 import { SlideOver } from '../../components/ui/SlideOver.jsx';
@@ -16,10 +17,11 @@ import { PrescriptionTemplates } from '../../components/prescriptions/Prescripti
 import { PrescriptionUpload } from '../../components/clinician/PrescriptionUpload.jsx';
 import { Spinner } from '../../components/common/Spinner.jsx';
 import { usePatientDashboard } from '../../hooks/usePatientDashboard.js';
-import { Plus, ArrowLeft, Clock, User, CheckCircle, NotebookPen, CircleStop, BadgeCheck, UserCheck, Mic, FileAudio, Heart } from 'lucide-react';
+import { Plus, ArrowLeft, Clock, User, CheckCircle, NotebookPen, CircleStop, BadgeCheck, UserCheck, Mic, FileAudio, Heart, Table, Users } from 'lucide-react';
 import { DoctorConsultationModal } from '../../components/consultAudio/DoctorConsultationModal.jsx';
 import { useConsultDraft } from '../../hooks/useConsultDraft.js';
 import { buildFlowsheet } from '../../utils/flowsheet.js';
+import { evaluatePatientSimilarity } from '../../services/patientSimilarityClient.js';
 import {
   fetchPatients,
   saveConsultancyNotes,
@@ -62,6 +64,59 @@ const AVATAR_GRADIENTS = [
 
 function isToday(value) {
   return value && new Date(value).toDateString() === new Date().toDateString();
+}
+
+/**
+ * Normalizes patient demographics, vitals, lab results and pre-visit notes
+ * into a feature profile suitable for the patient similarity pipeline.
+ */
+function extractQueryPatientFromDashboard(data) {
+  if (!data?.patient) return null;
+  const patient = data.patient;
+  const appointment = data.appointment;
+  const vitals = appointment?.vitals || {};
+  const questionnaireResponses = (data.questionnaire?.answers || []).map((ans) => ({
+    question: ans.questionText || ans.question || '',
+    answer: ans.answerText || ans.answer || '',
+  }));
+
+  const labs = {};
+  if (Array.isArray(data.historyReports)) {
+    for (const report of data.historyReports) {
+      for (const m of report.lab_report_metrics || []) {
+        const key = String(m.standard_key || m.standardKey || m.metric_key || m.name || '').toLowerCase();
+        const val = Number(m.reviewed_value ?? m.value);
+        if (Number.isFinite(val)) {
+          if ((key.includes('hemoglobin') || key === 'hb') && !labs.hemoglobin) labs.hemoglobin = val;
+          if (key.includes('platelet') && !labs.platelets) labs.platelets = val;
+          if ((key.includes('fasting') || key.includes('fbs')) && !labs.fasting_glucose) labs.fasting_glucose = val;
+          if ((key.includes('post_meal') || key.includes('ppbs') || key.includes('post_prandial')) && !labs.post_meal_glucose) labs.post_meal_glucose = val;
+          if (key.includes('tsh') && !labs.tsh) labs.tsh = val;
+          if (key.includes('creatinine') && !labs.creatinine) labs.creatinine = val;
+        }
+        if (key.includes('urine_albumin') || key.includes('urine_protein')) {
+          labs.urine_albumin = m.reviewed_value ?? m.value;
+        }
+      }
+    }
+  }
+
+  return {
+    patientId: patient.id,
+    age: Number(patient.age) || 26,
+    gestational_weeks: Number(appointment?.gestationalAgeWeeks || patient.gestationalWeeks) || 28,
+    gravida: Number(patient.gravida) || 1,
+    parity: Number(patient.parity) || 0,
+    bmi: Number(patient.bmi) || 24,
+    vitals: {
+      bp_systolic: Number(vitals.systolic || vitals.bp_systolic) || 120,
+      bp_diastolic: Number(vitals.diastolic || vitals.bp_diastolic) || 80,
+      heart_rate: Number(vitals.heartRate || vitals.heart_rate) || 78,
+    },
+    labs,
+    questionnaireResponses,
+    preVisitNotes: [data.aiSummary?.summary, data.notes?.text].filter(Boolean).join('\n'),
+  };
 }
 
 /**
@@ -124,6 +179,33 @@ export function ClinicianDashboard() {
   const { data, loading, error, patch } = usePatientDashboard(selected?.id, selected?.appointmentId);
   const appointmentId = data?.appointment?.id;
   const consultDraft = useConsultDraft(appointmentId, Boolean(selected));
+
+  const [activeDashboardTab, setActiveDashboardTab] = useState('overview'); // 'overview' | 'flowsheet'
+  const [similarityData, setSimilarityData] = useState(null);
+  const [similarityLoading, setSimilarityLoading] = useState(false);
+  const [similarityError, setSimilarityError] = useState(null);
+
+  const loadSimilarity = useCallback(async () => {
+    if (!data?.patient) return;
+    try {
+      setSimilarityLoading(true);
+      setSimilarityError(null);
+      const queryPatient = extractQueryPatientFromDashboard(data);
+      if (!queryPatient) return;
+      const res = await evaluatePatientSimilarity({ queryPatient });
+      setSimilarityData(res);
+    } catch (err) {
+      setSimilarityError(err?.message || 'Could not load similar historical cases');
+    } finally {
+      setSimilarityLoading(false);
+    }
+  }, [data]);
+
+  useEffect(() => {
+    if (data?.patient?.id) {
+      loadSimilarity();
+    }
+  }, [data?.patient?.id, loadSimilarity]);
 
   const handleGenerateAiBrief = useCallback(async () => {
     if (!selectedAppointmentId) return;
@@ -457,22 +539,82 @@ export function ClinicianDashboard() {
           </div>
         </div>
 
-        {/*
-          Only the action bar above stays put. Patient details and the
-          questionnaire scroll away with the data, so the clinical history
-          gets the whole height once the doctor starts reading it.
-        */}
-        <div className="scroll-column min-h-0 flex-1 space-y-4 pr-1">
-          <PatientHeaderCard patient={data.patient} />
-          <PreVisitAiBriefCard
-            summary={data.aiSummary}
-            onGenerate={handleGenerateAiBrief}
-            isGenerating={generatingBrief}
-          />
-          {data.questionnaire.answers.length > 0 && <PreVisitQuestionnairePanel questionnaire={data.questionnaire} />}
-          <OcrTriageAlert alerts={data.triageAlerts} onResolve={handleResolveAlert} />
-          <HistoryGrid flowsheet={data.flowsheet} patientId={data.patient.id} onResolve={handleResolveAlert} />
+        {/* Segmented Two-Tab Navigation for Patient Dashboard */}
+        <div className="flex items-center justify-between border-b border-slate-200 bg-white px-2 pt-1 pb-0 mb-3 rounded-xl shadow-2xs shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveDashboardTab('overview')}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 text-sm font-semibold border-b-2 transition-all ${
+                activeDashboardTab === 'overview'
+                  ? 'border-cypress text-cypress'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+              }`}
+            >
+              <Users className="h-4 w-4" />
+              <span>Patient Overview</span>
+              {similarityData?.uncheckedFactorsInQuery?.length > 0 && (
+                <span
+                  className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse"
+                  title={`${similarityData.uncheckedFactorsInQuery.length} unchecked clinical factors recorded in comparable cases`}
+                />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveDashboardTab('flowsheet')}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 text-sm font-semibold border-b-2 transition-all ${
+                activeDashboardTab === 'flowsheet'
+                  ? 'border-cypress text-cypress'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+              }`}
+            >
+              <Table className="h-4 w-4" />
+              <span>Clinical Flowsheet & Labs</span>
+              {data.triageAlerts.length > 0 && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                  {data.triageAlerts.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          <div className="text-xs text-slate-400 hidden md:block pr-3">
+            {activeDashboardTab === 'overview'
+              ? 'Demographics · AI Brief · Similar Cases · Pre-visit'
+              : 'OCR verification · Longitudinal metrics & Trend charts'}
+          </div>
         </div>
+
+        {/* Tab 1: Patient Overview */}
+        {activeDashboardTab === 'overview' && (
+          <div className="scroll-column min-h-0 flex-1 space-y-4 pr-1">
+            <PatientHeaderCard patient={data.patient} />
+            <PreVisitAiBriefCard
+              summary={data.aiSummary}
+              onGenerate={handleGenerateAiBrief}
+              isGenerating={generatingBrief}
+            />
+            <SimilarCasesTriageCard
+              similarityData={similarityData}
+              loading={similarityLoading}
+              error={similarityError}
+              onRefresh={loadSimilarity}
+            />
+            {data.questionnaire.answers.length > 0 && (
+              <PreVisitQuestionnairePanel questionnaire={data.questionnaire} />
+            )}
+          </div>
+        )}
+
+        {/* Tab 2: Clinical Flowsheet & Labs */}
+        {activeDashboardTab === 'flowsheet' && (
+          <div className="scroll-column min-h-0 flex-1 space-y-4 pr-1">
+            <OcrTriageAlert alerts={data.triageAlerts} onResolve={handleResolveAlert} />
+            <HistoryGrid flowsheet={data.flowsheet} patientId={data.patient.id} onResolve={handleResolveAlert} />
+          </div>
+        )}
 
         <SlideOver
           open={notesOpen}
@@ -481,7 +623,13 @@ export function ClinicianDashboard() {
           subtitle={`Notes, actions and prescription for ${data.patient.name ?? 'this visit'}`}
         >
           <PrescriptionUpload prescriptions={data.prescriptions} onUpload={handleUploadPrescription}>
-            <PrescriptionTemplates patient={data.patient} appointment={data.appointment} appointmentId={selectedAppointmentId} reports={data.historyReports} />
+            <PrescriptionTemplates
+              patient={data.patient}
+              appointment={data.appointment}
+              appointmentId={selectedAppointmentId}
+              reports={data.historyReports}
+              similarityData={similarityData}
+            />
           </PrescriptionUpload>
           <ConsultancyNotes
             notes={data.notes}
@@ -499,6 +647,8 @@ export function ClinicianDashboard() {
             onGenerateDraft={consultDraft.generate}
             onApproveDraft={consultDraft.approve}
             onRejectDraft={consultDraft.reject}
+            similarityData={similarityData}
+            similarityLoading={similarityLoading}
           />
           <ActionChecklist
             templates={data.actionTemplates}

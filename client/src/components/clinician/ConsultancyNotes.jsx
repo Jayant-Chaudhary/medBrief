@@ -3,6 +3,7 @@ import { SectionCard } from '../common/SectionCard.jsx';
 import { useAutosave } from '../../hooks/useAutosave.js';
 import { ChecklistPicker } from './ChecklistPicker.jsx';
 import { draftToNotesText } from '../../utils/draftNotes.js';
+import { ConsultSimilarCasesWidget } from './ConsultSimilarCasesWidget.jsx';
 
 const STATUS_TEXT = {
   idle: '',
@@ -33,6 +34,8 @@ export function ConsultancyNotes({
   onGenerateDraft,
   onApproveDraft,
   onRejectDraft,
+  similarityData = null,
+  similarityLoading = false,
 }) {
   const [text, setText] = useState(notes?.text ?? '');
   const { status, savedAt, schedule, flush } = useAutosave(onSave);
@@ -107,6 +110,16 @@ export function ConsultancyNotes({
           emptyHint="Save your standard consultation items under Checklists to tick them here."
         />
       </details>
+
+      {/* Moment 2: Post-Consultation Similar Cases Widget */}
+      {similarityData?.topMatches?.length > 0 && (
+        <div className="mb-3">
+          <ConsultSimilarCasesWidget
+            similarityData={similarityData}
+            loading={similarityLoading}
+          />
+        </div>
+      )}
 
       {draftText && (
         <div className="mb-3 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50/70 to-purple-50/40 p-4 shadow-xs" role="region" aria-label="Draft from consultation audio">
