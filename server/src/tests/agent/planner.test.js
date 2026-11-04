@@ -60,7 +60,7 @@ describe('agent planner: checkDone', () => {
     expect(res.remaining).toEqual(['Add folic acid']);
   });
 
-  it('asks provider to verify if unticked items are explained', async () => {
+  it('ignores a model claim that unticked items are done', async () => {
     const checklist = [
       { text: 'Open notes', done: true },
       { text: 'Delete previous record', done: false },
@@ -71,7 +71,8 @@ describe('agent planner: checkDone', () => {
     });
     const provider = new FakeProvider(reply);
     const res = await checkDone('open notes and delete record', checklist, { provider });
-    expect(res.done).toBe(true);
+    expect(res.done).toBe(false);
+    expect(provider.calls).toHaveLength(0);
   });
 });
 

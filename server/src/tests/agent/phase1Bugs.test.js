@@ -63,9 +63,9 @@ describe('Phase 1 Bug Fixes', () => {
         directory: async () => [],
         round: 1,
         mode: 'agent',
-        continuationToken: require('../../services/assistant/continuation').issue('dr-1', 'open schedule and then view patients', { round: 1, checklist }),
+        continuationToken: require('../../services/assistant/continuation').issue('dr-1', 'open schedule and then view patients', { round: 1, checklist, pending: [{ actionId: '0:0', op: 'go', pageId: 'schedule', itemIndex: 0, fingerprint: 'schedule' }] }),
         checklist,
-        results: [{ op: 'go', pageId: 'schedule', result: 'ok' }],
+        results: [{ actionId: '0:0', result: 'ok' }],
         provider,
         settings: { agentLoop: true },
       });
@@ -103,7 +103,7 @@ describe('Phase 1 Bug Fixes', () => {
 
       // Should have attempted once + 1 retry = at least 2 calls
       expect(calls).toBeGreaterThanOrEqual(2);
-      expect(reply.message).toMatch(/the model didn't answer/i);
+      expect(reply.message).toMatch(/model could not produce a usable action/i);
     });
   });
 

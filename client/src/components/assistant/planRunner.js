@@ -29,7 +29,13 @@ export async function runPlan(plan, io, { stepDelayMs = 500 } = {}) {
     const { path, state, fill, press, page } = plan[i];
     const result = {};
     // No path: the page is already open, and what the user chose on it stays.
-    if (path) io.navigate(path, state);
+    if (path) {
+      io.navigate(path, state);
+      const arrived = io.arrive ? await io.arrive(path) : false;
+      io.record?.({ actionId: plan[i].actionId, result: arrived ? 'ok' : 'no_change' });
+      if (io.arrive && !arrived) return 'failed';
+    }
+    for (const refused of page?.refused || []) io.record?.({ actionId: refused.actionId, result: 'refused' });
 
     if (page) {
       const outcome = await runPageActions(page.actions, io, i, result);
@@ -43,6 +49,8 @@ export async function runPlan(plan, io, { stepDelayMs = 500 } = {}) {
         const { page, context } = fill || press;
         actions = await io.waitFor(page, context);
       } catch {
+        if (fill) for (const id of Object.values(fill.actionIds || {})) io.record?.({ actionId: id, result: 'not_found' });
+        if (press) io.record?.({ actionId: press.actionId, result: 'not_found' });
         result[fill ? 'fill' : 'press'] = 'failed';
         io.progress(i, result);
         return 'failed';
@@ -128,6 +136,7 @@ async function runPageActions(actions, io, index, result) {
       show();
       const yes = await io.confirm(cardFor(group));
       if (!yes || io.stopped()) {
+        group.forEach(a => io.record?.({ actionId: a.actionId, result: 'cancelled' }));
         io.report(io.pageId, PAGE_ACTION, 'cancelled');
         group.forEach((_, k) => { result.page[j + k] = 'cancelled'; });
         show();
@@ -137,8 +146,13 @@ async function runPageActions(actions, io, index, result) {
     }
     for (let k = 0; k < group.length; k += 1) {
       try {
-        io.pageAction(group[k]);
+        const actual = await io.pageAction(group[k]);
+        io.record?.({ actionId: group[k].actionId, result: actual?.result || 'no_change' });
+        if (actual && actual.result !== 'ok') {
+          result.page[j + k] = 'failed'; show(); return 'failed';
+        }
       } catch (err) {
+        io.record?.({ actionId: group[k].actionId, result: 'refused' });
         if (confirming) io.report(io.pageId, PAGE_ACTION, 'failed', err?.code || 'PAGE_ACTION_FAILED');
         result.page[j + k] = 'failed';
         show();
@@ -167,6 +181,7 @@ async function fillFields(actions, fill, io, index, result) {
     io.progress(index, { ...result });
     const yes = await io.confirm({ label: 'Save to record', rows, sideEffect: gate.sideEffect, changed: false });
     if (!yes || io.stopped()) {
+      for (const id of Object.values(fill.actionIds || {})) io.record?.({ actionId: id, result: 'cancelled' });
       io.report(fill.page, SAVE_DETAILS, 'cancelled');
       result.fill = 'cancelled';
       io.progress(index, result);
@@ -175,9 +190,11 @@ async function fillFields(actions, fill, io, index, result) {
     io.report(fill.page, SAVE_DETAILS, 'confirmed');
   }
 
+  const before = Object.fromEntries(Object.keys(fill.fields).map(id => [id, actions.get?.(id)]));
   try {
-    actions.fill(fill.fields);
+    await actions.fill(fill.fields);
   } catch {
+    for (const id of Object.values(fill.actionIds || {})) io.record?.({ actionId: id, result: 'refused' });
     if (gate?.ids?.length) io.report(fill.page, SAVE_DETAILS, 'failed', 'FILL_FAILED');
     result.fill = 'failed';
     io.progress(index, result);
@@ -186,6 +203,11 @@ async function fillFields(actions, fill, io, index, result) {
   if (gate?.ids?.length) io.report(fill.page, SAVE_DETAILS, 'done');
   // Let the page render what was filled (a new-patient fill shows new fields) before outlining it.
   await io.settle();
+  for (const [id, value] of Object.entries(fill.fields)) {
+    const after = actions.get?.(id);
+    const result = after !== undefined && String(after) === String(value) && String(before[id]) !== String(after) ? 'ok' : 'no_change';
+    io.record?.({ actionId: fill.actionIds?.[id], result });
+  }
   io.highlight(Object.keys(fill.fields));
   result.fill = 'filled';
   io.progress(index, { ...result });
@@ -194,6 +216,7 @@ async function fillFields(actions, fill, io, index, result) {
 
 async function pressButton(actions, press, io, index, result) {
   const fail = (state = 'failed') => {
+    io.record?.({ actionId: press.actionId, result: state === 'unavailable' ? 'disabled' : 'refused' });
     result.press = state;
     io.progress(index, result);
     return 'failed';
@@ -204,7 +227,10 @@ async function pressButton(actions, press, io, index, result) {
 
   if (press.effect === 'ui') {
     try {
-      await actions.press(press.id);
+      const before = io.capture?.();
+      const ok = await actions.press(press.id);
+      await io.settle();
+      io.record?.({ actionId: press.actionId, result: ok === true || (before !== undefined && io.capture?.() !== before) ? 'ok' : 'no_change' });
     } catch {
       return fail();
     }
@@ -220,6 +246,7 @@ async function pressButton(actions, press, io, index, result) {
     io.progress(index, { ...result });
     const yes = await io.confirm({ label: press.label, rows, sideEffect: press.sideEffect, changed });
     if (!yes || io.stopped()) {
+      io.record?.({ actionId: press.actionId, result: 'cancelled' });
       io.report(press.page, press.id, 'cancelled');
       result.press = 'cancelled';
       io.progress(index, result);
@@ -232,6 +259,7 @@ async function pressButton(actions, press, io, index, result) {
 
   io.report(press.page, press.id, 'confirmed');
   let ok;
+  const before = io.capture?.();
   try {
     ok = await actions.press(press.id);
   } catch {
@@ -241,6 +269,8 @@ async function pressButton(actions, press, io, index, result) {
     io.report(press.page, press.id, 'failed', 'SUBMIT_FAILED');
     return fail();
   }
+  await io.settle();
+  io.record?.({ actionId: press.actionId, result: ok === true || (before !== undefined && io.capture?.() !== before) ? 'ok' : 'no_change' });
   io.report(press.page, press.id, 'done');
   result.press = 'done';
   return 'done';

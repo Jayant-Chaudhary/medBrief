@@ -31,13 +31,14 @@ const checklistItemSchema = z.object({
 });
 
 const actionResultSchema = z.object({
+  actionId: label(40).optional(),
   ref: z.string().optional(),
   op: z.string().optional(),
   name: label(120).optional(),
   page: label(80).optional(),
   path: label(120).optional(),
   kind: label(80).optional(),
-  result: z.enum(['ok', 'not_found', 'disabled', 'no_change', 'cancelled', 'refused']),
+  result: z.enum(['ok', 'not_found', 'label_changed', 'disabled', 'no_change', 'cancelled', 'refused']),
   reason: label(120).optional(),
 });
 
@@ -47,8 +48,9 @@ const assistantStepSchema = z.object({
   // The browser's IANA time zone, so filled dates match the user's clock.
   timeZone: z.string().max(64).optional(),
   page: pageSchema.optional(),
+  startedAt: z.number().int().nonnegative().optional(),
   mode: z.literal('agent').optional(),
-  continuationToken: z.string().max(32000).optional(),
+  continuationToken: z.string().max(config.continuationMaxChars).optional(),
   // Follow-up rounds of the same request: which round, and what was done so far.
   round: z.number().int().min(0).max(config.maxRounds).optional(),
   progress: z.array(label(160)).max(40).optional(),

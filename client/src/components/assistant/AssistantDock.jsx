@@ -7,7 +7,8 @@ import { assistantVisibleOn } from './assistantRoutes';
 import { useAssistantBridge } from './AssistantBridge.jsx';
 import { runPlan } from './planRunner';
 import { readPage } from './pageReader';
-import { runPageAction } from './pageActions';
+import { executeAction } from './pageActions';
+import { capturePage, observeAction } from './actionEvidence';
 import ConfirmCard from './ConfirmCard.jsx';
 import AssistantMark from './AssistantMark.jsx';
 
@@ -176,12 +177,19 @@ export default function AssistantDock({ enabled = ENABLED }) {
 
   /** Runs the plan step by step, so the user sees each page open and each field fill. */
   async function execute(plan, entryId, requestId, names = new Map()) {
+    const actionResults = [];
     const results = [];
     update(entryId, { running: true, progress: 0, results: [] });
     const outcome = await runPlan(plan, {
       pageId: pageIdOf(pathRef.current),
       // Acts only if the element still has the label it had when the page was read.
-      pageAction: (action) => runPageAction(action, names.get(action.ref)),
+      pageAction: (action) => observeAction(() => executeAction({ ...action, name: names.get(action.ref) || action.name }), waitForSettle),
+      record: result => actionResults.push(result),
+      capture: capturePage,
+      arrive: async path => {
+        await waitForSettle();
+        return window.location.pathname + window.location.search === path && !document.querySelector('[aria-busy="true"], [role="status"][aria-label="Loading"]');
+      },
       navigate: (path, state) => navigate(path, state ? { state } : undefined),
       // A fill after opening a page waits until that page shows the intended record
       // (a named patient, or none), never the one that was open before.
@@ -207,7 +215,7 @@ export default function AssistantDock({ enabled = ENABLED }) {
       stopped: () => stopped.current.has(requestId),
     }, { stepDelayMs: STEP_DELAY_MS });
     update(entryId, { running: false, confirm: null, outcome });
-    return outcome;
+    return { outcome, actionResults };
   }
 
   /**
@@ -215,21 +223,20 @@ export default function AssistantDock({ enabled = ENABLED }) {
    * run what comes back. If the server says the request isn't finished (a
    * panel had to open, a page had to load), read the page again and go on.
    */
-  async function runRound({ message, requestId, round, progress, mode, continuationToken, checklist = [], note = '', results = [] }) {
+  async function runRound({ message, requestId, round, progress, mode, continuationToken, startedAt = Date.now(), checklist = [], note = '', results = [] }) {
     const id = crypto.randomUUID();
-    setSteps((current) => [...current, { id, requestId, message, round, progress, mode, continuationToken, checklist, note, results, continued: round > 0, reply: null }]);
+    setSteps((current) => [...current, { id, requestId, message, round, progress, mode, continuationToken, startedAt, checklist, note, results, continued: round > 0, reply: null }]);
     const { page, names } = role === 'clinician' ? readPage() : { page: undefined, names: new Map() };
     let reply;
     setBusy(true);
     try {
-      reply = await assistantService.ask(message, pathRef.current, { page, round, progress, mode, continuationToken, checklist, note, results });
+      reply = await assistantService.ask(message, pathRef.current, { page, round, progress, mode, continuationToken, startedAt, checklist, note, results });
     } catch (err) {
       const errNote = err?.status === 429 ? 'Too many requests. Please wait a moment.' : UNAVAILABLE;
       update(id, { reply: { type: 'unavailable', message: errNote } });
       inputRef.current?.focus();
-      return;
-    } finally {
       setBusy(false);
+      return;
     }
     const currentChecklist = reply.checklist || checklist;
     const currentNote = reply.note || note;
@@ -239,34 +246,27 @@ export default function AssistantDock({ enabled = ENABLED }) {
     let actionResults = [];
     if (reply.type === 'navigate') {
       go(reply.path, id, reply.continue);
-      actionResults = [{ op: reply.op || 'go', ref: reply.pageId || reply.path, page: reply.pageId, kind: reply.kind, result: 'ok' }];
+      await waitForSettle();
+      const arrived = window.location.pathname + window.location.search === reply.path && !document.querySelector('[aria-busy="true"], [role="status"][aria-label="Loading"]');
+      actionResults = [{ actionId: reply.actionId, result: arrived ? 'ok' : 'no_change' }];
     } else if (reply.type === 'run') {
-      outcome = await execute(reply.steps, id, requestId, names);
-      actionResults = [];
-      for (const step of reply.steps || []) {
-        if (step.page?.actions?.length) {
-          for (const a of step.page.actions) {
-            actionResults.push({ op: a.op, ref: a.ref, name: a.name, result: outcome === 'done' ? 'ok' : 'refused' });
-          }
-        } else {
-          actionResults.push({ result: outcome === 'done' ? 'ok' : 'refused' });
-        }
-      }
+      ({ outcome, actionResults } = await execute(reply.steps, id, requestId, names));
     }
     await continueAfter(reply, outcome, {
       message,
       requestId,
       round,
       progress,
-      mode, continuationToken,
+      mode, continuationToken, startedAt,
       checklist: currentChecklist,
       note: currentNote,
       results: actionResults,
     });
   }
 
-  async function continueAfter(reply, outcome, { message, requestId, round, progress, mode, continuationToken, checklist = [], note = '', results = [] }) {
-    if (!reply.continue || outcome !== 'done' || stopped.current.has(requestId)) {
+  async function continueAfter(reply, outcome, { message, requestId, round, progress, mode, continuationToken, startedAt = Date.now(), checklist = [], note = '', results = [] }) {
+    if (!reply.continue || stopped.current.has(requestId)) {
+      setBusy(false);
       if (outcome === 'done' && !reply.continue && window.innerWidth < 640) setOpen(false);
       // Back to the message box only when the request is over: moving focus mid-request would
       // close what the page just opened (a list of templates, a menu).
@@ -279,8 +279,8 @@ export default function AssistantDock({ enabled = ENABLED }) {
       message,
       requestId,
       round: round + 1,
-      progress: [...progress, ...doneLines(reply)],
-      mode: reply.mode, continuationToken: reply.continuationToken,
+      progress,
+      mode: reply.mode, continuationToken: reply.continuationToken, startedAt,
       checklist,
       note,
       results,
@@ -290,8 +290,8 @@ export default function AssistantDock({ enabled = ENABLED }) {
   async function choose(option, entry) {
     const reply = { ...entry.reply, type: 'run', steps: option.steps };
     update(entry.id, { reply, progress: 0 });
-    const outcome = await execute(option.steps, entry.id, entry.requestId, entry.names);
-    await continueAfter(reply, outcome, entry);
+    const { outcome, actionResults } = await execute(option.steps, entry.id, entry.requestId, entry.names);
+    await continueAfter(reply, outcome, { ...entry, results: actionResults });
   }
 
   function submit(event) {
@@ -480,7 +480,7 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
     );
   }
 
-  if (reply.type === 'done') return <p className="flex items-center gap-1.5 text-sm text-primary"><Check size={15} aria-hidden="true" /> All done.</p>;
+  if (reply.type === 'done') return <p style={{ whiteSpace: 'pre-line' }} className="flex items-center gap-1.5 text-sm text-primary"><Check size={15} aria-hidden="true" />{reply.message || 'Completed.'}</p>;
 
   if (reply.type === 'run') {
     const finished = !running && progress >= reply.steps.length;

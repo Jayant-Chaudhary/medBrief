@@ -52,6 +52,8 @@ export function runPageAction(action, expectedName, doc = document) {
   if (expectedName && nameOf(el) !== expectedName) throw new PageActionError('CHANGED');
   if (el.disabled || el.getAttribute('aria-disabled') === 'true') throw new PageActionError('DISABLED');
   el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  const previousValue = el.value;
+  const previousChecked = isOn(el);
 
   switch (action.op) {
     case 'click':
@@ -108,6 +110,11 @@ export function runPageAction(action, expectedName, doc = document) {
 
   el.dataset.assistantFlash = 'on';
   setTimeout(() => delete el.dataset.assistantFlash, 2500);
+  if (['type', 'append', 'replace', 'select'].includes(action.op)) {
+    return { result: el.value !== previousValue ? 'ok' : 'no_change', verified: true };
+  }
+  if (action.op === 'check') return { result: isOn(el) !== previousChecked ? 'ok' : 'no_change', verified: true };
+  return { result: 'ok' }; // Click/key outcomes are observed after React settles.
 }
 
 /**
@@ -116,8 +123,7 @@ export function runPageAction(action, expectedName, doc = document) {
  */
 export function executeAction(action, doc = document) {
   try {
-    runPageAction(action, action.name, doc);
-    return { result: 'ok' };
+    return runPageAction(action, action.name, doc) || { result: 'ok' };
   } catch (err) {
     if (err instanceof PageActionError) {
       if (err.code === 'GONE' || err.code === 'NOT_FOUND' || err.code === 'NO_OPTION') {
@@ -127,10 +133,10 @@ export function executeAction(action, doc = document) {
         return { result: 'disabled', reason: 'Element is disabled' };
       }
       if (err.code === 'CHANGED') {
-        return { result: 'no_change', reason: 'Element label changed' };
+        return { result: 'label_changed', reason: 'LABEL_CHANGED' };
       }
       return { result: 'refused', reason: err.code };
     }
-    return { result: 'refused', reason: err.message || 'Action failed' };
+    return { result: 'refused', reason: 'ACTION_FAILED' };
   }
 }

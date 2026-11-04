@@ -79,7 +79,7 @@ describe('pageActions: browser execution', () => {
     expect(res).toEqual({ result: 'not_found', reason: 'GONE' });
   });
 
-  it('returns no_change when element label changed', () => {
+  it('returns label_changed when element label changed', () => {
     const btn = {
       ref: 'r_changed',
       isConnected: true,
@@ -91,6 +91,6 @@ describe('pageActions: browser execution', () => {
     const doc = createMockDoc([btn]);
 
     const res = executeAction({ ref: 'r_changed', op: 'click', name: 'Original Label' }, doc);
-    expect(res).toEqual({ result: 'no_change', reason: 'Element label changed' });
+    expect(res).toEqual({ result: 'label_changed', reason: 'LABEL_CHANGED' });
   });
 });

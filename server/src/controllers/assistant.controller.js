@@ -28,6 +28,7 @@ async function step(req, res, next) {
       page: req.validated.page,
       round: req.validated.round,
       progress: req.validated.progress,
+      startedAt: req.validated.startedAt,
       mode: req.validated.mode,
       continuationToken: req.validated.continuationToken,
       checklist: req.validated.checklist,
@@ -40,7 +41,7 @@ async function step(req, res, next) {
     const pageSteps = (reply.steps || []).filter((s) => s.page);
     const allRefused = pageSteps.flatMap((s) => s.page.refused || []);
     if (allRefused.length > 0) {
-      log.warn('assistant actions refused', { reqId: req.id, refused: allRefused });
+      log.warn('assistant actions refused', { reqId: req.id, refusedCount: allRefused.length });
     }
 
     log.info('assistant step', {
@@ -48,7 +49,7 @@ async function step(req, res, next) {
       role: req.user.role,
       outcome: reply.type,
       source,
-      path: reply.path,
+
       steps: reply.steps?.length,
       filled: reply.steps?.reduce((n, s) => n + Object.keys(s.fill?.fields || {}).length, 0) || undefined,
       skipped: reply.steps?.reduce((n, s) => n + (s.skipped?.length || 0), 0) || undefined,
@@ -66,7 +67,7 @@ async function step(req, res, next) {
     });
     res.json({ ...reply, source });
   } catch (err) {
-    console.log('CONTROLLER ERROR STACK:', err.stack);
+    log.warn('assistant failed', { reqId: req.id, errorCode: 'ASSISTANT_FAILED' });
     next(err);
   }
 }

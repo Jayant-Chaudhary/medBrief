@@ -176,61 +176,7 @@ async function checkDone(message, checklist = [], { note = '', lastResults = [],
 
   const pending = checklist.filter((item) => !item.done).map((item) => item.text);
 
-  if (!provider) {
-    const reason = pending.length === checklist.length
-      ? "I couldn't complete the request here."
-      : `Couldn't complete: ${pending.join(', ')}.`;
-    return { done: false, message: reason, remaining: pending };
-  }
-
-  const checklistLines = checklist
-    .map((item, idx) => `${idx + 1}. [${item.done ? '✓' : ' '}] ${item.text}`)
-    .join('\n');
-
-  const messages = [
-    {
-      role: 'system',
-      content: [
-        'You verify if a doctor\'s checklist was completed or if uncompleted items have a clear explanation.',
-        'If any checklist item is unfinished and was not refused with a clear reason, set done: false and list remaining items.',
-        'Reply with JSON matching the response schema.',
-      ].join('\n'),
-    },
-    {
-      role: 'user',
-      content: [
-        `Request: "${message}"`,
-        `Checklist:\n${checklistLines}`,
-        `Current Note: "${note}"`,
-        `Last Action Results: ${JSON.stringify(lastResults)}`,
-        `Rounds executed: ${rounds}`,
-      ].join('\n'),
-    },
-  ];
-
-  try {
-    const raw = await provider.complete({
-      messages,
-      schema: DONE_CHECK_SCHEMA,
-      timeoutMs: settings.timeoutMs || 10000,
-    });
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    if (typeof parsed?.done === 'boolean') {
-      return {
-        done: parsed.done,
-        message: parsed.done ? 'All done.' : (parsed.explanation || `Couldn't complete: ${pending.join(', ')}`),
-        remaining: parsed.remaining || pending,
-      };
-    }
-  } catch (_err) {
-    // Model fallback
-  }
-
-  return {
-    done: false,
-    message: `Couldn't complete: ${pending.join(', ')}`,
-    remaining: pending,
-  };
+  return { done: false, message: pending.map(text => "Couldn't: " + text + ' because no verified result completed it').join('\n'), remaining: pending };
 }
 
 module.exports = {

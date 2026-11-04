@@ -29,6 +29,7 @@ const { navigateRound } = require('./agent/navigator');
 const { validateAgentActions } = require('./agent/actions');
 
 const continuation = require('./continuation');
+const execution = require('./execution');
 
 const NOT_FOUND = 'I could not find a patient with that name among your patients. Try the full name, or open Patients to search.';
 const ONE_PATIENT = 'I can only work with one patient per request. Please ask about each patient separately.';
@@ -519,78 +520,8 @@ function flagSubmit(result, message) {
 
 const FIND_IN_PATIENTS = /^(?:please\s+)?(?:find|search(?:\s+for)?|look\s+(?:up|for))\s+(\p{L}[\p{L}'.-]*(?:\s+\p{L}[\p{L}'.-]*){0,3}?)\s+(?:in|on|from|among)\s+(?:the\s+|my\s+)?patients?(?:\s+(?:list|page|tab))?$/iu;
 
-function tickChecklistItem(checklist, result, role = 'clinician') {
-  if (!result || result.result !== 'ok') return checklist;
-
-  // 1. Navigation by page id: op === 'go'
-  if (result.op === 'go') {
-    const pageId = result.pageId || result.page;
-    const page = findPage(role, pageId);
-    const keywords = page
-      ? [page.id, page.label.toLowerCase(), ...(page.aliases || [])]
-      : [String(pageId || '').toLowerCase()];
-
-    const idx = checklist.findIndex((item) => {
-      if (item.done) return false;
-      const lower = item.text.toLowerCase();
-      return keywords.some((kw) => lower.includes(kw.toLowerCase()));
-    });
-    if (idx !== -1) {
-      const next = [...checklist];
-      next[idx] = { ...next[idx], done: true };
-      return next;
-    }
-    return checklist;
-  }
-
-  // 2. Navigation by record kind: op === 'open_record'
-  if (result.op === 'open_record') {
-    const kind = result.kind;
-    const recordKeywords = {
-      last_visit: ['last visit', 'past visit', 'previous visit'],
-      next_visit: ['next visit', 'upcoming visit'],
-      maternity: ['maternity', 'antenatal', 'anc card'],
-      new_appointment: ['appointment', 'book'],
-    }[kind] || [kind];
-
-    const idx = checklist.findIndex((item) => {
-      if (item.done) return false;
-      const lower = item.text.toLowerCase();
-      return recordKeywords.some((kw) => lower.includes(kw));
-    });
-    if (idx !== -1) {
-      const next = [...checklist];
-      next[idx] = { ...next[idx], done: true };
-      return next;
-    }
-    return checklist;
-  }
-
-  // 3. Opening consultation notes panel (clicking the notes button)
-  const isNotesButton = result.op === 'click' && (result.name === 'Consultation notes' || result.ref === 'r_notes_btn');
-  if (isNotesButton) {
-    const idx = checklist.findIndex((item) => {
-      if (item.done) return false;
-      const lower = item.text.toLowerCase();
-      return /\b(open|view|show|kholo)\b.*notes/i.test(lower);
-    });
-    if (idx !== -1) {
-      const next = [...checklist];
-      next[idx] = { ...next[idx], done: true };
-      return next;
-    }
-    // Merely opening the notes panel does not complete writing/adding to notes
-    return checklist;
-  }
-
-  // 4. Other terminal actions (type, append, replace, check, select, click)
-  const idx = checklist.findIndex((item) => !item.done);
-  if (idx !== -1) {
-    const next = [...checklist];
-    next[idx] = { ...next[idx], done: true };
-    return next;
-  }
-  return checklist;
+function tickChecklistItem(checklist, result) {
+  return execution.applyResults(checklist, [result]);
 }
 
 /**
@@ -651,97 +582,13 @@ async function runAgentLoop({
     };
   }
 
-  const isStalled = round >= 2 && results.length > 0 && results.every((r) => ['no_change', 'disabled', 'refused'].includes(r.result));
-  if (isStalled) {
-    const doneCheck = await checkDone(message, activeChecklist, {
-      note,
-      lastResults: results,
-      rounds: round,
-      provider,
-      settings,
-    });
-    return {
-      type: doneCheck.done ? 'done' : 'unsupported',
-      message: doneCheck.message,
-      checklist: activeChecklist,
-      note,
-      steps: [],
-      source: 'agent',
-      attempts: 1,
-    };
+  let nav = await navigateRound({ message, checklist: activeChecklist, note, results, page: seen, role, provider, settings });
+  if (nav.status === 'done' && !nav.actions.length) {
+    // One bounded retry; the model cannot certify its own execution.
+    nav = await navigateRound({ message, checklist: activeChecklist, note: 'Pending items require verified actions.', results, page: seen, role, provider, settings });
   }
-
-  const nav = await navigateRound({
-    message,
-    checklist: activeChecklist,
-    note,
-    results,
-    page: seen,
-    role,
-    provider,
-    settings,
-  });
-
-  // Check for app-help answer:
-  if (nav.reason && asksHow(message)) {
-    const text = checkAnswer(nav.reason, settings.maxAnswerChars || config.maxAnswerChars);
-    if (text) return { type: 'answer', text, source: 'model' };
-  }
-
-  if ((nav.status === 'done' && nav.actions.length === 0) || (nav.actions.length === 0 && round > 0)) {
-    const doneCheck = await checkDone(message, activeChecklist, {
-      note: nav.note,
-      lastResults: results,
-      rounds: round,
-      provider,
-      settings,
-    });
-    if (doneCheck.done || activeChecklist.every((c) => c.done)) {
-      return {
-        type: 'done',
-        message: doneCheck.message || 'All done.',
-        checklist: activeChecklist.map((c) => ({ ...c, done: true })),
-        note: nav.note,
-        steps: [],
-        source: 'agent',
-        attempts: 1,
-      };
-    }
-    return {
-      type: 'unsupported',
-      message: doneCheck.message || (settings && settings.unsupportedMessage) || config.unsupportedMessage,
-      checklist: activeChecklist,
-      note: nav.note,
-      steps: [],
-      source: 'agent',
-      attempts: 1,
-    };
-  }
-
-  if (nav.status === 'cannot') {
-    return {
-      type: 'unsupported',
-      message: nav.reason || settings.unsupportedMessage,
-      checklist: activeChecklist,
-      note: nav.note,
-      steps: [],
-      source: 'agent',
-      attempts: 1,
-    };
-  }
-
-  if (nav.status === 'ask') {
-    return {
-      type: 'clarify',
-      message: nav.question || 'Could you please clarify?',
-      options: [],
-      checklist: activeChecklist,
-      note: nav.note,
-      steps: [],
-      source: 'agent',
-      attempts: 1,
-    };
-  }
+  if (nav.status === 'ask') return { type: 'clarify', message: 'Please specify the page, field, or patient.', checklist: activeChecklist, options: [], source: 'agent' };
+  if (!nav.actions.length) return execution.stop(activeChecklist, nav.status === 'cannot' ? 'the model could not produce a usable action' : 'no verified action completed it');
 
   const validated = validateAgentActions(nav.actions, seen, message, patients, role);
 
@@ -767,6 +614,7 @@ async function runAgentLoop({
       pageId: firstNav.pageId,
       op: firstNav.op || 'go',
       kind: firstNav.kind,
+      recordId: firstNav.recordId,
       checklist: activeChecklist,
       note: nav.note,
       ...(moreRounds ? { continue: true } : {}),
@@ -797,7 +645,7 @@ async function runAgentLoop({
   );
 
   return {
-    type: steps.length > 0 ? 'run' : 'done',
+    type: steps.length > 0 ? 'run' : 'unsupported',
     steps,
     checklist: activeChecklist,
     note: nav.note,
@@ -828,6 +676,7 @@ async function handleStep({
   progress = [],
   mode,
   continuationToken,
+  startedAt,
   checklist = [],
   note = '',
   results = [],
@@ -844,10 +693,34 @@ async function handleStep({
 
   settings = { ...config, ...settings };
   const canAgent = role === 'clinician' && settings.agentLoop === true;
-  const saved = continuation.read(continuationToken, userId, message);
+  const saved = canAgent && mode === 'agent' ? continuation.read(continuationToken, userId, message) : null;
   if (mode && (!canAgent || mode !== 'agent' || !saved || saved.round !== round)) {
     return unsupported('none', 'This request has expired. Please start again.');
   }
+  const initialTime = saved?.startedAt ?? startedAt ?? now();
+  if (!Number.isSafeInteger(initialTime) || initialTime > now()) return execution.stop(saved?.checklist || [{ text: message, done: false }], 'the request start time is invalid');
+  const deadline = initialTime + settings.requestTimeoutMs;
+  const verifiedResults = execution.acceptResults(saved, results);
+  const verifiedChecklist = execution.applyResults(saved?.checklist || [], verifiedResults);
+  if (now() >= deadline) return execution.stop(verifiedChecklist.length ? verifiedChecklist : [{ text: message, done: false }], 'the request time limit was reached');
+  if (verifiedChecklist.length && verifiedChecklist.every(c => c.done)) return { type: 'done', source: 'agent', checklist: verifiedChecklist, message: verifiedChecklist.map(c => '✓ ' + c.text).join('\n') };
+  if (round >= settings.maxRounds) return execution.stop(verifiedChecklist, 'the round limit was reached');
+  provider = execution.boundProvider(provider, deadline, settings, now);
+  const rawDirectory = directory;
+  directory = id => execution.boundProvider({ complete: () => rawDirectory(id) }, deadline, settings, now).complete({});
+  const history = saved?.history || { pages: {}, actions: {} };
+  const progressed = verifiedChecklist.filter(c => c.done).length > (saved?.checklist || []).filter(c => c.done).length;
+  if (progressed) history.actions = {};
+  for (const r of verifiedResults) {
+    if (r.result === 'ok' && ['go', 'open_record'].includes(r.op)) {
+      const key = continuation.digest(r.path || r.pageId || r.page);
+      history.pages[key] = (history.pages[key] || 0) + 1;
+    }
+    if (!progressed) history.actions[r.fingerprint] = (history.actions[r.fingerprint] || 0) + 1;
+  }
+  if (verifiedResults.some(r => r.result === 'cancelled')) return execution.stop(verifiedChecklist, 'confirmation was cancelled');
+  if (Object.values(history.pages).some(n => n >= settings.maxPageVisits)) return execution.stop(verifiedChecklist, 'the same page was reached repeatedly');
+  if (Object.values(history.actions).some(n => n >= settings.maxActionRepeats)) return execution.stop(verifiedChecklist, 'the same action repeated without progress');
   const isPhase6Agent = canAgent && mode === 'agent';
   const ruled = round > 0 ? null : matchIntent(message, pages);
   const isMulti = canAgent && hasMultipleInstructions(message);
@@ -894,15 +767,22 @@ async function handleStep({
   }
 
   function finish(reply) {
-    if (!canAgent || !reply.continue) return reply;
-    return { ...reply, mode: 'agent', continuationToken: continuation.issue(userId, message, {
-      round: round + 1, checklist: reply.checklist || [{ text: message, done: false }],
+    const active = reply.checklist || verifiedChecklist;
+    if (now() >= deadline) return execution.stop(active.length ? active : [{ text: message, done: false }], 'the request time limit was reached');
+    if (!canAgent || (!reply.continue && reply.source !== 'agent')) return reply;
+    if (!['run','navigate','choose'].includes(reply.type)) return reply;
+    const checklist = active.length ? active : [{ text: message, done: false }];
+    // Always collect the last action's result before declaring completion.
+    reply.continue = true;
+    const pending = execution.pendingActions(reply, checklist, round, currentPath);
+    return { ...reply, checklist, mode: 'agent', continuationToken: continuation.issue(userId, message, {
+      round: round + 1, startedAt: initialTime, checklist, pending, history,
     }) };
   }
   async function agent() {
     if (!patients.length) patients = await Promise.resolve(directory(userId)).catch(() => []);
     return finish(await runAgentLoop({ message, role, userId, timeZone, currentPath, page,
-      round, progress, checklist: saved?.checklist || [], note, results, pageHash,
+      round, progress, checklist: verifiedChecklist, note, results: [], pageHash,
       provider, directory, settings, clock, onPage, seen, patients }));
   }
   if (isPhase6Agent || isMulti) return agent();
@@ -961,4 +841,4 @@ function resetForTests() {
   lastModelSuccessAt = 0;
 }
 
-module.exports = { handleStep, warmUp, interpret, planSchema, buildMessages, hasMultipleInstructions, resetForTests, NOT_FOUND, ONE_PATIENT, ONE_SAVE };
+module.exports = { handleStep, warmUp, interpret, planSchema, buildMessages, hasMultipleInstructions, tickChecklistItem, resetForTests, NOT_FOUND, ONE_PATIENT, ONE_SAVE };

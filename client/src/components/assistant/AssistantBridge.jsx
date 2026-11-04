@@ -40,6 +40,7 @@ export function useAssistantControls(pageId, definition, { ready = true } = {}) 
     return bridge.register(pageId, {
       context: () => latest.current.context?.() ?? null,
       confirmFill: (fields) => latest.current.confirmFill?.(fields) ?? null,
+      get: (id) => latest.current.controls?.[id]?.get?.(),
       fill: (fields) => {
         const { applyMany, controls = {} } = latest.current;
         if (applyMany) return applyMany(fields);
