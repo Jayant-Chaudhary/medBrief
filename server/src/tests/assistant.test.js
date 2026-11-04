@@ -141,6 +141,30 @@ describe('POST /api/assistant/step', () => {
     as('clinician');
     expect((await request(app).post('/api/assistant/step').set('Authorization', 'Bearer t').send({ message: 'x', page: huge })).status).toBe(400);
   });
+
+  it('never logs session memory', async () => {
+    as('clinician');
+    listClinicianPatients.mockResolvedValue([]);
+    const info = jest.spyOn(logger, 'info');
+    const warn = jest.spyOn(logger, 'warn');
+    const memory = [
+      {
+        message: 'write confidential memory phrase qwertz',
+        patient: { id: 'p-secret', name: 'Secret Patient Name' },
+        record: { kind: 'visit', id: 'v-secret' },
+        page: 'clinician',
+        checklist: [{ text: 'Secret checklist item', done: true }],
+      },
+    ];
+    const res = await request(app)
+      .post('/api/assistant/step')
+      .set('Authorization', 'Bearer t')
+      .send({ message: 'open schedule', currentPath: '/clinician', memory });
+    expect(res.status).toBe(200);
+    const logged = JSON.stringify([...info.mock.calls, ...warn.mock.calls]);
+    expect(logged).toContain('assistant step');
+    expect(logged).not.toMatch(/qwertz|Secret Patient|v-secret|Secret checklist/);
+  });
 });
 
 describe('POST /api/assistant/event', () => {

@@ -32,6 +32,7 @@ const continuation = require('./continuation');
 const execution = require('./execution');
 const writes = require('./writes');
 const { resolveRecord, appointmentOwner } = require('./recordContext');
+const { sanitizeMemory, effectiveGroundingMessage, resolveMemoryFollowUp, formatMemoryForPrompt } = require('./memory');
 
 const NOT_FOUND = 'I could not find a patient with that name among your patients. Try the full name, or open Patients to search.';
 const ONE_PATIENT = 'I can only work with one patient per request. Please ask about each patient separately.';
@@ -550,10 +551,12 @@ async function runAgentLoop({
   seen,
   patients,
   recordContext = {},
+  memory = [],
+  groundingMessage = message,
 }) {
   let activeChecklist = Array.isArray(checklist) && checklist.length > 0 ? [...checklist] : [];
   if (activeChecklist.length === 0) {
-    activeChecklist = await planChecklist(message, { provider, settings });
+    activeChecklist = await planChecklist(message, { provider, settings, memory });
   }
 
   if (activeChecklist.length === 0) {
@@ -585,15 +588,15 @@ async function runAgentLoop({
     };
   }
 
-  let nav = await navigateRound({ message, checklist: activeChecklist, note, results, page: seen, onPage, clock, role, provider, settings });
+  let nav = await navigateRound({ message, checklist: activeChecklist, note, results, page: seen, onPage, clock, memory, role, provider, settings });
   if (nav.status === 'done' && !nav.actions.length) {
     // One bounded retry; the model cannot certify its own execution.
-    nav = await navigateRound({ message, checklist: activeChecklist, note: 'Pending items require verified actions.', results, page: seen, onPage, clock, role, provider, settings });
+    nav = await navigateRound({ message, checklist: activeChecklist, note: 'Pending items require verified actions.', results, page: seen, onPage, clock, memory, role, provider, settings });
   }
   if (nav.status === 'ask') return { type: 'clarify', message: 'Please specify the page, field, or patient.', checklist: activeChecklist, options: [], source: 'agent' };
   if (!nav.actions.length) return execution.stop(activeChecklist, nav.status === 'cannot' ? 'the model could not produce a usable action' : 'no verified action completed it');
 
-  const validated = validateAgentActions(nav.actions, seen, message, patients, role, { ...recordContext, onPage, clock });
+  const validated = validateAgentActions(nav.actions, seen, groundingMessage, patients, role, { ...recordContext, onPage, clock });
 
   if (validated.disambiguation) {
     return {
@@ -687,6 +690,7 @@ async function handleStep({
   originRecord,
   currentRecord,
   written = [],
+  memory = [],
   recordLookup = appointmentOwner,
   checklist = [],
   note = '',
@@ -734,7 +738,8 @@ async function handleStep({
   if (Object.values(history.actions).some(n => n >= settings.maxActionRepeats)) return execution.stop(verifiedChecklist, 'the same action repeated without progress');
   const isPhase6Agent = canAgent && mode === 'agent';
   const ruled = round > 0 ? null : matchIntent(message, pages);
-  const isMulti = canAgent && hasMultipleInstructions(message);
+  const hasMemoryFollowUp = canAgent && Array.isArray(memory) && memory.length > 0 && /\b(which\s+patient|go\s+back\s+to\s+the\s+last\s+patient|do\s+the\s+same|repeat\s+that|finish\s+what\s+failed|same\s+notes?\s+as\s+before|also\s+add|also\s+write)\b/i.test(message);
+  const isMulti = canAgent && (hasMultipleInstructions(message) || hasMemoryFollowUp);
   if (!isMulti && !isPhase6Agent) {
     if (ruled?.kind === 'open') return { ...flagSubmit(navigate(role, ruled.pageIds[0], 'rules'), message), attempts: 0 };
     if (ruled?.kind === 'clarify') return { ...clarify(role, ruled.pageIds, 'rules'), attempts: 0 };
@@ -761,13 +766,35 @@ async function handleStep({
 
 
 
-  if (role === 'clinician' && (originRecord || currentRecord || saved?.originRecord) && !patients.length) patients = await directory(userId).catch(() => []);
+  if (role === 'clinician' && (originRecord || currentRecord || saved?.originRecord || (Array.isArray(memory) && memory.length > 0)) && !patients.length) patients = await Promise.resolve(directory(userId)).catch(() => []);
+  const cleanMemory = role === 'clinician' ? sanitizeMemory(memory, patients, { now: now(), settings }) : [];
+  const followUp = role === 'clinician' && round === 0 ? resolveMemoryFollowUp(message, cleanMemory, patients) : null;
+  if (followUp?.kind === 'answer') {
+    return { type: 'answer', text: followUp.text, source: 'memory', attempts: 0 };
+  }
   const lookup = id => execution.boundProvider({ complete: () => recordLookup(id, userId) }, deadline, settings, now).complete({});
-  const origin = await resolveRecord(saved ? saved.originRecord : originRecord, patients, userId, lookup);
-  const current = await resolveRecord(currentRecord, patients, userId, lookup);
+  let origin = await resolveRecord(saved ? saved.originRecord : originRecord, patients, userId, lookup);
+  let current = await resolveRecord(currentRecord, patients, userId, lookup);
+  if (!current && followUp?.record) {
+    current = await resolveRecord(followUp.record, patients, userId, lookup);
+  }
   const writtenState = [...(saved?.written || [])];
   for (const result of verifiedResults) {
     if (result.result === 'ok' && result.field && result.hash && !writtenState.some(w => w.field === result.field && w.hash === result.hash)) writtenState.push({ field: result.field, op: result.op, hash: result.hash });
+  }
+  if (followUp?.kind === 'return_patient' && current) {
+    return finish({
+      type: 'navigate',
+      path: current.kind === 'maternity' ? '/clinician/maternity?patientId=' + encodeURIComponent(current.id) : current.kind === 'new_appointment' ? '/clinician/appointments/new?patient=' + encodeURIComponent(current.id) : '/clinician?appointment=' + encodeURIComponent(current.id),
+      label: "Open " + (followUp.patient?.fullName || 'patient') + "'s record",
+      op: 'open_record',
+      kind: current.kind === 'visit' ? 'last_visit' : current.kind,
+      recordId: current.id,
+      recordTarget: current,
+      checklist: followUp.checklist,
+      source: 'agent',
+      attempts: 0,
+    });
   }
 
   // 1. Fast path: Page phrase rules
@@ -790,7 +817,8 @@ async function handleStep({
     const active = reply.checklist || verifiedChecklist;
     const pageActions = (reply.steps || []).flatMap(step => step.page?.actions || []);
     const patientSpecific = ['/clinician', '/clinician/maternity'].includes(currentPath) && pageActions.some(a => /notes|prescription|medicine|patient instructions|next steps|bp check/i.test((a.name || '') + ' ' + (a.section || '')));
-    const namedPatient = patients.some(p => [p.fullName, String(p.fullName || '').split(' ')[0]].some(name => name && require('./agent/actions').isGrounded(name, message)));
+    const groundingMsg = effectiveGroundingMessage(followUp?.expandedMessage || message, cleanMemory);
+    const namedPatient = Boolean(followUp?.patient) || patients.some(p => [p.fullName, String(p.fullName || '').split(' ')[0]].some(name => name && require('./agent/actions').isGrounded(name, groundingMsg)));
     if (patientSpecific && !current && !namedPatient) return { type: 'clarify', message: 'Which patient?', options: [], checklist: active, source: reply.source };
     if (writtenState.length >= settings.maxWrittenEntries) return execution.stop(active, 'the write limit was reached');
     for (const step of reply.steps || []) {
@@ -842,9 +870,13 @@ async function handleStep({
   }
   async function agent() {
     if (!patients.length) patients = await Promise.resolve(directory(userId)).catch(() => []);
-    return finish(await runAgentLoop({ message, role, userId, timeZone, currentPath, page,
-      round, progress, checklist: verifiedChecklist, note, results: [], pageHash,
-      provider, directory, settings, clock, onPage, seen, patients, recordContext: { originRecord: origin, currentRecord: current } }));
+    const activeMsg = followUp?.expandedMessage || message;
+    const groundingMsg = effectiveGroundingMessage(activeMsg, cleanMemory);
+    const initialChecklist = verifiedChecklist.length ? verifiedChecklist : (followUp?.checklist || []);
+    const activeCurrent = current || (followUp?.patient ? { kind: followUp.record?.kind || 'visit', id: followUp.record?.id || followUp.patient.id, patientId: followUp.patient.id } : null);
+    return finish(await runAgentLoop({ message: activeMsg, groundingMessage: groundingMsg, memory: cleanMemory, role, userId, timeZone, currentPath, page,
+      round, progress, checklist: initialChecklist, note, results: [], pageHash,
+      provider, directory, settings, clock, onPage, seen, patients, recordContext: { originRecord: origin, currentRecord: activeCurrent } }));
   }
   if (isPhase6Agent || isMulti) return agent();
 

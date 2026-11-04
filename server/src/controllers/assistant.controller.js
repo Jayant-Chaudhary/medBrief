@@ -32,6 +32,7 @@ async function step(req, res, next) {
       originRecord: req.validated.originRecord,
       currentRecord: req.validated.currentRecord,
       written: req.validated.written,
+      memory: req.validated.memory,
       mode: req.validated.mode,
       continuationToken: req.validated.continuationToken,
       checklist: req.validated.checklist,

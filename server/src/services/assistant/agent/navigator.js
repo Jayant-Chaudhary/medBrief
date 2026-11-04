@@ -20,6 +20,7 @@ const { describeElements } = require('../pageSnapshot');
 const { pagesFor } = require('../pages.registry');
 const { formFor, pressableButtons } = require('../controls.registry');
 const { nowInWords } = require('../resolvers/datetime');
+const { formatMemoryForPrompt } = require('../memory');
 const config = require('../../../config/assistant.config');
 
 const NAVIGATOR_SCHEMA = {
@@ -107,6 +108,7 @@ function buildNavigatorMessages({
   page,
   onPage = null,
   clock = null,
+  memory = [],
   role = 'clinician',
 }) {
   const pages = pagesFor(role);
@@ -153,7 +155,9 @@ function buildNavigatorMessages({
     `Available Menu Pages:\n${pageList}`,
   ].join('\n');
 
+  const memoryBlock = formatMemoryForPrompt(memory);
   const userPrompt = [
+    ...(memoryBlock ? [memoryBlock, ''] : []),
     `User Request: "${message}"`,
     '',
     `Checklist Status:\n${formatChecklist(checklist)}`,
@@ -187,6 +191,7 @@ async function navigateRound({
   page,
   onPage = null,
   clock = null,
+  memory = [],
   role = 'clinician',
   provider,
   settings = config,
@@ -200,7 +205,7 @@ async function navigateRound({
     };
   }
 
-  const messages = buildNavigatorMessages({ message, checklist, note, results, page, onPage, clock, role });
+  const messages = buildNavigatorMessages({ message, checklist, note, results, page, onPage, clock, memory, role });
 
   const timeoutMs = settings.modelCallTimeoutMs || settings.timeoutMs || 30000;
   for (let attempt = 0; attempt < 2; attempt += 1) {

@@ -10,6 +10,7 @@
  */
 
 const config = require('../../../config/assistant.config');
+const { formatMemoryForPrompt } = require('../memory');
 
 const CHECKLIST_SCHEMA = {
   type: 'object',
@@ -101,12 +102,13 @@ const FORBIDDEN_WORDS = /\b(delete|remove all|discard|clear all|archive|sign ?ou
  * @param {object} options - { provider, settings }
  * @returns {Promise<Array<{ text: string, done: boolean }>>}
  */
-async function planChecklist(message, { provider, settings = config } = {}) {
+async function planChecklist(message, { provider, settings = config, memory = [] } = {}) {
   const text = String(message || '').trim();
   if (!text || FORBIDDEN_WORDS.test(text)) return [];
 
-  // Single short commands don't need a heavy multi-step split
-  if (!/\b(and|then|also|phir|aur|after\s+that|afterwards|lastly|finally)\b|[,;]/i.test(text) && text.length < 50) {
+  const memoryPrompt = formatMemoryForPrompt(memory);
+  // Single short commands don't need a heavy multi-step split unless they reference earlier memory
+  if (!memoryPrompt && !/\b(and|then|also|phir|aur|after\s+that|afterwards|lastly|finally)\b|[,;]/i.test(text) && text.length < 50) {
     return [{ text: text.slice(0, 160), done: false }];
   }
 
@@ -117,7 +119,7 @@ async function planChecklist(message, { provider, settings = config } = {}) {
   const messages = [
     { role: 'system', content: PLANNER_SYSTEM },
     ...PLANNER_EXAMPLES,
-    { role: 'user', content: text },
+    { role: 'user', content: memoryPrompt ? `${memoryPrompt}\n\nCurrent request: ${text}` : text },
   ];
 
   const timeoutMs = settings.modelCallTimeoutMs || settings.timeoutMs || 30000;

@@ -73,6 +73,8 @@ module.exports = {
   maxRounds: positiveInteger('ASSISTANT_MAX_ROUNDS', 15),
   maxPageVisits: positiveInteger('ASSISTANT_MAX_PAGE_VISITS', 3),
   maxWrittenEntries: positiveInteger('ASSISTANT_MAX_WRITTEN_ENTRIES', 120),
+  memoryItems: positiveInteger('ASSISTANT_MEMORY_ITEMS', 10),
+  memoryMaxAgeMin: positiveInteger('ASSISTANT_MEMORY_MAX_AGE_MIN', 120),
   maxActionRepeats: positiveInteger('ASSISTANT_MAX_ACTION_REPEATS', 2),
   continuationMaxChars: positiveInteger('ASSISTANT_CONTINUATION_MAX_CHARS', 32000),
   stallLimit: positiveInteger('ASSISTANT_STALL_LIMIT', 2),

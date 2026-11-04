@@ -9,6 +9,7 @@ import { runPlan } from './planRunner';
 import { readPage } from './pageReader';
 import { executeAction } from './pageActions';
 import { readRecord, recordPath, hashWrittenValue } from './recordContext';
+import { pruneMemory, buildMemoryEntry, appendMemory } from './memoryState';
 import { capturePage, observeAction } from './actionEvidence';
 import ConfirmCard from './ConfirmCard.jsx';
 import AssistantMark from './AssistantMark.jsx';
@@ -116,6 +117,7 @@ export default function AssistantDock({ enabled = ENABLED }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const [steps, setSteps] = useState([]);
+  const [memory, setMemory] = useState([]);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef(null);
   const buttonRef = useRef(null);
@@ -131,6 +133,13 @@ export default function AssistantDock({ enabled = ENABLED }) {
 
   const verified = profile?.clinicianDetails?.is_verified === true;
   const visible = enabled && !loading && Boolean(user) && assistantVisibleOn(location.pathname, { role, verified });
+
+  useEffect(() => {
+    if (!user) {
+      setMemory([]);
+      setSteps([]);
+    }
+  }, [user]);
 
   useEffect(() => {
     if (!open) {
@@ -154,6 +163,10 @@ export default function AssistantDock({ enabled = ENABLED }) {
 
   function close() {
     setOpen(false);
+  }
+
+  function forgetMemory() {
+    setMemory([]);
   }
 
   const update = (entryId, change) => setSteps((current) => current.map((s) => (s.id === entryId ? { ...s, ...change } : s)));
@@ -231,7 +244,9 @@ export default function AssistantDock({ enabled = ENABLED }) {
     let reply;
     setBusy(true);
     try {
-      reply = await assistantService.ask(message, pathRef.current, { page, currentRecord: readRecord(window.location, bridge), round, progress, mode, continuationToken, startedAt, originRecord, written, checklist, note, results });
+      const activeMemory = pruneMemory(memory);
+      if (activeMemory.length !== memory.length) setMemory(activeMemory);
+      reply = await assistantService.ask(message, pathRef.current, { page, currentRecord: readRecord(window.location, bridge), round, progress, mode, continuationToken, startedAt, originRecord, written, memory: activeMemory, checklist, note, results });
     } catch (err) {
       const errNote = err?.status === 429 ? 'Too many requests. Please wait a moment.' : UNAVAILABLE;
       update(id, { reply: { type: 'unavailable', message: errNote } });
@@ -284,6 +299,17 @@ export default function AssistantDock({ enabled = ENABLED }) {
 
   async function continueAfter(reply, outcome, { message, requestId, round, progress, mode, continuationToken, startedAt = Date.now(), originRecord = null, written = [], checklist = [], note = '', results = [] }) {
     if (!reply.continue || stopped.current.has(requestId)) {
+      if (role === 'clinician' && reply && reply.type !== 'unavailable') {
+        const endRecord = readRecord(window.location, bridge);
+        const entry = buildMemoryEntry({
+          message,
+          patient: reply.patient || (endRecord?.id ? { id: endRecord.id } : null),
+          record: endRecord,
+          page: pageIdOf(pathRef.current),
+          checklist: reply.checklist || checklist,
+        });
+        setMemory((prev) => appendMemory(prev, entry));
+      }
       setBusy(false);
       if (outcome === 'done' && !reply.continue && window.innerWidth < 640) setOpen(false);
       // Back to the message box only when the request is over: moving focus mid-request would
@@ -356,9 +382,21 @@ export default function AssistantDock({ enabled = ENABLED }) {
                 </p>
               </div>
             </div>
-            <button type="button" onClick={close} aria-label="Close assistant" className="rounded-full p-2 text-ink-soft hover:bg-canvas">
-              <X size={18} aria-hidden="true" />
-            </button>
+            <div className="flex items-center gap-1">
+              {role === 'clinician' && memory.length > 0 && (
+                <button
+                  type="button"
+                  onClick={forgetMemory}
+                  aria-label="Forget session memory"
+                  className="rounded-full px-2.5 py-1 text-xs font-medium text-ink-soft hover:bg-canvas hover:text-ink"
+                >
+                  Forget
+                </button>
+              )}
+              <button type="button" onClick={close} aria-label="Close assistant" className="rounded-full p-2 text-ink-soft hover:bg-canvas">
+                <X size={18} aria-hidden="true" />
+              </button>
+            </div>
           </header>
 
           <ol ref={listRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-3" aria-live="polite">

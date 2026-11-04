@@ -43,7 +43,29 @@ const actionResultSchema = z.object({
   reason: label(120).optional(),
 });
 
+const memoryChecklistItemSchema = z.object({
+  text: label(160),
+  done: z.boolean(),
+  reason: label(160).optional(),
+});
+
+const memoryItemSchema = z.object({
+  message: label(config.maxMessageChars),
+  patient: z.object({
+    id: label(100).optional(),
+    name: label(120).optional(),
+  }).nullable().optional(),
+  record: z.object({
+    kind: z.enum(['visit', 'maternity', 'new_appointment']),
+    id: label(100),
+  }).nullable().optional(),
+  page: label(80).nullable().optional(),
+  checklist: z.array(memoryChecklistItemSchema).max(8).optional(),
+  at: z.number().int().nonnegative().optional(),
+});
+
 const assistantStepSchema = z.object({
+  memory: z.array(memoryItemSchema).max(config.memoryItems).optional(),
   originRecord: z.object({ kind: z.enum(['visit','maternity','new_appointment']), id: label(100) }).nullable().optional(),
   currentRecord: z.object({ kind: z.enum(['visit','maternity','new_appointment']), id: label(100) }).nullable().optional(),
   written: z.array(z.object({ field: label(64), op: z.enum(['type','append','replace','fill']), hash: z.string().regex(/^[a-f0-9]{64}$/) })).max(config.maxWrittenEntries).optional(),
