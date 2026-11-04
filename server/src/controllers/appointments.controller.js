@@ -58,6 +58,7 @@ async function createAppointment(req, res, next) {
       ...appointment,
       isReturningPatient: Boolean(existingPatientId),
       inviteLink: invite?.inviteLink ?? null,
+      inviteEmailSent: invite?.emailSent === true,
     });
   } catch (err) {
     next(err);

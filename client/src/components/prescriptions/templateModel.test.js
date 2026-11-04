@@ -2,10 +2,11 @@
 import assert from 'node:assert/strict';
 import { blankDraft, blankTemplate, blankMedication, evaluateTemplate, applyTemplate, templateFromDraft, storageKeys, readLocal, validLibrary, buildPatientContext, rankTemplates, capturePrescriptionTemplate, autoTemplateId, allergyReview } from './templateModel.js';
 const context = { factors: 'factor A, Factor B', purpose: 'Follow-up', pregnancy: '', age: '30' };
-function template(overrides={}) { return {...blankTemplate(),name:'Example',purpose:'Follow-up',required:'factor a',...overrides}; }
-test('matches normalized confirmed factors and purpose',()=>{
+function template(overrides={}) { return {...blankTemplate(),name:'Example',required:'factor a',...overrides}; }
+test('matches normalized confirmed factors; visit purpose does not affect template matching',()=>{
   const result=evaluateTemplate(template({optional:'factor b'}),context);
-  assert.equal(result.suggested,true);assert.equal(result.matched.length,3);
+  const withoutVisitPurpose=evaluateTemplate(template({optional:'factor b'}),{...context,purpose:''});
+  assert.equal(result.suggested,true);assert.equal(result.matched.length,2);assert.equal(result.score,withoutVisitPurpose.score);
 });
 test('unknown required factors are missing, not matches',()=>{
   const result=evaluateTemplate(template({required:'factor c'}),context);
@@ -33,9 +34,11 @@ test('allergy review distinguishes unknown and no-known-allergy states',()=>{
   assert.equal(allergyReview(value, { allergyReview: { status: 'none_known' } }).status, 'none-reported');
   assert.equal(allergyReview(value, { allergyReview: { status: 'not_assessed' } }).status, 'unknown');
 });
-test('unknown age and pregnancy stay unknown; untagged and archived templates are not suggested',()=>{
+test('unknown age and pregnancy stay unknown; visit purpose is not a template ailment tag',()=>{
   const result=evaluateTemplate(template({minAge:'18',pregnancy:'First trimester'}),{...context,age:''});
   assert.deepEqual(result.missing,['Pregnancy stage','Age']);
+  const tagged=evaluateTemplate(template({purpose:'Follow-up'}),context);
+  assert.equal(tagged.checks.find(check=>check.label==='Associated ailment: follow-up').status,'unknown');
   assert.equal(evaluateTemplate(blankTemplate(),context).suggested,false);
   assert.equal(evaluateTemplate(template({archived:true}),context).suggested,false);
 });

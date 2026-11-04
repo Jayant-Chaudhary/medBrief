@@ -72,7 +72,7 @@ async function authHeader() {
 }
 
 /** Thin fetch wrapper: attaches the Supabase JWT and unwraps JSON errors. */
-export async function request(path, { method = 'GET', body, signal, _retry = false } = {}) {
+export async function request(path, { method = 'GET', body, signal, accessToken, _retry = false } = {}) {
   const startedAt = performance.now();
   const response = await fetch(`${BASE_URL}${path}`, {
     method,
@@ -80,7 +80,7 @@ export async function request(path, { method = 'GET', body, signal, _retry = fal
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(await authHeader()),
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : await authHeader()),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -92,7 +92,7 @@ export async function request(path, { method = 'GET', body, signal, _retry = fal
     try {
       const { data: refreshed, error } = await supabase.auth.refreshSession();
       if (!error && refreshed?.session?.access_token) {
-        return request(path, { method, body, signal, _retry: true });
+        return request(path, { method, body, signal, accessToken, _retry: true });
       }
     } catch {
       // refresh error, fall through to throwing

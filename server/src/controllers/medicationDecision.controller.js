@@ -1,5 +1,6 @@
 const db = require('../config/supabaseAdminClient');
 const { assertAppointmentAccess } = require('../services/access.service');
+const { isDeepStrictEqual } = require('node:util');
 const { maxDisplayedCandidates } = require('../config/medicationDecision.config');
 
 const bad = (res, message, status = 400) => res.status(status).json({ error: message });
@@ -85,7 +86,7 @@ async function listTemplates(req, res, next) {
         const ingredientKey = m.ingredientKey || saved?.ingredient_key || '';
         return { ...m, ingredientKey, allergyAssociations: associations[ingredientKey] || [], allergySubstanceKeys: (associations[ingredientKey] || []).map(a => a.substance_key) };
       });
-      return { ...content, id: row.id, name: row.title, version: row.version, status: row.status, archived: row.status === 'archived', purpose: content.purpose ?? row.indication_display ?? '', medications, similarityExamples: examplesByTemplate[row.id] || [] };
+      return { ...content, id: row.id, name: row.title, version: row.version, status: row.status, archived: row.status === 'archived', purpose: content.purpose ?? '', medications, similarityExamples: examplesByTemplate[row.id] || [] };
     }));
   } catch (e) { next(e); }
 }
@@ -94,6 +95,10 @@ async function saveTemplate(req, res, next) {
     const template = req.body?.template;
     if (!template || typeof template !== 'object' || typeof template.name !== 'string' || !Array.isArray(template.medications) || template.medications.length > 100) return bad(res, 'Invalid template payload');
     if (JSON.stringify(template).length > 100000) return bad(res, 'Template is too large');
+    if ((template.clinicianApproved != null && typeof template.clinicianApproved !== 'boolean') || (template.archived != null && typeof template.archived !== 'boolean')) return bad(res, 'Approval and archive flags must be boolean');
+    // The existing database function defaults a manual template to active.
+    // Require explicit approval unless it is an archived or captured draft.
+    if (template.clinicianApproved !== true && template.archived !== true && !Object.prototype.hasOwnProperty.call(template, 'autoCapture')) return bad(res, 'Explicit clinician approval is required to activate a template');
     const { data, error } = await db.rpc('save_medication_template', { p_clinician_id: req.user.id, p_template: template });
     if (error) throw error;
     res.json(data);
@@ -135,7 +140,8 @@ async function saveDraft(req, res, next) {
       for (const row of feedbackRows.data || []) {
         if (!ownedEventIds.has(row.recommendation_event_id)) continue;
         const finalItems = (linked.get(row.id) || []).map(({ name, ingredientKey, strength, dose, route, frequency, duration, kind }) => ({ name, ingredientKey, strength, dose, route, frequency, duration, kind }));
-        if (JSON.stringify(finalItems) === JSON.stringify(row.final_items || [])) continue;
+        // Postgres jsonb may reorder object keys. Compare values, not key order.
+        if (isDeepStrictEqual(JSON.parse(JSON.stringify(finalItems)), row.final_items || [])) continue;
         const updated = await db.from('medication_feedback_events').update({ action: 'edited', final_items: finalItems }).eq('id', row.id).eq('clinician_id', req.user.id);
         if (updated.error) throw updated.error;
       }

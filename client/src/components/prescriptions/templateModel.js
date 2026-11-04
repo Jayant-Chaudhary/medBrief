@@ -58,7 +58,8 @@ export function evaluateTemplate(template, context) {
   for (const factor of tags(template.optional).filter(factor => !tags(template.required).includes(factor))) {
     add(`Factor: ${factor}`, factors.includes(factor) ? 'matched' : absent.includes(factor) ? 'different' : 'unknown', false);
   }
-  for (const ailment of tags(template.purpose)) {
+  const explicitlyListedFactors = new Set([...tags(template.required), ...tags(template.optional), ...tags(template.exclusions)]);
+  for (const ailment of tags(template.purpose).filter(tag => !explicitlyListedFactors.has(tag))) {
     add(`Associated ailment: ${ailment}`, factors.includes(ailment) ? 'matched' : absent.includes(ailment) ? 'different' : 'unknown', false);
   }
   for (const factor of tags(template.exclusions)) {

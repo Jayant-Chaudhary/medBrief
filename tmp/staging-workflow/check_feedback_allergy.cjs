@@ -1,0 +1,57 @@
+// Isolated staging-only software test. All fixture names and associations are fictional.
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { randomUUID } = require('crypto');
+const { spawn } = require('child_process');
+const dotenv = require('../../server/node_modules/dotenv');
+const { createClient } = require('../../server/node_modules/@supabase/supabase-js');
+const root = path.resolve(__dirname, '../..');
+const stage = dotenv.parse(fs.readFileSync(path.join(root, 'server/.env.staging')));
+const other = dotenv.parse(fs.readFileSync(path.join(root, 'server/.env')));
+if (new URL(stage.SUPABASE_URL).host === new URL(other.SUPABASE_URL).host) throw Error('Not an isolated staging target');
+const db = createClient(stage.SUPABASE_URL, stage.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession:false, autoRefreshToken:false } });
+const check = x => { if (x.error) throw Error(x.error.message); return x.data; };
+const temp = path.join(os.tmpdir(), `healthon-check-${randomUUID()}.env`);
+let child;
+(async () => {
+ const all = check(await db.auth.admin.listUsers({page:1,perPage:1000})).users;
+ const user = all.find(u => u.email === 'healthon-staging-doctor-25898116@mailinator.com');
+ if (!user) throw Error('Missing synthetic clinician');
+ const profile = check(await db.from('profiles').select('full_name,role').eq('id',user.id).single());
+ if (profile.role !== 'clinician' || !profile.full_name.startsWith('TEST CLINICIAN')) throw Error('Not synthetic clinician');
+ const visit='5625d644-03e3-4cae-bc0c-18ebad7e34e3';
+ const template = check(await db.from('medication_templates').select('id,title,template_content').eq('clinician_id',user.id).eq('title','TEST ONLY - SIMULATED APPROVAL - Hb at most 10').single());
+ const source='DEMO ONLY - synthetic fixture, not clinical data';
+ check(await db.from('medication_substances').upsert({medication_key:'demo.medication.alpha',display_name:'DEMO ONLY - Example medicine Alpha',synonyms:['demo alpha'],source_name:source,source_reference:'internal://demo/medication-alpha',reviewed_at:null,is_active:true},{onConflict:'medication_key'}));
+ check(await db.from('medication_allergen_associations').upsert({medication_key:'demo.medication.alpha',allergen_key:'demo_allergen_alpha',allergen_display:'DEMO ONLY - Example allergen Alpha',association_type:'ingredient',source_name:source,source_reference:'internal://demo/association-alpha',reviewed_at:null},{onConflict:'medication_key,allergen_key,association_type'}));
+ const content={...template.template_content,id:template.id,name:template.title,clinicianApproved:true,archived:false};
+ content.medications=content.medications.map(m=>({...m,ingredientKey:'demo.medication.alpha'}));
+ check(await db.rpc('save_medication_template',{p_clinician_id:user.id,p_template:content}));
+ const link=check(await db.auth.admin.generateLink({type:'magiclink',email:user.email}));
+ const auth=createClient(stage.SUPABASE_URL,stage.SUPABASE_ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
+ const session=check(await auth.auth.verifyOtp({token_hash:link.properties.hashed_token,type:'magiclink'}));
+ const lines=fs.readFileSync(path.join(root,'server/.env.staging'),'utf8').split(/\r?\n/).filter(l=>!/^\s*(PORT|ALLOW_DEMO_MEDICATION_DATA|SMTP_HOST|SMTP_PORT)\s*=/.test(l));
+ fs.writeFileSync(temp,[...lines,'PORT=4318','ALLOW_DEMO_MEDICATION_DATA=true','SMTP_HOST=127.0.0.1','SMTP_PORT=1'].join('\n'));
+ child=spawn(process.execPath,['src/app.js'],{cwd:path.join(root,'server'),env:{...process.env,HEALTHON_ENV_FILE:temp},stdio:'ignore',windowsHide:true});
+ let ready=false; for(let i=0;i<50;i++){ await new Promise(r=>setTimeout(r,200)); try { await fetch('http://127.0.0.1:4318/'); ready=true; break; } catch {} }
+ if(!ready) throw Error('Staging backend failed to start');
+ async function api(method,route,body){const r=await fetch('http://127.0.0.1:4318/api/decision-support'+route,{method,headers:{Authorization:'Bearer '+session.session.access_token,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const result=await r.json();if(!r.ok)throw Error(`${method} ${route} returned ${r.status}: ${JSON.stringify(result)}`);return result;}
+ await api('PUT',`/appointments/${visit}/allergies`,{status:'allergies_documented',allergies:[{substance_key:'demo_allergen_alpha',substance_display:'DEMO ONLY - Example allergen Alpha',reaction:'TEST ONLY'}]});
+ const listed=await api('GET','/templates');
+ const returned=listed.find(t=>t.id===template.id);
+ if(!returned?.medications?.[0]?.allergySubstanceKeys?.includes('demo_allergen_alpha'))throw Error('Template did not receive synthetic allergen association');
+ const evaluated=await api('POST',`/appointments/${visit}/evaluate`,{factorSnapshot:{hemoglobin:{type:'number',unit:'g/dL',value:9.7,confirmed:true}}});
+ const candidate=evaluated.candidates.find(t=>t.id===template.id);
+ if(!candidate?.allergyFlags?.some(f=>f.conflicts.some(c=>c.substance_key==='demo_allergen_alpha')))throw Error('Expected allergy warning absent');
+ if(!candidate.medication_template_items?.length)throw Error('Conflicting medicine unexpectedly removed');
+ await api('PUT',`/appointments/${visit}/evaluations/${evaluated.eventId}/displayed`,{displayed:[{id:template.id,score:100,method:'rules',compared:1,featureCount:1,coverage:100,rationale:'Synthetic test'}]});
+ await api('POST','/feedback',{eventId:evaluated.eventId,templateId:template.id,action:'deferred',reasonKey:'other',comment:'TEST ONLY - deferred review'});
+ const analytics=await api('GET','/analytics');
+ if(!analytics.events.some(e=>e.recommendation_event_id===evaluated.eventId && e.action==='deferred' && e.clinician_comment==='TEST ONLY - deferred review'))throw Error('Deferred feedback not found');
+ const event=check(await db.from('medication_recommendation_events').select('feature_snapshot,candidates').eq('id',evaluated.eventId).single());
+ if(event.feature_snapshot.factorSnapshot.hemoglobin.value!==9.7 || event.candidates.length!==1 || !event.candidates[0].displayed)throw Error('Snapshot or displayed candidate missing');
+ console.log('PASS: synthetic allergy association returned, conflict flagged, medicine retained');
+ console.log('PASS: synthetic factor snapshot and displayed candidate persisted');
+ console.log('PASS: deferred feedback and comment returned in analytics');
+})().catch(e=>{console.error('FAIL:',e.message);process.exitCode=1}).finally(()=>{if(child)child.kill();try{fs.unlinkSync(temp)}catch{}});

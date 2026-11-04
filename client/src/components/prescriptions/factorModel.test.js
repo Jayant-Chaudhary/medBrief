@@ -2,44 +2,39 @@
 import assert from 'node:assert/strict';
 import { DEFAULT_FACTORS, resolveFactorValues, contextWithFactors, usableFactor, validDefinitions, validFactorValues } from './factorModel.js';
 import { blankTemplate, buildPatientContext, evaluateTemplate, validLibrary } from './templateModel.js';
+import { maternityFactorValues } from './maternityFactors.js';
 const definition = id => DEFAULT_FACTORS.find(item => item.id === id);
-const report = (value, changes = {}, date = '2026-09-01') => ({ id:'report', report_date:date, lab_report_metrics:[{id:'metric',standard_key:'hemoglobin',parsed_value:value,raw_value:String(value),unit_standard:'g/dL',needs_review:false,...changes}] });
 const base = buildPatientContext({age:30},{});
 test('starter factor definitions have stable unique IDs and valid types',()=>{
  assert.equal(validDefinitions(DEFAULT_FACTORS),true);
  assert.equal(new Set(DEFAULT_FACTORS.map(item=>item.id)).size,DEFAULT_FACTORS.length);
 });
-test('latest shared report is selected regardless of input order and zero is not lost',()=>{
- const records=resolveFactorValues(DEFAULT_FACTORS,{}, {},[report(11),report(0,{},'2026-09-02')]);
- assert.equal(records.hemoglobin.value,'0');assert.equal(records.hemoglobin.recordedAt,'2026-09-02');
- assert.equal(usableFactor(definition('hemoglobin'),records.hemoglobin),true);
+test('matching can reuse only the latest dated lab value already recorded on the maternity card',()=>{
+ const card={episodeId:'episode-1',labs:[
+  {id:'old',key:'hemoglobin',test:'Hb',result:'10.2',unit:'g/dL',date:'2026-08-01'},
+  {id:'new',key:'hemoglobin',test:'Hb',result:'11.1',unit:'g/dL',date:'2026-10-01'},
+ ]};
+ const values=maternityFactorValues(card,Date.parse('2026-10-15T00:00:00Z'));
+ assert.equal(values.hemoglobin.value,'11.1');
+ assert.equal(values.hemoglobin.recordedAt,'2026-10-01');
+ assert.equal(values.hemoglobin.source,'Maternity card · investigation');
 });
-test('newer unreviewed results stay unknown instead of silently using an older reading',()=>{
- const records=resolveFactorValues(DEFAULT_FACTORS,{}, {},[report(11),report(9,{needs_review:true},'2026-09-02')]);
- assert.equal(records.hemoglobin.value,'9');
- assert.equal(usableFactor(definition('hemoglobin'),records.hemoglobin),false);
- assert.equal(contextWithFactors(base,DEFAULT_FACTORS,records).factorRecords.hemoglobin,undefined);
-});
-test('bounds are retained as printed and cannot become exact readings',()=>{
- const records=resolveFactorValues(DEFAULT_FACTORS,{}, {},[report(0.5,{raw_value:'<0.5',needs_review:true})]);
- assert.equal(records.hemoglobin.value,'<0.5');
- assert.equal(usableFactor(definition('hemoglobin'),records.hemoglobin),false);
-});
-test('unit mismatches and future report dates are excluded from matching',()=>{
- const records=resolveFactorValues(DEFAULT_FACTORS,{}, {},[report(110,{unit_standard:'g/L'})]);
- assert.equal(usableFactor(definition('hemoglobin'),records.hemoglobin),false);
- assert.equal(resolveFactorValues(DEFAULT_FACTORS,{}, {},[report(12,{},'2999-01-01')]).hemoglobin,undefined);
+test('missing maternity-card values stay unknown; no uploaded-report fallback exists',()=>{
+ const cardValues=maternityFactorValues({episodeId:'episode-1',labs:[]},Date.parse('2026-10-15T00:00:00Z'));
+ const records=resolveFactorValues(DEFAULT_FACTORS,{}, {},{}, {episodeId:'episode-1',labs:[]});
+ assert.equal(cardValues.hemoglobin,undefined);
+ assert.equal(records.hemoglobin,undefined);
 });
 test('doctor overrides survive source refresh and clearing explicitly means unknown',()=>{
  const overrides={hemoglobin:{value:'12',unit:'g/dL',recordedAt:'2026-09-03'}};
  assert.equal(validFactorValues(overrides),true);
- const records=resolveFactorValues(DEFAULT_FACTORS,{}, {},[report(9)],overrides);
+ const records=resolveFactorValues(DEFAULT_FACTORS,{}, {},overrides);
  assert.equal(records.hemoglobin.value,'12');assert.equal(records.hemoglobin.source,'Doctor entry');
  overrides.hemoglobin.value='';
- assert.equal(usableFactor(definition('hemoglobin'),resolveFactorValues(DEFAULT_FACTORS,{}, {},[report(9)],overrides).hemoglobin),false);
+ assert.equal(usableFactor(definition('hemoglobin'),resolveFactorValues(DEFAULT_FACTORS,{}, {},overrides).hemoglobin),false);
 });
 test('lab values never create a diabetes diagnosis or clear allergies',()=>{
- const records=resolveFactorValues(DEFAULT_FACTORS,{}, {},[{id:'r',report_date:'2026-09-01',lab_report_metrics:[{standard_key:'blood_glucose_random',parsed_value:200,unit_standard:'mg/dL',needs_review:false}]}]);
+ const records=resolveFactorValues(DEFAULT_FACTORS,{}, {},{}, {episodeId:'episode-1',labs:[{key:'blood_glucose_random',result:'200',unit:'mg/dL',date:'2026-09-01'}]});
  const context=contextWithFactors(base,DEFAULT_FACTORS,records);
  assert.equal(context.factors,'');assert.equal(context.absentFactors,'');
  assert.equal(context.factorRecords.allergy_status,undefined);
@@ -69,7 +64,7 @@ test('malformed stored custom rules and duplicate factor IDs fail validation',()
 
 test('clearing a profile field explicitly makes it unknown for matching',()=>{
  const overrides={age:{value:'',unit:'years',recordedAt:'2026-09-03'}};
- const records=resolveFactorValues(DEFAULT_FACTORS,{age:30},{},[],overrides);
+ const records=resolveFactorValues(DEFAULT_FACTORS,{age:30},{},overrides);
  const context=contextWithFactors(base,DEFAULT_FACTORS,records);
  assert.equal(context.age,'');
  const result=evaluateTemplate({...blankTemplate(),minAge:'18'},context);

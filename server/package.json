@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
+    "dev:staging": "cross-env HEALTHON_ENV_FILE=.env.staging nodemon src/app.js",
     "test": "jest",
     "test:e2e": "cross-env RUN_E2E=true jest --runInBand",
     "verify-clinician": "node scripts/verifyClinician.js",

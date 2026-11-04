@@ -40,17 +40,17 @@ test('future visit observations and cards without an episode are not used',()=>{
  assert.equal(maternityFactorValues(source,now).weight.value,'64');
  assert.deepEqual(maternityFactorValues({...source,episodeId:null},now),{});
 });
-test('later reports win over older maternity values; local doctor overrides win over both',()=>{
+test('maternity-card values populate matching; visit-specific doctor overrides take precedence',()=>{
  const source=card();
- const reports=[{id:'r',report_date:'2026-10-02',lab_report_metrics:[{id:'m',standard_key:'hemoglobin',parsed_value:12,raw_value:'12',unit_standard:'g/dL',needs_review:false}]}];
- const imported=resolveFactorValues(DEFAULT_FACTORS,{age:30},{},reports,{},source);
+ source.labs.push({id:'r',key:'hemoglobin',test:'Hb',result:'12',unit:'g/dL',date:'2026-10-02'});
+ const imported=resolveFactorValues(DEFAULT_FACTORS,{age:30},{},{},source);
  assert.equal(imported.hemoglobin.value,'12');assert.equal(imported.gestation_weeks.value,'30');
- const manual=resolveFactorValues(DEFAULT_FACTORS,{}, {},reports,{hemoglobin:{value:'13',unit:'g/dL',recordedAt:'2026-10-03'}},source);
+ const manual=resolveFactorValues(DEFAULT_FACTORS,{}, {},{hemoglobin:{value:'13',unit:'g/dL',recordedAt:'2026-10-03'}},source);
  assert.equal(manual.hemoglobin.value,'13');
 });
 test('baseline results are not overwritten by older antenatal rows and TSH units are equivalent',()=>{
  const source=card();source.investigations.resultsDate='2026-10-15';source.visits[0].hb='9';
- const values=resolveFactorValues(DEFAULT_FACTORS,{}, {},[],{},source);
+ const values=resolveFactorValues(DEFAULT_FACTORS,{}, {},{},source);
  assert.equal(values.hemoglobin.value,'11');
  assert.equal(usableFactor(DEFAULT_FACTORS.find(row=>row.id==='tsh'),values.tsh),true);
 });
@@ -63,7 +63,7 @@ test('existing custom fields and hidden settings survive the new field catalogue
 });
 test('neonatal fields remain available but do not automatically become maternal similarity rules',()=>{
  const source=card();source.delivery={type:'Vaginal',when:'2026-10-20T10:30',sex:'Female',weight:'3.1',apgar1:'8'};
- const values=resolveFactorValues(DEFAULT_FACTORS,{age:30},{},[],{},source);
+ const values=resolveFactorValues(DEFAULT_FACTORS,{age:30},{},{},source);
  const context=contextWithFactors(buildPatientContext({age:30}),DEFAULT_FACTORS,values);
  const captured=capturePrescriptionTemplate(null,{...blankDraft(),medications:[{...blankMedication(),name:'Example'}]},context,'visit',false);
  assert.ok(context.factorRecords.birth_weight);

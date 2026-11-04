@@ -650,6 +650,12 @@ export function MaternityCardPage() {
                 value={activePatientId}
                 onChange={(e) => {
                   const id = e.target.value;
+                  if (id !== activePatientId) {
+                    setRecordState(id ? 'loading' : 'none');
+                    setState(JSON.parse(JSON.stringify(DEFAULT_STATE)));
+                    setLabImport(null);
+                    setSaveStatus(id ? 'Loading record…' : 'Loading draft…');
+                  }
                   setActivePatientId(id);
                   setSearchParams(id ? { patientId: id } : {});
                 }}
@@ -695,7 +701,11 @@ export function MaternityCardPage() {
         </header>
 
         {/* 2-Column Single-Tab Workspace (or Full Page View when left panel is closed) */}
-        <div className={`maternity-workspace ${!entryPanelOpen ? 'entry-closed' : ''}`}>
+        {isRecord && recordState !== 'ready' ? (
+          <p role="status" style={{ padding: '1.5rem' }}>
+            {recordState === 'error' ? 'The selected patient record could not be loaded.' : 'Loading the selected patient record…'}
+          </p>
+        ) : <div className={`maternity-workspace ${!entryPanelOpen ? 'entry-closed' : ''}`}>
           {/* ============================================================ */}
           {/* LEFT: Unified Single-Tab Entry Panel (All 7 Sections)         */}
           {/* ============================================================ */}
@@ -2272,7 +2282,7 @@ export function MaternityCardPage() {
               </div>
             </article>
           </main>
-        </div>
+        </div>}
       </div>
 
       {/* Datalists for Autocomplete */}

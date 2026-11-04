@@ -1,4 +1,11 @@
-require('dotenv').config();
+const path = require('path');
+
+// Staging can be selected explicitly without replacing the developer's usual
+// .env file: HEALTHON_ENV_FILE=.env.staging npm run dev
+const envFile = process.env.HEALTHON_ENV_FILE;
+require('dotenv').config(envFile
+  ? { path: path.resolve(process.cwd(), envFile), override: true }
+  : undefined);
 const logger = require('../utils/logger');
 
 const required = [

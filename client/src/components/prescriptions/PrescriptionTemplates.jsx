@@ -82,7 +82,6 @@ function Field({ label, value, onChange, multiline = false, ...props }) {
 }
 const medicationSummary = row => [row.strength, row.dose, row.route, row.frequency, row.duration].filter(Boolean).join(' · ');
 const typeLabel = row => ({ injection: 'Injection', vaccination: 'Vaccination' }[row.kind] || 'Medicine');
-
 const ROUTINE_PROPHYLAXIS_BUNDLES = [
   {
     id: 'bundle-folic-acid',
@@ -145,6 +144,8 @@ const ROUTINE_PROPHYLAXIS_BUNDLES = [
     ],
   },
 ];
+
+const factorDate = value => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleDateString('en-IN') : 'Date not recorded';
 function IngredientCatalogPicker({ value, onSelect }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -709,7 +710,7 @@ function TemplatePreview({ template, context, onClose, onApply, onFeedback, even
       {eventId && <div className="rx-feedback-form"><strong>Suggestion decision</strong><p className="rx-muted">Your choice is stored to review the matcher. It is not a treatment outcome.</p><label className="rx-field"><span>Reason (optional)</span><select value={feedbackReason} onChange={event => setFeedbackReason(event.target.value)}><option value="">Choose a reason</option><option value="indication_mismatch">Ailment or category mismatch</option><option value="patient_context">Patient context</option><option value="allergy_or_safety_review">Allergy or safety review</option><option value="dose_or_regimen">Dose or regimen</option><option value="outdated_template">Template outdated</option><option value="other">Other</option></select></label><Field label="Comment (optional)" value={feedbackComment} onChange={setFeedbackComment} maxLength={1000} placeholder="Brief reason for this decision"/></div>}
       {allergy.status !== 'none-reported' && <section className="rx-allergy-list" aria-label="Patient allergy list"><strong>Patient allergy list</strong>{allergy.allergies.length ? <ul>{allergy.allergies.map((item, index) => <li key={`${item.name}-${index}`}>{item.name}{item.reaction && ` — ${item.reaction}`}</li>)}</ul> : <p>{allergy.status === 'reported' ? 'Allergy reported; details not recorded.' : 'No allergy details recorded.'}</p>}</section>}
       {applyError && <p role="alert" className="rx-error">{applyError}</p>}
-      <div className="rx-footer"><span className="rx-muted">Adds to the editable draft for clinician review.</span><button type="button" className="rx-button" onClick={onClose}>Back</button>{eventId && <><button type="button" className="rx-button" disabled={feedbackBusy || applying} onClick={() => sendDecision('rejected')}>Not suitable</button><button type="button" className="rx-button" disabled={feedbackBusy || applying} onClick={() => sendDecision('deferred')}>Defer</button></>}<button type="button" className="rx-button rx-primary" disabled={applying || feedbackBusy || copyBlocked || result.conflicts.length > 0 || template.archived || (template.autoCapture && template.autoCapture.stage !== 'visit-completed') || (!selected.length && !instructions && !followUp)} onClick={async () => { setApplying(true); try { if (await onApply(template, selected, instructions, followUp, eventId)) onClose(); else setApplyError('The draft could not be saved to the server. Your selections remain open.'); } catch { setApplyError('The draft could not be saved to the server. Your selections remain open.'); } finally { setApplying(false); } }}>{applying ? 'Saving…' : <>Add to draft <ArrowRight size={15}/></>}</button></div>
+      <div className="rx-footer"><span className="rx-muted">Adds to the editable draft for clinician review.</span><button type="button" className="rx-button" onClick={onClose}>Back</button>{eventId && <><button type="button" className="rx-button" disabled={feedbackBusy || applying} onClick={() => sendDecision('rejected')}>Not suitable</button><button type="button" className="rx-button" disabled={feedbackBusy || applying} onClick={() => sendDecision('deferred')}>Defer</button></>}<button type="button" className="rx-button rx-primary" disabled={applying || feedbackBusy || copyBlocked || result.conflicts.length > 0 || template.archived || (template.autoCapture && template.autoCapture.stage !== 'visit-completed') || (!selected.length && !instructions && !followUp)} onClick={async () => { setApplying(true); try { if (await onApply(template, selected, instructions, followUp, eventId, false, { reasonKey: feedbackReason, comment: feedbackComment })) onClose(); else setApplyError('The draft could not be saved to the server. Your selections remain open.'); } catch { setApplyError('The draft could not be saved to the server. Your selections remain open.'); } finally { setApplying(false); } }}>{applying ? 'Saving…' : <>Add to draft <ArrowRight size={15}/></>}</button></div>
     </div>
   </Dialog>;
 }
@@ -1075,7 +1076,7 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports, simi
   const templateSelectionBusy = useRef(false);
   const queuedTemplateSelection = useRef(null);
   const [error, setError] = useState('');
-  const factors = usePrescriptionFactors({ ownerId, patient, appointment, appointmentId, reports });
+  const factors = usePrescriptionFactors({ ownerId, patient, appointment, appointmentId });
   const context = useMemo(() => ({ ...contextWithFactors(buildPatientContext(patient, appointment), factors.definitions, factors.records), ...serverContext }), [patient, appointment, factors.definitions, factors.records, serverContext]);
   const activeFactors = factors.definitions.filter(definition => definition.enabled);
   const populatedFactors = activeFactors.filter(definition => usableFactor(definition, factors.records[definition.id]));
@@ -1184,7 +1185,7 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports, simi
     const isCandidate = candidateIds.includes(template.id);
     setDialog({ type: 'preview', value: template, eventId: isCandidate ? recommendationEvent?.eventId : '', similarityMatch: (isCandidate ? rankedForVisit : ranked).find(item => item.template.id === template.id)?.match });
   };
-  async function applyTemplateSelection(template, ids, instructions, followUp, eventId, direct = false) {
+  async function applyTemplateSelection(template, ids, instructions, followUp, eventId, direct = false, decision = null) {
     if (templateSelectionBusy.current) {
       if (direct) queuedTemplateSelection.current = () => applyTemplateSelection(template, ids, instructions, followUp, eventId, direct);
       return false;
@@ -1209,7 +1210,8 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports, simi
           const unchanged = !result.filled && ids.length === template.medications.length && result.skipped === 0 &&
             (direct ? !template.instructions && !template.followUp : instructions === Boolean(template.instructions) && followUp === Boolean(template.followUp));
           const feedback = await submitMedicationFeedback({ eventId, templateId: template.id, action: unchanged ? 'accepted' : 'edited',
-            reasonKey: unchanged ? null : 'selection_or_duplicate_edit',
+            reasonKey: decision?.reasonKey || (unchanged ? null : 'selection_or_duplicate_edit'),
+            comment: decision?.comment || '',
             finalItems: draftRef.current.medications.filter(item => copiedIds.has(item.id)).map(({ name, ingredientKey, strength, dose, route, frequency, duration, kind }) => ({ name, ingredientKey, strength, dose, route, frequency, duration, kind })) });
           const current = draftRef.current;
           const tracked = { ...current, feedbackEventIds: [...new Set([...(current.feedbackEventIds || []), feedback.id])],
@@ -1432,6 +1434,16 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports, simi
     <div className="rx-inline-actions"><button type="button" className="rx-text" onClick={() => setDialog({ type: 'feedback' })}>Suggestion feedback</button></div>
     <p className="rx-score-caption">Patient similarity accounts for both closeness and available data. It is not treatment safety, accuracy or a calibrated probability.</p>
     {activeCount > 0 && <button type="button" className="rx-text rx-view-all" onClick={() => setDialog({ type: 'browse' })}>View all {activeCount} templates <ArrowRight size={13}/></button>}
+    <details className="rx-factor-collapsible" aria-label="Review or add matching factors">
+      <summary><span><strong>Review / add factors</strong><small>{populatedFactors.length} recorded · maternity card, profile and visit entries</small></span><span>{factors.maternity.loading ? 'Loading card…' : 'Optional'}</span></summary>
+      <div className="rx-factor-review-body">
+        <p className="rx-muted">Matching uses the latest values recorded on the maternity card, plus any visit-specific entries you add. Each value shows its source and date for review; missing values stay blank.</p>
+        {factors.maternity.error && <p className="rx-amber">{factors.maternity.error}</p>}
+        {factors.error && <p className="rx-error" role="alert">{factors.error}</p>}
+        {populatedFactors.length ? <div className="rx-factor-review-list">{populatedFactors.map(definition => { const record = factors.records[definition.id]; return <div key={definition.id}><strong>{definition.label}</strong><span>{record.value} {record.unit || definition.unit || ''}</span><small>{record.source || 'Recorded factor'} · {factorDate(record.recordedAt)}</small></div>; })}</div> : <p className="rx-muted">No matching factors recorded yet. Add only the details relevant to this visit.</p>}
+        <button type="button" className="rx-button" onClick={() => setDialog({ type: 'factors' })}>Review / add factors</button>
+      </div>
+    </details>
     <p className="rx-local">Draft and templates are stored with the clinician visit record. The draft is not sent to the patient until the clinician publishes it.</p>
     {dialog?.type === 'factors' && <Dialog title="Factors" subtitle="Review report values, fill missing details, or add your own reusable fields." onClose={close}><FactorsEditor factors={factors}/></Dialog>}
     {dialog?.type === 'allergies' && <AllergyEditor context={serverContext} appointmentId={appointmentId} onClose={close} onSaved={async () => { const updated = await fetchMedicationContext(appointmentId); setServerContext({ allergyReview: updated?.allergyReview || { status: 'not_assessed' }, allergies: updated?.allergies || [] }); }}/ >}
