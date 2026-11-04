@@ -30,6 +30,7 @@ const REASONS = {
   unknownPage: 'requested page is not recognised',
   patientNotFound: 'could not find a matching patient in your directory',
   badPatientRecord: 'record type is not supported',
+  wrongOp: 'that does not work on this kind of field',
 };
 
 /** Normalised check if text or its words are mentioned in the message. */
@@ -209,8 +210,26 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
     }
 
     // 4. Element-based actions: click, type, append, replace, select, check, key
-    const ref = act.ref;
-    const element = byRef.get(ref);
+    let ref = String(act.ref || '').trim();
+    let element = byRef.get(ref);
+    if (!element) {
+      // 1. Try extracting leading ref token (e.g. 'r2 button "..."' -> 'r2')
+      const token = ref.match(/^(r\d+|nav_[a-z0-9_]+|btn_[a-z0-9_]+|inp_[a-z0-9_]+|row_[a-z0-9_]+)\b/i)?.[1];
+      if (token && byRef.has(token)) {
+        element = byRef.get(token);
+        ref = token;
+      }
+    }
+    if (!element) {
+      // 2. Try matching by element name if ref includes or matches it
+      for (const [elRef, el] of byRef.entries()) {
+        if (el.name && (ref.toLowerCase().includes(el.name.toLowerCase()) || (act.name && el.name.toLowerCase() === act.name.toLowerCase()))) {
+          element = el;
+          ref = elRef;
+          break;
+        }
+      }
+    }
     if (!element) {
       refused.push({ name: ref || 'element', reason: REASONS.gone });
       continue;
@@ -221,8 +240,21 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
       continue;
     }
 
+    const CLICK_KINDS = new Set(['button', 'link', 'summary', 'tab', 'checkbox', 'radio']);
+
     if (element.kind === 'checkbox' && (op === 'click' || op === 'check')) {
       op = 'check';
+    } else if (op === 'click' && (element.kind === 'textarea' || element.kind === 'text')) {
+      const textVal = act.text !== undefined ? act.text : act.value;
+      if (textVal) {
+        op = element.kind === 'textarea' ? 'append' : 'type';
+      } else {
+        refused.push({ name: element.name, reason: REASONS.wrongOp });
+        continue;
+      }
+    } else if (op === 'click' && !CLICK_KINDS.has(element.kind)) {
+      refused.push({ name: element.name, reason: REASONS.wrongOp });
+      continue;
     }
 
     // Risk check

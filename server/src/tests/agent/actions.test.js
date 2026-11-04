@@ -130,5 +130,41 @@ describe('agent actions: validateAgentActions', () => {
     expect(pageActions).toHaveLength(1);
     expect(pageActions[0]).toMatchObject({ op: 'key', key: 'Enter' });
   });
+
+  it('extracts leading ref token when descriptor is appended to ref', () => {
+    const { pageActions, refused } = validateAgentActions(
+      [{ op: 'click', ref: 'r1 button "Consultation notes"' }],
+      PAGE,
+      'open consultation notes',
+      PATIENTS,
+    );
+    expect(refused).toHaveLength(0);
+    expect(pageActions).toHaveLength(1);
+    expect(pageActions[0]).toMatchObject({ ref: 'r1', op: 'click' });
+  });
+
+  it('rejects click on textarea without text value', () => {
+    const { pageActions, refused } = validateAgentActions(
+      [{ op: 'click', ref: 'r2' }],
+      PAGE,
+      'click notes',
+      PATIENTS,
+    );
+    expect(pageActions).toHaveLength(0);
+    expect(refused).toHaveLength(1);
+    expect(refused[0].reason).toContain('that does not work on this kind of field');
+  });
+
+  it('normalizes click with text on textarea to append', () => {
+    const { pageActions, refused } = validateAgentActions(
+      [{ op: 'click', ref: 'r2', text: 'mild headache' }],
+      PAGE,
+      'write mild headache in notes',
+      PATIENTS,
+    );
+    expect(refused).toHaveLength(0);
+    expect(pageActions).toHaveLength(1);
+    expect(pageActions[0]).toMatchObject({ ref: 'r2', op: 'append', value: 'mild headache' });
+  });
 });
 
