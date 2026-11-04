@@ -565,6 +565,63 @@ function flagSubmit(result, message) {
 
 const FIND_IN_PATIENTS = /^(?:please\s+)?(?:find|search(?:\s+for)?|look\s+(?:up|for))\s+(\p{L}[\p{L}'.-]*(?:\s+\p{L}[\p{L}'.-]*){0,3}?)\s+(?:in|on|from|among)\s+(?:the\s+|my\s+)?patients?(?:\s+(?:list|page|tab))?$/iu;
 
+function tickChecklistItem(checklist, result, role = 'clinician') {
+  if (!result || result.result !== 'ok' || result.ref === 'r_notes_btn') return checklist;
+
+  // 1. Navigation by page id: op === 'go'
+  if (result.op === 'go') {
+    const pageId = result.pageId || result.page;
+    const page = findPage(role, pageId);
+    const keywords = page
+      ? [page.id, page.label.toLowerCase(), ...(page.aliases || [])]
+      : [String(pageId || '').toLowerCase()];
+
+    const idx = checklist.findIndex((item) => {
+      if (item.done) return false;
+      const lower = item.text.toLowerCase();
+      return keywords.some((kw) => lower.includes(kw.toLowerCase()));
+    });
+    if (idx !== -1) {
+      const next = [...checklist];
+      next[idx] = { ...next[idx], done: true };
+      return next;
+    }
+    return checklist;
+  }
+
+  // 2. Navigation by record kind: op === 'open_record'
+  if (result.op === 'open_record') {
+    const kind = result.kind;
+    const recordKeywords = {
+      last_visit: ['last visit', 'past visit', 'previous visit'],
+      next_visit: ['next visit', 'upcoming visit'],
+      maternity: ['maternity', 'antenatal', 'anc card'],
+      new_appointment: ['appointment', 'book'],
+    }[kind] || [kind];
+
+    const idx = checklist.findIndex((item) => {
+      if (item.done) return false;
+      const lower = item.text.toLowerCase();
+      return recordKeywords.some((kw) => lower.includes(kw));
+    });
+    if (idx !== -1) {
+      const next = [...checklist];
+      next[idx] = { ...next[idx], done: true };
+      return next;
+    }
+    return checklist;
+  }
+
+  // 3. Other terminal actions (type, append, replace, check, select, click)
+  const idx = checklist.findIndex((item) => !item.done);
+  if (idx !== -1) {
+    const next = [...checklist];
+    next[idx] = { ...next[idx], done: true };
+    return next;
+  }
+  return checklist;
+}
+
 /**
  * Phase 6 Agent Loop implementation for multi-round clinician requests.
  */
@@ -606,17 +663,8 @@ async function runAgentLoop({
   }
 
   if (results && results.length > 0) {
-    const terminalResults = results.filter((r) => {
-      if (r.result !== 'ok') return false;
-      if (r.op === 'go' || r.ref === 'r_notes_btn') return false;
-      return true;
-    });
-    let ticked = 0;
-    for (let i = 0; i < activeChecklist.length && ticked < terminalResults.length; i += 1) {
-      if (!activeChecklist[i].done) {
-        activeChecklist[i] = { ...activeChecklist[i], done: true };
-        ticked += 1;
-      }
+    for (const r of results) {
+      activeChecklist = tickChecklistItem(activeChecklist, r, role);
     }
   }
 

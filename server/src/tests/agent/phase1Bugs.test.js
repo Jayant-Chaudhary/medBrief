@@ -40,4 +40,35 @@ describe('Phase 1 Bug Fixes', () => {
       }
     });
   });
+
+  describe('Bug 2: Navigation steps must tick their checklist item', () => {
+    it('ticks the checklist item corresponding to the opened page or record', async () => {
+      const provider = new FakeProvider();
+      provider.complete = jest.fn().mockResolvedValue(JSON.stringify({
+        note: 'Schedule opened, now viewing patients',
+        actions: [{ op: 'go', page: 'patients' }],
+        status: 'continue',
+      }));
+
+      const checklist = [
+        { text: 'Open schedule', done: false },
+        { text: 'View patients', done: false },
+      ];
+
+      const reply = await assistant.handleStep({
+        message: 'open schedule and then view patients',
+        role: 'clinician',
+        userId: 'dr-1',
+        round: 1,
+        checklist,
+        results: [{ op: 'go', pageId: 'schedule', result: 'ok' }],
+        provider,
+        settings: { agentLoop: true },
+      });
+
+      // Bug: previously op === 'go' was filtered out, so item 0 remained unticked
+      expect(reply.checklist[0].done).toBe(true);
+      expect(reply.checklist[1].done).toBe(false);
+    });
+  });
 });
