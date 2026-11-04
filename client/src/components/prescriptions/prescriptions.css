@@ -408,3 +408,154 @@
   color: #1e293b !important;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important;
 }
+
+/* Dark theme overrides for prescription components & dialogs */
+.dark .rx-workspace,
+.dark .rx-dialog {
+  --rx-green: #5dbb8a;
+  --rx-line: #342f2a;
+  --rx-muted: #a59d94;
+  color: #eee8e1;
+  background: #1f1c19;
+}
+
+.dark .rx-dialog-head {
+  background: #191715;
+  border-bottom: 1px solid var(--rx-line);
+}
+.dark .rx-dialog-head h2 {
+  color: #eee8e1;
+}
+.dark .rx-dialog-head p {
+  color: var(--rx-muted);
+}
+.dark .rx-icon {
+  color: #a59d94;
+}
+.dark .rx-icon:hover {
+  background: #2a2522;
+}
+
+.dark .rx-field input,
+.dark .rx-field select,
+.dark .rx-field textarea {
+  background: #26221f;
+  border-color: #3e3832;
+  color: #eee8e1;
+}
+
+.dark .rx-field input:focus,
+.dark .rx-field select:focus,
+.dark .rx-field textarea:focus {
+  border-color: #5dbb8a;
+  outline-color: #5dbb8a;
+}
+
+.dark .rx-button {
+  background: #26221f;
+  border-color: #3e3832;
+  color: #5dbb8a;
+}
+.dark .rx-button:hover {
+  background: #312c27;
+}
+.dark .rx-button.rx-primary {
+  background: #285f4a;
+  border-color: #285f4a;
+  color: #ffffff;
+}
+.dark .rx-button.rx-primary:hover {
+  background: #1f4a39;
+}
+
+.dark .rx-option {
+  background: #26221f;
+  border-color: var(--rx-line);
+}
+.dark .rx-option h4 {
+  color: #eee8e1;
+}
+.dark .rx-option p {
+  color: var(--rx-muted);
+}
+
+.dark .rx-score {
+  background: #203328;
+  color: #79d2a2;
+}
+.dark .rx-score-conflict {
+  background: #3d231e;
+  color: #f28b78;
+}
+
+.dark .rx-context-bar {
+  background: #232a24;
+  border-color: #344035;
+  color: #9ab39d;
+}
+
+.dark .rx-autocomplete-input {
+  background: #26221f;
+  border-color: #3e3832;
+  color: #eee8e1;
+}
+.dark .rx-completion-wrap input {
+  color: #eee8e1;
+}
+.dark .rx-autocomplete [role="listbox"] {
+  background: #1f1c19;
+  border-color: #3e3832;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+.dark .rx-autocomplete-option {
+  border-bottom-color: #342f2a;
+  color: #eee8e1;
+}
+.dark .rx-autocomplete-option:hover,
+.dark .rx-autocomplete-option[aria-selected="true"] {
+  background: #2c2723;
+}
+
+.dark .rx-prophylaxis-box {
+  background: #182232;
+  border-color: #253956;
+}
+.dark .rx-prophylaxis-title {
+  color: #93c5fd;
+}
+.dark .rx-prophylaxis-caption {
+  color: #60a5fa;
+}
+.dark .rx-prophylaxis-chip {
+  background: #1f2937;
+  border-color: #374151;
+  color: #f3f4f6;
+}
+.dark .rx-prophylaxis-chip:hover {
+  background: #374151;
+}
+
+.dark .rx-instructions-panel,
+.dark .rx-factors-area {
+  background: #26221f !important;
+  border-color: #3e3832 !important;
+}
+
+.dark .rx-factor-chip-item {
+  background: #1f1c19 !important;
+  border-color: #3e3832 !important;
+  color: #eee8e1 !important;
+}
+
+.dark .rx-medication {
+  border-color: var(--rx-line);
+}
+.dark .rx-medication legend {
+  color: #a59d94;
+}
+.dark .rx-rule-editor,
+.dark .rx-match {
+  background: #26221f;
+  border-color: var(--rx-line);
+  color: #eee8e1;
+}

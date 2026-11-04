@@ -23,27 +23,27 @@ const MIN_DAYS = 14;
 const STATUS_CONFIG = {
   invited: {
     label: 'Invite pending',
-    badgeClass: 'border-amber-200 bg-amber-50 text-amber-800',
+    badgeClass: 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300',
     dotClass: 'bg-amber-500',
   },
   active: {
     label: 'Scheduled',
-    badgeClass: 'border-sky-200 bg-sky-50 text-sky-800',
+    badgeClass: 'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900/50 dark:bg-sky-950/40 dark:text-sky-300',
     dotClass: 'bg-sky-500',
   },
   checked_in: {
     label: 'Checked in',
-    badgeClass: 'border-emerald-200 bg-emerald-50 text-emerald-800 font-bold',
+    badgeClass: 'border-emerald-200 bg-emerald-50 text-emerald-800 font-bold dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300',
     dotClass: 'bg-emerald-500 animate-pulse',
   },
   completed: {
     label: 'Completed',
-    badgeClass: 'border-slate-200 bg-slate-100 text-slate-700',
+    badgeClass: 'border-slate-200 bg-slate-100 text-slate-700 dark:border-line dark:bg-subcanvas dark:text-ink-2',
     dotClass: 'bg-slate-400',
   },
   cancelled: {
     label: 'Cancelled',
-    badgeClass: 'border-rose-200 bg-rose-50 text-rose-700 line-through',
+    badgeClass: 'border-rose-200 bg-rose-50 text-rose-700 line-through dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300',
     dotClass: 'bg-rose-400',
   },
 };
@@ -122,7 +122,7 @@ export function ClinicianSchedule() {
         <header className="mb-5 flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200">
+              <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800/60">
                 <Calendar size={18} />
               </span>
               <h1 className="font-display text-head-lg text-ink">Clinical Schedule</h1>
@@ -151,30 +151,30 @@ export function ClinicianSchedule() {
           <>
             {/* Clinical Stats Banner */}
             <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs flex items-center justify-between">
+              <div className="rounded-xl border border-line bg-surface p-3.5 shadow-2xs flex items-center justify-between">
                 <div>
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Today's Visits</span>
-                  <p className="mt-1 font-display text-2xl font-bold text-slate-800 tabular-nums">{todayCount}</p>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">Today's Visits</span>
+                  <p className="mt-1 font-display text-2xl font-bold text-ink tabular-nums">{todayCount}</p>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-slate-50 text-slate-600 flex items-center justify-center border border-slate-200">
+                <div className="w-10 h-10 rounded-xl bg-subcanvas text-ink-2 flex items-center justify-center border border-line">
                   <Clock size={18} />
                 </div>
               </div>
-              <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3.5 shadow-2xs flex items-center justify-between">
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 dark:border-indigo-900/40 dark:bg-indigo-950/30 p-3.5 shadow-2xs flex items-center justify-between">
                 <div>
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-700">Next 7 Days</span>
-                  <p className="mt-1 font-display text-2xl font-bold text-indigo-800 tabular-nums">{next7DaysCount}</p>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-700 dark:text-indigo-400">Next 7 Days</span>
+                  <p className="mt-1 font-display text-2xl font-bold text-indigo-800 dark:text-indigo-200 tabular-nums">{next7DaysCount}</p>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center border border-indigo-200">
+                <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 flex items-center justify-center border border-indigo-200 dark:border-indigo-800/60">
                   <CalendarCheck2 size={18} />
                 </div>
               </div>
-              <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-3.5 shadow-2xs flex items-center justify-between">
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/30 p-3.5 shadow-2xs flex items-center justify-between">
                 <div>
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">Checked In / Waiting</span>
-                  <p className="mt-1 font-display text-2xl font-bold text-emerald-800 tabular-nums">{checkedInCount}</p>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Checked In / Waiting</span>
+                  <p className="mt-1 font-display text-2xl font-bold text-emerald-800 dark:text-emerald-200 tabular-nums">{checkedInCount}</p>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center border border-emerald-200">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 flex items-center justify-center border border-emerald-200 dark:border-emerald-800/60">
                   <User size={18} />
                 </div>
               </div>
@@ -227,7 +227,7 @@ export function ClinicianSchedule() {
                           active
                             ? 'bg-white text-indigo-700 shadow-2xs'
                             : count > 0
-                            ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                            ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800/60'
                             : 'opacity-0'
                         }`}
                       >
@@ -263,7 +263,7 @@ export function ClinicianSchedule() {
                   <button
                     type="button"
                     onClick={() => setSelectedDay(today)}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1 rounded-lg transition"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 dark:text-indigo-300 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/50 dark:border-indigo-800/60 px-2.5 py-1 rounded-lg transition"
                   >
                     <Calendar size={12} /> Jump to Today
                   </button>
@@ -325,7 +325,7 @@ export function ClinicianSchedule() {
                               {appointment.id && (
                                 <Link
                                   to={`/clinician/maternity?patientId=${appointment.id}&patientName=${encodeURIComponent(appointment.name || '')}`}
-                                  className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/60 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition shadow-2xs"
+                                  className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/60 text-rose-700 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-900/40 px-2.5 py-1 text-xs font-semibold transition shadow-2xs"
                                   title="Open Maternal Health Record Card"
                                 >
                                   <Heart size={12} className="fill-rose-500/20 text-rose-600" /> Maternity

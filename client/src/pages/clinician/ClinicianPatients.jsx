@@ -70,30 +70,30 @@ export function ClinicianPatients() {
 
         {/* Clinical Stats Banner */}
         <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs flex items-center justify-between">
+          <div className="rounded-xl border border-line bg-surface p-3.5 shadow-2xs flex items-center justify-between">
             <div>
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Registered Patients</span>
-              <p className="mt-1 font-display text-2xl font-bold text-slate-800 tabular-nums">{patients.length}</p>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">Registered Patients</span>
+              <p className="mt-1 font-display text-2xl font-bold text-ink tabular-nums">{patients.length}</p>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-slate-50 text-slate-600 flex items-center justify-center border border-slate-200">
+            <div className="w-10 h-10 rounded-xl bg-subcanvas text-ink-2 flex items-center justify-center border border-line">
               <Users size={18} />
             </div>
           </div>
-          <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-3.5 shadow-2xs flex items-center justify-between">
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/30 p-3.5 shadow-2xs flex items-center justify-between">
             <div>
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">Upcoming Consultations</span>
-              <p className="mt-1 font-display text-2xl font-bold text-emerald-800 tabular-nums">{upcomingCount}</p>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Upcoming Consultations</span>
+              <p className="mt-1 font-display text-2xl font-bold text-emerald-800 dark:text-emerald-200 tabular-nums">{upcomingCount}</p>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center border border-emerald-200">
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 flex items-center justify-center border border-emerald-200 dark:border-emerald-800/60">
               <Calendar size={18} />
             </div>
           </div>
-          <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3.5 shadow-2xs flex items-center justify-between">
+          <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 dark:border-indigo-900/40 dark:bg-indigo-950/30 p-3.5 shadow-2xs flex items-center justify-between">
             <div>
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-700">Total Visits Conducted</span>
-              <p className="mt-1 font-display text-2xl font-bold text-indigo-800 tabular-nums">{totalVisitsCount}</p>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-700 dark:text-indigo-400">Total Visits Conducted</span>
+              <p className="mt-1 font-display text-2xl font-bold text-indigo-800 dark:text-indigo-200 tabular-nums">{totalVisitsCount}</p>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center border border-indigo-200">
+            <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 flex items-center justify-center border border-indigo-200 dark:border-indigo-800/60">
               <Stethoscope size={18} />
             </div>
           </div>
@@ -230,7 +230,7 @@ export function ClinicianPatients() {
                         </td>
                         <td className="px-3 py-3.5 text-xs">
                           {patient.nextVisit ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60">
                               <Clock size={11} /> {formatDate(patient.nextVisit.scheduledAt)}
                             </span>
                           ) : (
@@ -247,7 +247,7 @@ export function ClinicianPatients() {
                             {/* Direct Maternity Card Link */}
                             <Link
                               to={`/clinician/maternity?patientId=${patient.id}&patientName=${encodeURIComponent(patient.fullName || '')}`}
-                              className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/60 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition shadow-2xs"
+                              className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/60 text-rose-700 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-900/40 transition shadow-2xs px-2.5 py-1 text-xs font-semibold"
                               title="Open Maternal Health Record Card"
                             >
                               <Heart size={12} className="fill-rose-500/20 text-rose-600" /> Maternity Card

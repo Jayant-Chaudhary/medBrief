@@ -6,6 +6,7 @@ import { PatientHeaderCard } from '../../components/clinician/PatientHeaderCard.
 import { PreVisitQuestionnairePanel } from '../../components/clinician/PreVisitQuestionnairePanel.jsx';
 import { PreVisitAiBriefCard } from '../../components/clinician/PreVisitAiBriefCard.jsx';
 import { SimilarCasesTriageCard } from '../../components/clinician/SimilarCasesTriageCard.jsx';
+import { WearableMetricsCard } from '../../components/clinician/WearableMetricsCard.jsx';
 import { OcrTriageAlert } from '../../components/clinician/OcrTriageAlert.jsx';
 import { HistoryGrid } from '../../components/clinician/HistoryGrid.jsx';
 import { Modal } from '../../components/ui/Modal.jsx';
@@ -403,10 +404,10 @@ export function ClinicianDashboard() {
                 onClick={() => open(appointment)}
                 className={`card p-6 flex flex-col gap-4 border transition-all duration-200 ${
                   isPending
-                    ? 'border-slate-200 bg-slate-50/60 opacity-75 cursor-not-allowed'
+                    ? 'border-line bg-subcanvas/60 opacity-75 cursor-not-allowed'
                     : isCompleted
-                      ? 'border-emerald-200 bg-emerald-50/30 cursor-pointer hover:shadow-md hover:border-emerald-300'
-                      : 'border-slate-200/90 bg-white hover:border-indigo-300 hover:shadow-md cursor-pointer'
+                      ? 'border-emerald-200 bg-emerald-50/30 dark:border-emerald-900/40 dark:bg-emerald-950/20 cursor-pointer hover:shadow-md hover:border-emerald-300'
+                      : 'border-line bg-surface hover:border-cypress/50 hover:shadow-md cursor-pointer'
                 }`}
               >
                 <div className="flex items-start justify-between">
@@ -461,10 +462,28 @@ export function ClinicianDashboard() {
       );
     }
     if (queueError) {
+      const isAuthError =
+        queueError.status === 401 ||
+        queueError.message?.toLowerCase().includes('expired') ||
+        queueError.message?.toLowerCase().includes('access token');
       return (
         <div className="card flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
-          <p className="font-display text-head-sm text-terracotta">Could not reach the clinic API</p>
-          <p className="max-w-md text-body-md text-ink-2">{queueError.message}</p>
+          <p className="font-display text-head-sm text-terracotta">
+            {isAuthError ? 'Session Expired' : 'Could not reach the clinic API'}
+          </p>
+          <p className="max-w-md text-body-md text-ink-2">
+            {isAuthError
+              ? 'Your clinician session has expired. Please sign in again to reload appointments.'
+              : queueError.message}
+          </p>
+          {isAuthError && (
+            <Link
+              to="/login"
+              className="mt-3 rounded-xl bg-cypress px-4 py-2 text-label-sm font-semibold text-white hover:bg-cypress/90 transition-colors"
+            >
+              Sign In Again
+            </Link>
+          )}
         </div>
       );
     }
@@ -509,15 +528,15 @@ export function ClinicianDashboard() {
             <button
               onClick={close}
               aria-label="Back to dashboard"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium text-sm transition-all shadow-xs active:scale-95"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-line bg-surface hover:bg-subcanvas text-ink font-medium text-sm transition-all shadow-xs active:scale-95"
             >
-              <ArrowLeft className="w-4 h-4 text-slate-500" />
+              <ArrowLeft className="w-4 h-4 text-ink-3" />
               <span>Visits</span>
             </button>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-display font-semibold text-ink">Report Analysis</h1>
               {data.patient?.name && (
-                <span className="hidden sm:inline-block text-sm font-medium text-slate-500">
+                <span className="hidden sm:inline-block text-sm font-medium text-ink-soft">
                   · {data.patient.name}
                 </span>
               )}
@@ -527,7 +546,7 @@ export function ClinicianDashboard() {
           <div className="flex items-center gap-3">
             <Link
               to={`/clinician/maternity?patientId=${data.patient.id}&patientName=${encodeURIComponent(data.patient.name || '')}&phone=${encodeURIComponent(data.patient.phone || '')}`}
-              className="flex items-center gap-2 rounded-xl border border-pink-200 bg-pink-50 px-4 py-2 text-label-lg font-semibold text-pink-800 transition-all hover:bg-pink-100 hover:border-pink-300 hover:shadow-sm active:scale-[0.98]"
+              className="flex items-center gap-2 rounded-xl border border-pink-200 bg-pink-50 px-4 py-2 text-label-lg font-semibold text-pink-800 dark:border-pink-900/50 dark:bg-pink-950/40 dark:text-pink-300 dark:hover:bg-pink-900/40 transition-all hover:bg-pink-100 hover:border-pink-300 hover:shadow-sm active:scale-[0.98]"
               title="Open Antenatal Maternity Record"
             >
               <Heart className="h-4 w-4 text-pink-600 fill-pink-500/20 shrink-0" />
@@ -539,8 +558,8 @@ export function ClinicianDashboard() {
               onClick={() => setActiveDashboardTab('consultation')}
               className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-label-lg font-semibold transition-all ${
                 activeDashboardTab === 'consultation'
-                  ? 'border-emerald-500 bg-emerald-100 text-emerald-950 shadow-xs ring-1 ring-emerald-300'
-                  : 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100 hover:border-emerald-400 hover:shadow-sm active:scale-[0.98]'
+                  ? 'border-emerald-500 bg-emerald-100 text-emerald-950 dark:border-emerald-500 dark:bg-emerald-900/60 dark:text-emerald-100 shadow-xs ring-1 ring-emerald-300'
+                  : 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-200 dark:hover:bg-emerald-900/40 hover:bg-emerald-100 hover:border-emerald-400 hover:shadow-sm active:scale-[0.98]'
               }`}
               title="Open Consultant Notes & Prescriptions Workspace"
             >
@@ -649,6 +668,7 @@ export function ClinicianDashboard() {
             onGenerate={handleGenerateAiBrief}
             isGenerating={generatingBrief}
           />
+          <WearableMetricsCard trajectory={data.deviceTrajectory} />
           {isPatientSimilarityEnabled() && (
             <SimilarCasesTriageCard
               similarityData={similarityData}
@@ -903,17 +923,17 @@ export function ClinicianDashboard() {
       {selected && (
         <aside
           aria-label="Ambient Consultation Audio"
-          className="fixed bottom-7 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3.5 rounded-full border border-slate-200/90 bg-white/95 px-5 py-2.5 shadow-xl backdrop-blur-md transition-all hover:shadow-2xl ring-1 ring-black/5"
+          className="fixed bottom-7 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3.5 rounded-full border border-line bg-surface/95 dark:bg-raised/95 px-5 py-2.5 shadow-xl backdrop-blur-md transition-all hover:shadow-2xl ring-1 ring-line/30"
         >
           <div className="flex items-center gap-2 pr-1">
             <span className="relative flex h-2.5 w-2.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75"></span>
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-600"></span>
             </span>
-            <span className="text-[12px] font-bold uppercase tracking-wider text-slate-700">Ambient AI Audio</span>
+            <span className="text-[12px] font-bold uppercase tracking-wider text-ink">Ambient AI Audio</span>
           </div>
 
-          <div className="h-4 w-px bg-slate-200" />
+          <div className="h-4 w-px bg-line" />
 
           <button
             type="button"
@@ -934,7 +954,7 @@ export function ClinicianDashboard() {
               setAudioConsultTab('TRANSCRIPT');
               setAudioConsultOpen(true);
             }}
-            className="flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-2 text-label-md font-semibold text-indigo-800 transition-all hover:bg-indigo-100 hover:border-indigo-300 active:scale-95"
+            className="flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 dark:border-indigo-800/60 dark:bg-indigo-950/50 dark:text-indigo-200 dark:hover:bg-indigo-900/50 px-4 py-2 text-label-md font-semibold text-indigo-800 transition-all hover:bg-indigo-100 hover:border-indigo-300 active:scale-95"
             title="View consultation audio transcript and speech-to-text processing logs"
           >
             <FileAudio className="h-4 w-4 shrink-0 text-indigo-600" />

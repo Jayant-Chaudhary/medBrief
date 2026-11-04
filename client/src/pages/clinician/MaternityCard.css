@@ -47,6 +47,7 @@
   color: #23392f !important;
 }
 
+.maternity-container {
 /* ---------- Top bar in MedBrief ---------- */
 .maternity-topbar {
   position: sticky;
@@ -521,8 +522,7 @@
 .maternity-workspace .field,
 .maternity-entry .field,
 .field-grid label.field,
-.field-grid .field,
-label.field {
+.field-grid .field {
   display: flex !important;
   flex-direction: column !important;
   gap: 4px !important;
@@ -556,103 +556,89 @@ label.field {
 .maternity-workspace .field-grid > .span-12,
 .maternity-workspace .span-12,
 .maternity-entry .span-12,
-.field-grid .span-12,
-.span-12 {
+.field-grid .span-12 {
   grid-column: span 12 / span 12 !important;
 }
 
 .maternity-workspace .field-grid > .span-11,
 .maternity-workspace .span-11,
 .maternity-entry .span-11,
-.field-grid .span-11,
-.span-11 {
+.field-grid .span-11 {
   grid-column: span 11 / span 11 !important;
 }
 
 .maternity-workspace .field-grid > .span-10,
 .maternity-workspace .span-10,
 .maternity-entry .span-10,
-.field-grid .span-10,
-.span-10 {
+.field-grid .span-10 {
   grid-column: span 10 / span 10 !important;
 }
 
 .maternity-workspace .field-grid > .span-9,
 .maternity-workspace .span-9,
 .maternity-entry .span-9,
-.field-grid .span-9,
-.span-9 {
+.field-grid .span-9 {
   grid-column: span 9 / span 9 !important;
 }
 
 .maternity-workspace .field-grid > .span-8,
 .maternity-workspace .span-8,
 .maternity-entry .span-8,
-.field-grid .span-8,
-.span-8 {
+.field-grid .span-8 {
   grid-column: span 8 / span 8 !important;
 }
 
 .maternity-workspace .field-grid > .span-7,
 .maternity-workspace .span-7,
 .maternity-entry .span-7,
-.field-grid .span-7,
-.span-7 {
+.field-grid .span-7 {
   grid-column: span 7 / span 7 !important;
 }
 
 .maternity-workspace .field-grid > .span-6,
 .maternity-workspace .span-6,
 .maternity-entry .span-6,
-.field-grid .span-6,
-.span-6 {
+.field-grid .span-6 {
   grid-column: span 6 / span 6 !important;
 }
 
 .maternity-workspace .field-grid > .span-5,
 .maternity-workspace .span-5,
 .maternity-entry .span-5,
-.field-grid .span-5,
-.span-5 {
+.field-grid .span-5 {
   grid-column: span 5 / span 5 !important;
 }
 
 .maternity-workspace .field-grid > .span-4,
 .maternity-workspace .span-4,
 .maternity-entry .span-4,
-.field-grid .span-4,
-.span-4 {
+.field-grid .span-4 {
   grid-column: span 4 / span 4 !important;
 }
 
 .maternity-workspace .field-grid > .span-3,
 .maternity-workspace .span-3,
 .maternity-entry .span-3,
-.field-grid .span-3,
-.span-3 {
+.field-grid .span-3 {
   grid-column: span 3 / span 3 !important;
 }
 
 .maternity-workspace .field-grid > .span-2,
 .maternity-workspace .span-2,
 .maternity-entry .span-2,
-.field-grid .span-2,
-.span-2 {
+.field-grid .span-2 {
   grid-column: span 2 / span 2 !important;
 }
 
 .maternity-workspace .field-grid > .span-1,
 .maternity-workspace .span-1,
 .maternity-entry .span-1,
-.field-grid .span-1,
-.span-1 {
+.field-grid .span-1 {
   grid-column: span 1 / span 1 !important;
 }
 
 .maternity-workspace .field-label,
-.maternity-entry .field-label,
-.field .field-label,
-.field-label {
+.maternity-entry .field-label {
   display: block !important;
   font-size: 11px !important;
   font-weight: 600 !important;
@@ -677,10 +663,7 @@ label.field {
 .maternity-workspace .field textarea,
 .maternity-entry .field input,
 .maternity-entry .field select,
-.maternity-entry .field textarea,
-.field input,
-.field select,
-.field textarea {
+.maternity-entry .field textarea {
   display: block !important;
   width: 100% !important;
   min-width: 0 !important;
@@ -698,8 +681,7 @@ label.field {
 }
 
 .maternity-workspace .field textarea,
-.maternity-entry .field textarea,
-.field textarea {
+.maternity-entry .field textarea {
   height: auto !important;
   min-height: 64px !important;
   resize: vertical !important;
@@ -708,19 +690,13 @@ label.field {
 
 .maternity-workspace .field input:hover,
 .maternity-workspace .field select:hover,
-.maternity-workspace .field textarea:hover,
-.field input:hover,
-.field select:hover,
-.field textarea:hover {
+.maternity-workspace .field textarea:hover {
   border-color: var(--card-line-strong) !important;
 }
 
 .maternity-workspace .field input:focus,
 .maternity-workspace .field select:focus,
-.maternity-workspace .field textarea:focus,
-.field input:focus,
-.field select:focus,
-.field textarea:focus {
+.maternity-workspace .field textarea:focus {
   outline: none !important;
   background: #ffffff !important;
   background-color: #ffffff !important;
@@ -853,8 +829,7 @@ article.card#card,
 
 /* Card Blocks */
 .maternity-workspace .block,
-.card-body .block,
-.block {
+.card-body .block {
   min-width: 0 !important;
   overflow: hidden !important;
   background: #ffffff !important;
@@ -1084,9 +1059,12 @@ tr.blank:hover .add-hint { opacity: 1; }
     position: static;
     max-height: none;
   }
-  .card {
+  .maternity-workspace .card {
     min-width: 0;
   }
+}
+
+
 }
 
 /* ---------- Print Styles: Single-Page A4 Landscape Clinical Card ---------- */

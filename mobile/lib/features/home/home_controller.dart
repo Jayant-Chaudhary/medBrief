@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/api_client.dart';
 import '../auth/auth_repository.dart';
-import '../checkin/checkin_models.dart';
 import '../checkin/checkin_repository.dart';
 import 'appointment_repository.dart';
 

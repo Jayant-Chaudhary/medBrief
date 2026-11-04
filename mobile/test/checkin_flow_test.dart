@@ -125,7 +125,8 @@ void main() {
       expect(find.textContaining('Question 1 of'), findsOneWidget);
     });
 
-    testWidgets('triggers emergency intercept alert on red-flag answer',
+    testWidgets(
+        'requires mandatory details when red-flag answer is selected and handles misclick gracefully',
         (tester) async {
       await tester.pumpWidget(
         MaterialApp(
@@ -144,13 +145,32 @@ void main() {
       await tester.tap(noButton);
       await tester.pumpAndSettle();
 
-      expect(find.text('Important Clinical Alert'), findsOneWidget);
-      expect(find.textContaining('+1 555-0199'), findsOneWidget);
+      // In-line alert and mandatory details un-collapsed
+      expect(find.text('Priority Clinical Symptom'), findsOneWidget);
+      expect(find.text('Required'), findsOneWidget);
 
-      await tester.tap(find.text('Continue Check-in'));
+      // Attempting to proceed without description shows error
+      final nextButton = find.text('Next Question');
+      await tester.tap(nextButton);
       await tester.pumpAndSettle();
 
-      expect(find.text('Important Clinical Alert'), findsNothing);
+      expect(
+        find.text('Please describe this symptom before continuing.'),
+        findsOneWidget,
+      );
+
+      // Patient realizes misclick and selects "Yes" instead
+      final yesButton = find.widgetWithText(InkWell, 'Yes');
+      await tester.tap(yesButton);
+      await tester.pumpAndSettle();
+
+      // Flag, alert banner, and error are immediately cleared
+      expect(find.text('Priority Clinical Symptom'), findsNothing);
+      expect(find.text('Required'), findsNothing);
+      expect(
+        find.text('Please describe this symptom before continuing.'),
+        findsNothing,
+      );
     });
 
     testWidgets('allows progressing and completing check-in', (tester) async {

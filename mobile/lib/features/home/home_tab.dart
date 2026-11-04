@@ -5,6 +5,8 @@ import '../checkin/checkin_models.dart';
 import 'appointment_repository.dart';
 import 'appointments_tab.dart';
 import 'home_controller.dart';
+import '../health_connect/health_connect_card.dart';
+import '../health_connect/health_connect_repository.dart';
 
 /// Patient Home Dashboard tab.
 ///
@@ -151,6 +153,12 @@ class HomeTab extends StatelessWidget {
           // ── 24/7 Spontaneous Concern Card ────────────────────────
           _LogConcernCard(
             onLog: onLogConcern,
+          ),
+          const SizedBox(height: 12),
+
+          // ── Health Connect Wearable Sync Card ───────────────────
+          HealthConnectCard(
+            repository: HealthConnectRepository(api: controller.repo.api),
           ),
           const SizedBox(height: 24),
 
@@ -322,7 +330,7 @@ class _HomeActionBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: line),
+        border: Border.all(color: border),
       ),
       padding: const EdgeInsets.all(18),
       child: Column(

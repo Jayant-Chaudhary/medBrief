@@ -22,7 +22,7 @@ export function OcrTriageAlert({ alerts = [], onResolve }) {
   const listId = 'ocr-triage-list';
 
   return (
-    <section className="rounded-2xl border border-amber-300 bg-gradient-to-r from-amber-50/90 to-orange-50/80 p-4 shadow-xs">
+    <section className="rounded-2xl border border-amber-300 bg-gradient-to-r from-amber-50/90 to-orange-50/80 dark:border-amber-800/50 dark:from-amber-950/40 dark:to-orange-950/30 p-4 shadow-xs">
       <button
         type="button"
         onClick={() => setExpanded((open) => !open)}
@@ -34,10 +34,10 @@ export function OcrTriageAlert({ alerts = [], onResolve }) {
           <Icon name="scan" size={18} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block font-display text-label-lg font-bold text-amber-950">
+          <span className="block font-display text-label-lg font-bold text-amber-950 dark:text-amber-200">
             {alerts.length} value{alerts.length > 1 ? 's' : ''} need{alerts.length > 1 ? '' : 's'} manual review
           </span>
-          <span className="block text-body-sm text-amber-900/80 mt-0.5">
+          <span className="block text-body-sm text-amber-900/80 dark:text-amber-300/80 mt-0.5">
             {expanded
               ? 'The OCR engine flagged these as low-confidence. Enter the reading from the scan to resolve.'
               : 'Low-confidence OCR values. Expand to review.'}

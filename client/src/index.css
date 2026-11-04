@@ -37,7 +37,7 @@
   .scroll-column {
     @apply overflow-y-auto overscroll-contain;
     scrollbar-width: thin;
-    scrollbar-color: #DECFC1 transparent;
+    scrollbar-color: rgb(var(--c-line-strong)) transparent;
   }
 }
 

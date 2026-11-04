@@ -55,8 +55,16 @@ async function toApiError(response, fallback) {
 
 async function authHeader() {
   try {
-    const { data } = await supabase.auth.getSession();
-    const token = data?.session?.access_token;
+    let { data } = await supabase.auth.getSession();
+    let session = data?.session;
+    // Proactively refresh if access token is expired or expiring within 60s
+    if (session?.expires_at && session.expires_at * 1000 < Date.now() + 60000) {
+      const { data: refreshed, error } = await supabase.auth.refreshSession();
+      if (!error && refreshed?.session) {
+        session = refreshed.session;
+      }
+    }
+    const token = session?.access_token;
     return token ? { Authorization: `Bearer ${token}` } : {};
   } catch {
     return {};
@@ -64,7 +72,7 @@ async function authHeader() {
 }
 
 /** Thin fetch wrapper: attaches the Supabase JWT and unwraps JSON errors. */
-export async function request(path, { method = 'GET', body, signal } = {}) {
+export async function request(path, { method = 'GET', body, signal, _retry = false } = {}) {
   const startedAt = performance.now();
   const response = await fetch(`${BASE_URL}${path}`, {
     method,
@@ -78,6 +86,19 @@ export async function request(path, { method = 'GET', body, signal } = {}) {
   });
 
   trace(method, path, response, startedAt);
+
+  // If 401 occurs, attempt a silent token refresh and retry once
+  if (response.status === 401 && !_retry) {
+    try {
+      const { data: refreshed, error } = await supabase.auth.refreshSession();
+      if (!error && refreshed?.session?.access_token) {
+        return request(path, { method, body, signal, _retry: true });
+      }
+    } catch {
+      // refresh error, fall through to throwing
+    }
+  }
+
   if (!response.ok) throw await toApiError(response, 'Request failed');
 
   return response.status === 204 ? null : response.json();
@@ -87,7 +108,7 @@ export async function request(path, { method = 'GET', body, signal } = {}) {
  * Multipart upload. The browser must set its own multipart boundary, so this
  * deliberately does not send a Content-Type header.
  */
-export async function upload(path, formData, { method = 'POST' } = {}) {
+export async function upload(path, formData, { method = 'POST', _retry = false } = {}) {
   const startedAt = performance.now();
   const response = await fetch(`${BASE_URL}${path}`, {
     method,
@@ -97,6 +118,19 @@ export async function upload(path, formData, { method = 'POST' } = {}) {
   });
 
   trace(method, path, response, startedAt);
+
+  // If 401 occurs, attempt a silent token refresh and retry once
+  if (response.status === 401 && !_retry) {
+    try {
+      const { data: refreshed, error } = await supabase.auth.refreshSession();
+      if (!error && refreshed?.session?.access_token) {
+        return upload(path, formData, { method, _retry: true });
+      }
+    } catch {
+      // refresh error, fall through to throwing
+    }
+  }
+
   if (!response.ok) throw await toApiError(response, 'Upload failed');
 
   return response.json();

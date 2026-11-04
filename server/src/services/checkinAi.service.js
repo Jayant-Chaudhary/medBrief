@@ -2,12 +2,13 @@ const axios = require('axios');
 const supabaseAdmin = require('../config/supabaseAdminClient');
 const config = require('../config/checkin.config');
 const logger = require('../utils/logger');
+const { computeMetricsTrajectory } = require('./deviceMetrics.service');
 
 /**
  * Builds a deterministic clinical brief fallback when Gemini API key
  * is absent or when running in an offline test harness.
  */
-function buildDeterministicSummary({ patientDetails, recentSessions, recentVitals, intervalDescription }) {
+function buildDeterministicSummary({ patientDetails, recentSessions, recentVitals, intervalDescription, deviceTrajectory }) {
   const redFlags = [];
   const topQuestions = [];
   const adHocConcerns = [];
@@ -72,6 +73,20 @@ function buildDeterministicSummary({ patientDetails, recentSessions, recentVital
     }
   }
 
+  // Factor in wearable / Health Connect trajectory and flags
+  if (deviceTrajectory && deviceTrajectory.hasData) {
+    if (deviceTrajectory.flags && deviceTrajectory.flags.length > 0) {
+      for (const flag of deviceTrajectory.flags) {
+        redFlags.push(flag);
+      }
+      if (deviceTrajectory.bpAlert || (deviceTrajectory.peakRestingHr && deviceTrajectory.peakRestingHr >= 115)) {
+        hasUrgent = true;
+      } else {
+        hasModerate = true;
+      }
+    }
+  }
+
   let clinicalRiskLevel = 'low';
   if (hasUrgent) {
     clinicalRiskLevel = 'urgent';
@@ -85,6 +100,32 @@ function buildDeterministicSummary({ patientDetails, recentSessions, recentVital
   if (adHocConcerns.length > 0) {
     trajectory += ` Recent patient-logged concerns: ${adHocConcerns.join('; ')}.`;
   }
+  if (deviceTrajectory && deviceTrajectory.hasData) {
+    const parts = [];
+    if (deviceTrajectory.avgRecentSteps !== null) {
+      const trendStr = deviceTrajectory.stepsTrendPercent !== null
+        ? ` (${deviceTrajectory.stepsTrendPercent >= 0 ? '+' : ''}${deviceTrajectory.stepsTrendPercent}% trend)`
+        : '';
+      parts.push(`Daily steps averaged ${deviceTrajectory.avgRecentSteps}${trendStr}`);
+    }
+    if (deviceTrajectory.avgRestingHr !== null) {
+      parts.push(`Resting HR averaged ${deviceTrajectory.avgRestingHr} bpm (peak: ${deviceTrajectory.peakRestingHr} bpm)`);
+    }
+    if (deviceTrajectory.avgSleepHours !== null) {
+      parts.push(`Sleep averaged ${deviceTrajectory.avgSleepHours} hrs/night`);
+    }
+    if (parts.length > 0) {
+      trajectory += ` Wearable activity (Health Connect): ${parts.join(', ')}.`;
+    }
+  }
+
+  const doctorTalkingPoints = hasUrgent
+    ? 'Prioritize immediate evaluation of flagged obstetric concerns, wearable alerts, and repeat vitals.'
+    : (deviceTrajectory && deviceTrajectory.flags && deviceTrajectory.flags.length > 0)
+    ? `Review wearable alerts (${deviceTrajectory.flags[0]}) alongside patient-reported symptoms.`
+    : adHocConcerns.length > 0
+    ? `Address recent spontaneous concerns (${adHocConcerns.join(', ')}) and review routine progress.`
+    : 'Review routine gestational progress and address patient inquiries.';
 
   return {
     clinical_risk_level: clinicalRiskLevel,
@@ -99,20 +140,16 @@ function buildDeterministicSummary({ patientDetails, recentSessions, recentVital
         ? medicalNotes.join('. ')
         : 'Routine prenatal vitamins and medications reported as adherent.',
     patient_top_questions: topQuestions,
-    doctor_talking_points: hasUrgent
-      ? 'Prioritize immediate evaluation of flagged obstetric concerns and repeat vitals.'
-      : adHocConcerns.length > 0
-      ? `Address recent spontaneous concerns (${adHocConcerns.join(', ')}) and review routine progress.`
-      : 'Review routine gestational progress and address patient inquiries.',
+    doctor_talking_points: doctorTalkingPoints,
   };
 }
 
 /**
  * Invokes Gemini 2.5 Flash to synthesize interval check-in data into a clinical brief.
  */
-async function callGeminiSynthesizer({ patientDetails, recentSessions, recentVitals, intervalDescription }) {
+async function callGeminiSynthesizer({ patientDetails, recentSessions, recentVitals, intervalDescription, deviceTrajectory }) {
   if (!config.geminiApiKey) {
-    return buildDeterministicSummary({ patientDetails, recentSessions, recentVitals, intervalDescription });
+    return buildDeterministicSummary({ patientDetails, recentSessions, recentVitals, intervalDescription, deviceTrajectory });
   }
 
   const prompt = `
@@ -133,6 +170,18 @@ PATIENT CONTEXT:
 
 INTERVAL CHECK-IN SESSIONS & AD-HOC CONCERNS:
 ${JSON.stringify(recentSessions, null, 2)}
+
+WEARABLE DEVICE METRICS (Health Connect / Verified Devices):
+${deviceTrajectory && deviceTrajectory.hasData ? JSON.stringify({
+  daysTracked: deviceTrajectory.daysTracked,
+  avgRecentSteps: deviceTrajectory.avgRecentSteps,
+  stepsTrendPercent: deviceTrajectory.stepsTrendPercent,
+  avgRestingHr: deviceTrajectory.avgRestingHr,
+  peakRestingHr: deviceTrajectory.peakRestingHr,
+  avgSleepHours: deviceTrajectory.avgSleepHours,
+  latestBp: deviceTrajectory.latestBp,
+  flags: deviceTrajectory.flags,
+}, null, 2) : 'No wearable device data synced for this interval.'}
 
 Provide your response in strictly valid JSON format matching this exact schema:
 {
@@ -171,7 +220,7 @@ Provide your response in strictly valid JSON format matching this exact schema:
       scope: 'checkin_ai',
       err: err.message,
     });
-    return buildDeterministicSummary({ patientDetails, recentSessions, recentVitals, intervalDescription });
+    return buildDeterministicSummary({ patientDetails, recentSessions, recentVitals, intervalDescription, deviceTrajectory });
   }
 }
 
@@ -246,12 +295,20 @@ async function generatePreVisitSummary(appointmentId) {
     .gte('recorded_at', intervalStart)
     .order('recorded_at', { ascending: false });
 
+  // 5.5 Fetch wearable device metrics trajectory in interval
+  const deviceTrajectory = await computeMetricsTrajectory(
+    appointment.patient_id,
+    intervalStart,
+    intervalEnd
+  );
+
   // 6. Generate synthesis
   const synthesis = await callGeminiSynthesizer({
     patientDetails,
     recentSessions: recentSessions || [],
     recentVitals: recentVitals || [],
     intervalDescription,
+    deviceTrajectory,
   });
 
   // 7. Persist to visit_ai_summaries

@@ -402,6 +402,7 @@ describe('Check-In & AI Summarization API', () => {
           },
         ]),
         vitals_logs: ok([]),
+        patient_device_metrics: ok([]),
         visit_ai_summaries: ok(mockSavedSummary),
       });
 

@@ -7,6 +7,7 @@ const {
   adHocConcernSchema,
   quickPulseSchema,
 } = require('../validators/checkin.validators');
+const { syncDeviceMetricsSchema } = require('../validators/deviceMetrics.validators');
 const {
   submitCheckin,
   submitAdHoc,
@@ -15,6 +16,9 @@ const {
   getHistory,
   getSummary,
   generateSummary,
+  syncMetrics,
+  getMetrics,
+  getMetricsTrajectory,
 } = require('../controllers/checkin.controller');
 
 const router = express.Router();
@@ -28,5 +32,8 @@ router.get('/status', getStatus);
 router.get('/history', getHistory);
 router.get('/summary/:appointmentId', getSummary);
 router.post('/summary/:appointmentId/generate', roleGuard('clinician'), generateSummary);
+router.post('/device-metrics/sync', roleGuard('patient'), validateBody(syncDeviceMetricsSchema), syncMetrics);
+router.get('/device-metrics', getMetrics);
+router.get('/device-metrics/trajectory', getMetricsTrajectory);
 
 module.exports = router;

@@ -1,4 +1,4 @@
-/// Models for longitudinal prenatal check-in and AI pre-visit clinical briefs.
+// Models for longitudinal prenatal check-in and AI pre-visit clinical briefs.
 
 class CheckinAnswerPayload {
   const CheckinAnswerPayload({

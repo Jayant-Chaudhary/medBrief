@@ -110,18 +110,18 @@ function getClinicalBand(standardKey, number, rawValue) {
 function getGroupStyle(groupId) {
   const id = String(groupId || '').toLowerCase();
   if (id.includes('blood') || id.includes('cbc') || id.includes('hematology')) {
-    return 'border-l-4 border-l-rose-500 bg-rose-50/40';
+    return 'border-l-4 border-l-rose-500 bg-rose-50/40 dark:bg-rose-950/20';
   }
   if (id.includes('glucose') || id.includes('sugar') || id.includes('metabolic') || id.includes('diabetes')) {
-    return 'border-l-4 border-l-amber-500 bg-amber-50/40';
+    return 'border-l-4 border-l-amber-500 bg-amber-50/40 dark:bg-amber-950/20';
   }
   if (id.includes('thyroid')) {
-    return 'border-l-4 border-l-violet-500 bg-violet-50/40';
+    return 'border-l-4 border-l-violet-500 bg-violet-50/40 dark:bg-violet-950/20';
   }
   if (id.includes('urine') || id.includes('renal') || id.includes('kidney')) {
-    return 'border-l-4 border-l-sky-500 bg-sky-50/40';
+    return 'border-l-4 border-l-sky-500 bg-sky-50/40 dark:bg-sky-950/20';
   }
-  return 'border-l-4 border-l-teal-600 bg-teal-50/30';
+  return 'border-l-4 border-l-teal-600 bg-teal-50/30 dark:bg-teal-950/20';
 }
 
 /**
@@ -185,15 +185,15 @@ export function HistoryGrid({ flowsheet, patientId, onResolve }) {
   const colSpan = shown.length + 1;
 
   return (
-    <section className="card flex min-h-0 flex-col border border-slate-200/90 shadow-sm bg-white overflow-hidden">
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-slate-200 px-5 py-4">
+    <section className="card flex min-h-0 flex-col overflow-hidden">
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-line px-5 py-4">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 border border-teal-200">
+          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 border border-teal-200 dark:bg-teal-950/50 dark:text-teal-300 dark:border-teal-800/60">
             <Icon name="chart" size={16} />
           </span>
           <div className="min-w-0">
             <h2 className="font-display text-head-sm font-semibold text-ink">Clinical data flowsheet</h2>
-            <p className="mt-0.5 text-body-sm text-slate-500">
+            <p className="mt-0.5 text-body-sm text-ink-soft">
               {columns.length} report date{columns.length === 1 ? '' : 's'} · {rowCount} test{rowCount === 1 ? '' : 's'} ·
               select a test for its full chart
             </p>
@@ -209,8 +209,8 @@ export function HistoryGrid({ flowsheet, patientId, onResolve }) {
               aria-pressed={filter === id}
               className={`rounded-full px-3 py-1 text-label-md transition-colors ${
                 filter === id
-                  ? 'bg-slate-900 text-white font-semibold shadow-xs'
-                  : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                  ? 'bg-ink text-canvas font-semibold shadow-xs'
+                  : 'border border-line bg-subcanvas text-ink-2 hover:bg-raised'
               }`}
             >
               {label}
@@ -218,10 +218,10 @@ export function HistoryGrid({ flowsheet, patientId, onResolve }) {
                 <span
                   className={`ml-1.5 tabular rounded-full px-1.5 py-0.2 text-xs font-semibold ${
                     filter === id
-                      ? 'bg-white/20 text-white'
+                      ? 'bg-canvas/20 text-canvas'
                       : id === 'review'
-                        ? 'bg-amber-100 text-amber-800'
-                        : 'bg-slate-200 text-slate-700'
+                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                        : 'bg-line text-ink-2'
                   }`}
                 >
                   {counts[id]}
@@ -283,15 +283,15 @@ export function HistoryGrid({ flowsheet, patientId, onResolve }) {
                   title={formatDate(column.date)}
                 >
                   {column.isCurrentVisit ? (
-                    <span className="inline-block rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-800 shadow-2xs">
+                    <span className="inline-block rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 shadow-2xs">
                       {shortDate(column.date)}
                     </span>
                   ) : (
-                    <span className="inline-block rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-700 tabular shadow-2xs">
+                    <span className="inline-block rounded-lg border border-line bg-subcanvas px-2 py-0.5 text-xs font-semibold text-ink-2 tabular shadow-2xs">
                       {shortDate(column.date)}
                     </span>
                   )}
-                  <span className="block mt-0.5 text-[11px] font-normal text-slate-500">
+                  <span className="block mt-0.5 text-[11px] font-normal text-ink-soft">
                     {column.isCurrentVisit ? 'this visit' : `${column.reportIds.length} report${column.reportIds.length === 1 ? '' : 's'}`}
                   </span>
                 </th>
@@ -306,7 +306,7 @@ export function HistoryGrid({ flowsheet, patientId, onResolve }) {
               const changed = group.rows.filter((row) => row.change.direction !== 'flat').length;
               return (
                 <Fragment key={group.id}>
-                  <tr className={`border-t border-slate-200 transition-colors ${getGroupStyle(group.id)}`}>
+                  <tr className={`border-t border-line transition-colors ${getGroupStyle(group.id)}`}>
                     <td colSpan={colSpan} className="p-0">
                       <button
                         type="button"
@@ -318,10 +318,10 @@ export function HistoryGrid({ flowsheet, patientId, onResolve }) {
                         <Icon
                           name="chevronDown"
                           size={14}
-                          className={`text-slate-500 transition-transform ${open ? '' : '-rotate-90'}`}
+                          className={`text-ink-soft transition-transform ${open ? '' : '-rotate-90'}`}
                         />
-                        <span className="font-display text-label-lg font-bold text-slate-900">{group.label}</span>
-                        <span className="text-body-sm text-slate-500">
+                        <span className="font-display text-label-lg font-bold text-ink">{group.label}</span>
+                        <span className="text-body-sm text-ink-soft">
                           · {group.rows.length} test{group.rows.length === 1 ? '' : 's'}
                         </span>
                         {flagged > 0 && (
@@ -330,12 +330,12 @@ export function HistoryGrid({ flowsheet, patientId, onResolve }) {
                           </span>
                         )}
                         {changed > 0 && (
-                          <span className="rounded-full bg-sky-100 text-sky-800 border border-sky-200 font-semibold px-2 py-0.5 text-xs">
+                          <span className="rounded-full bg-sky-100 text-sky-800 border border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800/60 font-semibold px-2 py-0.5 text-xs">
                             {changed} changed
                           </span>
                         )}
                         {!open && flagged === 0 && changed === 0 && (
-                          <span className="text-body-sm text-slate-400">— all unchanged</span>
+                          <span className="text-body-sm text-ink-3">— all unchanged</span>
                         )}
                       </button>
                     </td>
@@ -403,9 +403,9 @@ function HistoryRow({ row, columns, start, patientId, expanded, onToggle, onShow
   return (
     <>
       <tr
-        className={`group cursor-pointer border-t border-slate-100 transition-colors hover:bg-indigo-50/30 ${
-          expanded ? 'bg-slate-50/80' : ''
-        } ${row.needsReview ? 'bg-amber-50/30' : ''}`}
+        className={`group cursor-pointer border-t border-line transition-colors hover:bg-subcanvas/60 ${
+          expanded ? 'bg-subcanvas/50' : ''
+        } ${row.needsReview ? 'bg-amber-50/30 dark:bg-amber-950/30' : ''}`}
         onClick={onToggle}
       >
         <td className="py-2.5 pl-5 pr-2 align-middle">
@@ -416,17 +416,17 @@ function HistoryRow({ row, columns, start, patientId, expanded, onToggle, onShow
               onToggle();
             }}
             aria-expanded={expanded}
-            className="flex w-full min-w-0 items-center gap-1.5 text-left text-body-md text-ink group-hover:text-indigo-950"
+            className="flex w-full min-w-0 items-center gap-1.5 text-left text-body-md text-ink group-hover:text-primary"
             title={row.name}
           >
             <Icon
               name="chevronRight"
               size={13}
-              className={`shrink-0 text-slate-400 transition-transform group-hover:text-indigo-600 ${expanded ? 'rotate-90' : ''}`}
+              className={`shrink-0 text-ink-3 transition-transform group-hover:text-primary ${expanded ? 'rotate-90' : ''}`}
             />
             <span className="truncate font-medium">
               {row.name}
-              {row.unit && <span className="ml-1.5 text-body-sm text-slate-400 font-normal">({row.unit})</span>}
+              {row.unit && <span className="ml-1.5 text-body-sm text-ink-3 font-normal">({row.unit})</span>}
             </span>
           </button>
         </td>
@@ -472,13 +472,13 @@ function HistoryRow({ row, columns, start, patientId, expanded, onToggle, onShow
 
           let cellClass = 'tabular rounded px-2 py-0.5 transition-colors ';
           if (band === 'critical') {
-            cellClass += 'bg-rose-50 border border-rose-300 text-rose-700 font-bold shadow-2xs hover:bg-rose-100 ';
+            cellClass += 'bg-rose-50 border border-rose-300 text-rose-700 font-bold shadow-2xs hover:bg-rose-100 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-300 dark:hover:bg-rose-900/40 ';
           } else if (band === 'warning') {
-            cellClass += 'bg-amber-50 border border-amber-300 text-amber-800 font-semibold shadow-2xs hover:bg-amber-100 ';
+            cellClass += 'bg-amber-50 border border-amber-300 text-amber-800 font-semibold shadow-2xs hover:bg-amber-100 dark:bg-amber-950/40 dark:border-amber-900/60 dark:text-amber-300 dark:hover:bg-amber-900/40 ';
           } else {
             cellClass += isNewest
-              ? 'font-display text-label-lg text-ink hover:bg-slate-100 '
-              : 'text-body-sm text-slate-700 hover:bg-slate-100 ';
+              ? 'font-display text-label-lg text-ink hover:bg-subcanvas '
+              : 'text-body-sm text-ink-2 hover:bg-subcanvas ';
           }
 
           return (
@@ -493,7 +493,7 @@ function HistoryRow({ row, columns, start, patientId, expanded, onToggle, onShow
                 {formatValue(cell.value)}
                 {isNewest && direction !== 'flat' && (
                   <span
-                    className={`ml-1 text-[11px] font-bold ${direction === 'up' ? 'text-rose-600' : 'text-emerald-600'}`}
+                    className={`ml-1 text-[11px] font-bold ${direction === 'up' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}
                     aria-label={changeLabel}
                   >
                     {direction === 'up' ? '▲' : '▼'}
@@ -506,20 +506,20 @@ function HistoryRow({ row, columns, start, patientId, expanded, onToggle, onShow
       </tr>
 
       {expanded && (
-        <tr className="border-t border-slate-200 bg-slate-50/50">
+        <tr className="border-t border-line bg-subcanvas/30">
           <td colSpan={colSpan} className="px-5 py-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
+            <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
               <div className="mb-3 flex flex-wrap items-center gap-2">
-                <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">
                   <Icon name="history" size={14} />
                 </span>
-                <h4 className="font-display text-label-lg font-bold text-slate-900">{row.name} — history</h4>
+                <h4 className="font-display text-label-lg font-bold text-ink">{row.name} — history</h4>
                 {changeLabel && (
-                  <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
+                  <span className="rounded-full bg-subcanvas border border-line px-2.5 py-0.5 text-xs font-semibold text-ink-2">
                     {changeLabel}
                   </span>
                 )}
-                {loading && <span className="text-body-sm text-slate-400">loading…</span>}
+                {loading && <span className="text-body-sm text-ink-3">loading…</span>}
               </div>
               <TrendChart series={series} unit={row.unit} />
             </div>

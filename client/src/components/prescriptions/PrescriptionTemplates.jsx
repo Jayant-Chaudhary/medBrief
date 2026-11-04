@@ -825,7 +825,7 @@ export function MedicationTemplateLibraryPage() {
           <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+                <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800/60">
                   <Pill size={18} />
                 </span>
                 <h1 className="font-display text-head-lg text-ink">Medication Template Library</h1>
@@ -845,27 +845,27 @@ export function MedicationTemplateLibraryPage() {
 
           {/* Quick Metrics Bar */}
           <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Active Regimens</span>
-              <p className="mt-1 font-display text-2xl font-bold text-slate-800 tabular-nums">{activeCount}</p>
+            <div className="rounded-xl border border-line bg-surface p-3.5 shadow-2xs">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">Active Regimens</span>
+              <p className="mt-1 font-display text-2xl font-bold text-ink tabular-nums">{activeCount}</p>
             </div>
-            <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3.5 shadow-2xs">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-blue-700">Clinician Approved</span>
-              <p className="mt-1 font-display text-2xl font-bold text-blue-800 tabular-nums">{approvedCount}</p>
+            <div className="rounded-xl border border-blue-100 bg-blue-50/50 dark:border-blue-900/40 dark:bg-blue-950/30 p-3.5 shadow-2xs">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-400">Clinician Approved</span>
+              <p className="mt-1 font-display text-2xl font-bold text-blue-800 dark:text-blue-200 tabular-nums">{approvedCount}</p>
             </div>
-            <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-3.5 shadow-2xs">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-700">Draft Templates</span>
-              <p className="mt-1 font-display text-2xl font-bold text-amber-800 tabular-nums">{draftCount}</p>
+            <div className="rounded-xl border border-amber-100 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/30 p-3.5 shadow-2xs">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">Draft Templates</span>
+              <p className="mt-1 font-display text-2xl font-bold text-amber-800 dark:text-amber-200 tabular-nums">{draftCount}</p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 shadow-2xs">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">Archived Library</span>
-              <p className="mt-1 font-display text-2xl font-bold text-slate-700 tabular-nums">{archivedCount}</p>
+            <div className="rounded-xl border border-line bg-surface p-3.5 shadow-2xs">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">Archived Library</span>
+              <p className="mt-1 font-display text-2xl font-bold text-ink tabular-nums">{archivedCount}</p>
             </div>
           </div>
 
           {/* Browse Controls & Filter Tabs */}
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
+          <section className="rounded-xl border border-line bg-surface p-4 shadow-2xs">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3.5">
               {/* Category Filter Pills */}
               <div className="flex flex-wrap items-center gap-1.5">
                 {[
@@ -881,12 +881,12 @@ export function MedicationTemplateLibraryPage() {
                     className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
                       filterTab === tab.id
                         ? 'bg-indigo-600 text-white shadow-2xs'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        : 'bg-subcanvas text-ink-2 hover:bg-line/40'
                     }`}
                   >
                     <span>{tab.label}</span>
                     <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                      filterTab === tab.id ? 'bg-indigo-700 text-white' : 'bg-slate-200 text-slate-700'
+                      filterTab === tab.id ? 'bg-indigo-700 text-white' : 'bg-line text-ink-2'
                     }`}>
                       {tab.count}
                     </span>
@@ -902,7 +902,7 @@ export function MedicationTemplateLibraryPage() {
                   value={query}
                   placeholder="Search names, ailments, tags…"
                   onChange={event => setQuery(event.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50/50 py-1.5 pl-8 pr-3 text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:border-indigo-500 focus:outline-none transition"
+                  className="w-full rounded-lg border border-line bg-subcanvas/50 py-1.5 pl-8 pr-3 text-xs text-ink placeholder-ink-3 focus:bg-surface focus:border-indigo-500 focus:outline-none transition"
                 />
                 {query && (
                   <button
@@ -924,33 +924,33 @@ export function MedicationTemplateLibraryPage() {
             ) : visible.length ? (
               <div className="mt-4 flex flex-col gap-3.5">
                 {visible.map(template => (
-                  <article key={template.id} className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-2xs hover:border-slate-300 transition">
+                  <article key={template.id} className="rounded-xl border border-line bg-surface p-4 shadow-2xs hover:border-line-strong transition">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
-                          <h2 className="text-[14px] font-bold text-slate-900">{template.name}</h2>
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                          <h2 className="text-[14px] font-bold text-ink">{template.name}</h2>
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-subcanvas text-ink-2 border border-line">
                             v{template.version}
                           </span>
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
                             template.archived
-                              ? 'bg-slate-100 text-slate-600 border border-slate-200'
+                              ? 'bg-subcanvas text-ink-2 border border-line'
                               : template.status === 'active'
-                              ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                              : 'bg-amber-100 text-amber-800 border border-amber-200'
+                              ? 'bg-blue-100 text-blue-800 border border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800/60'
+                              : 'bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800/60'
                           }`}>
                             {template.archived ? 'Archived' : template.status === 'active' ? 'Clinician Approved' : 'Draft'}
                           </span>
-                          <span className="text-[11px] text-slate-400">
+                          <span className="text-[11px] text-ink-3">
                             {template.medications.length} {template.medications.length === 1 ? 'medicine' : 'medicines'}
                           </span>
                         </div>
 
                         {template.purpose && (
                           <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                            <span className="text-[11px] font-semibold text-slate-500">Ailment tags:</span>
+                            <span className="text-[11px] font-semibold text-ink-soft">Ailment tags:</span>
                             {template.purpose.split(',').map((tag, idx) => (
-                              <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded-md text-[10.5px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200/70">
+                              <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded-md text-[10.5px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200/70 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800/60">
                                 {tag.trim()}
                               </span>
                             ))}
@@ -959,9 +959,9 @@ export function MedicationTemplateLibraryPage() {
 
                         {template.factorRules?.length > 0 && (
                           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                            <span className="text-[11px] font-semibold text-slate-500">Trigger factors:</span>
+                            <span className="text-[11px] font-semibold text-ink-soft">Trigger factors:</span>
                             {template.factorRules.map((rule, idx) => (
-                              <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded-md text-[10.5px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                              <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded-md text-[10.5px] font-medium bg-subcanvas text-ink border border-line">
                                 {rule.label} {({ equals: '=', min: '≥', max: '≤' })[rule.operator]} {rule.value}{rule.unit ? ` ${rule.unit}` : ''}
                               </span>
                             ))}
@@ -973,14 +973,14 @@ export function MedicationTemplateLibraryPage() {
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-2xs transition"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-ink bg-surface hover:bg-subcanvas border border-line rounded-lg shadow-2xs transition"
                           onClick={() => setDialog({ type: 'edit', value: structuredClone(template) })}
                         >
-                          <Pencil size={12} className="text-slate-500" /> Edit
+                          <Pencil size={12} className="text-ink-3" /> Edit
                         </button>
                         <button
                           type="button"
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-2xs transition"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-ink bg-surface hover:bg-subcanvas border border-line rounded-lg shadow-2xs transition"
                           onClick={() => setDialog({
                             type: 'edit',
                             value: {
@@ -992,14 +992,14 @@ export function MedicationTemplateLibraryPage() {
                             }
                           })}
                         >
-                          <Copy size={12} className="text-slate-500" /> Duplicate
+                          <Copy size={12} className="text-ink-3" /> Duplicate
                         </button>
                         <button
                           type="button"
                           className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg border shadow-2xs transition ${
                             template.archived
-                              ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200'
-                              : 'text-slate-600 bg-white hover:bg-slate-50 border-slate-200'
+                              ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/50 dark:border-emerald-800'
+                              : 'text-ink-2 bg-surface hover:bg-subcanvas border border-line'
                           }`}
                           onClick={() => archive(template)}
                         >
@@ -1009,16 +1009,16 @@ export function MedicationTemplateLibraryPage() {
                     </div>
 
                     {/* Medicine Regimen Items */}
-                    <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-1.5">
+                    <div className="mt-3 pt-3 border-t border-line flex flex-col gap-1.5">
                       {template.medications.map(item => (
-                        <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50/80 border border-slate-100 text-xs">
+                        <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-subcanvas/70 border border-line text-xs">
                           <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-wider bg-slate-200 text-slate-700">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-wider bg-raised text-ink-2 border border-line">
                               {typeLabel(item)}
                             </span>
-                            <strong className="text-slate-900 font-semibold">{item.name}</strong>
+                            <strong className="text-ink font-semibold">{item.name}</strong>
                           </div>
-                          <span className="text-slate-600 text-[11.5px]">
+                          <span className="text-ink-2 text-[11.5px]">
                             {medicationSummary(item) || 'Regimen details not specified'}
                           </span>
                         </div>
@@ -1029,11 +1029,11 @@ export function MedicationTemplateLibraryPage() {
               </div>
             ) : (
               <div className="py-14 text-center">
-                <FileText size={32} className="mx-auto text-slate-300" />
-                <p className="mt-2 text-sm font-semibold text-slate-800">
+                <FileText size={32} className="mx-auto text-ink-3" />
+                <p className="mt-2 text-sm font-semibold text-ink">
                   {query ? 'No templates match this search query' : filterTab === 'archived' ? 'No archived templates' : 'No reusable templates in this category'}
                 </p>
-                <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
+                <p className="mt-1 text-xs text-ink-3 max-w-sm mx-auto">
                   Create a clinician-approved regimen here to enable automatic matching recommendations during visits.
                 </p>
                 <button
@@ -1287,12 +1287,12 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports, simi
   return <section className="rx-workspace rx-inline" aria-label="Prescription suggestions and draft">
     <div className="rx-section-top">
       <div className="flex items-center gap-2">
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800/40 dark:text-emerald-300">
           Current Visit
         </span>
-        <span className="text-xs text-slate-500 font-medium">Prescription Draft</span>
+        <span className="text-xs text-ink-3 font-medium">Prescription Draft</span>
       </div>
-      <button type="button" className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition shadow-2xs" onClick={() => setDialog({ type: 'browse' })}>
+      <button type="button" className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg border border-line bg-surface text-ink hover:bg-subcanvas transition shadow-2xs" onClick={() => setDialog({ type: 'browse' })}>
         <BookOpen size={13} className="text-indigo-600"/> Templates{activeCount ? ` (${activeCount})` : ''}
       </button>
     </div>
@@ -1300,8 +1300,8 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports, simi
       <div className="rx-section-label">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-slate-800 text-[13px]">Clinical Factors & Biomarkers</h3>
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+            <h3 className="font-semibold text-ink text-[13px]">Clinical Factors & Biomarkers</h3>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/40 dark:border-indigo-800/40 dark:text-indigo-300">
               {populatedFactors.length} of {activeFactors.length} fields
             </span>
           </div>
@@ -1321,7 +1321,7 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports, simi
       <div className="rx-factor-chips">
         {populatedFactors.slice(0, 5).map(definition => (
           <span key={definition.id} className="rx-factor-chip-item">
-            <strong className="text-slate-600">{definition.label}:</strong> <span className="font-semibold text-slate-900">{factors.records[definition.id].value}</span> {definition.unit}
+            <strong className="text-ink-2">{definition.label}:</strong> <span className="font-semibold text-ink">{factors.records[definition.id].value}</span> {definition.unit}
           </span>
         ))}
       </div>
@@ -1354,7 +1354,7 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports, simi
           ))}
           <button
             type="button"
-            className="rx-prophylaxis-chip border-dashed border-indigo-300 text-indigo-700 hover:bg-indigo-50/70"
+            className="rx-prophylaxis-chip border-dashed border-indigo-300 text-indigo-700 hover:bg-indigo-50/70 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950/50"
             onClick={() => setDialog({
               type: 'bundle',
               value: {
@@ -1407,7 +1407,7 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports, simi
       {!searchReady && <p className="rx-amber">Templates remain available to browse. Patient factors need attention before similarity suggestions can be checked.</p>}
       <MedicationEditor rows={draft.medications} onChange={medications => saveDraft({ ...draft, medications }, false)} inlineTemplates={confirmedSuggestions} allergyItems={draftAllergies.items}/>
       <details className="rx-details rx-instructions-panel" open={Boolean(draft.instructions || draft.followUp)}>
-        <summary className="font-semibold text-slate-800 text-xs">
+        <summary className="font-semibold text-ink text-xs">
           📋 Patient Instructions & Follow-up Advice
         </summary>
         <div className="rx-stack pt-2">

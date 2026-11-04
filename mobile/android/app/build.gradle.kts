@@ -24,7 +24,7 @@ android {
         if (providers.gradleProperty("medbriefEmulatorTest").orNull == "true") {
             applicationIdSuffix = ".emulator_test"
         }
-        minSdk = 24
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

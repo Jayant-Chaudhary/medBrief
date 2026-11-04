@@ -544,7 +544,7 @@ export function DoctorConsultationModal({
               className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
                 activeTab === 'RECORD'
                   ? 'bg-primary text-white shadow-sm'
-                  : 'text-ink-2 hover:bg-slate-100'
+                  : 'text-ink-2 hover:bg-subcanvas'
               }`}
             >
               <Mic className="w-3.5 h-3.5" />
@@ -559,7 +559,7 @@ export function DoctorConsultationModal({
               className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
                 activeTab === 'TRANSCRIPT'
                   ? 'bg-primary text-white shadow-sm'
-                  : 'text-ink-2 hover:bg-slate-100'
+                  : 'text-ink-2 hover:bg-subcanvas'
               }`}
             >
               <FileText className="w-3.5 h-3.5" />
@@ -600,7 +600,7 @@ export function DoctorConsultationModal({
                         {appointment?.scheduledAt ? new Date(appointment.scheduledAt).toLocaleString() : 'Scheduled Visit'}
                       </p>
                     </div>
-                    <div className="flex items-center gap-1.5 px-3 py-1 bg-white rounded-full shadow-sm border text-xs font-medium text-ink-2">
+                    <div className="flex items-center gap-1.5 px-3 py-1 bg-subcanvas rounded-full shadow-sm border border-line text-xs font-medium text-ink-2">
                       <Users className="w-3.5 h-3.5 text-primary" />
                       Dual Device Sync
                     </div>
@@ -619,7 +619,7 @@ export function DoctorConsultationModal({
                     <button
                       type="button"
                       onClick={copyRoomCode}
-                      className="p-2 bg-white hover:bg-slate-50 border rounded-lg shadow-sm text-ink-2 transition"
+                      className="p-2 bg-surface hover:bg-subcanvas border border-line rounded-lg shadow-sm text-ink-2 transition"
                       title="Copy room code"
                     >
                       {copiedCode ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
@@ -631,14 +631,14 @@ export function DoctorConsultationModal({
                 </div>
 
                 {/* Connection Status Box */}
-                <div className="p-3.5 bg-slate-50 border rounded-xl flex items-center justify-between text-xs">
+                <div className="p-3.5 bg-subcanvas border border-line rounded-xl flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2">
                     <Radio className={`w-4 h-4 ${patientJoined ? 'text-emerald-500 animate-pulse' : 'text-slate-400'}`} />
                     <span className="font-medium text-ink">
                       {patientJoined ? 'Patient Connected on Mobile' : 'Waiting for patient device...'}
                     </span>
                   </div>
-                  <span className={`px-2 py-0.5 rounded-full font-semibold ${patientJoined ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'}`}>
+                  <span className={`px-2 py-0.5 rounded-full font-semibold border ${patientJoined ? 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800/40 dark:text-emerald-300' : 'bg-subcanvas text-ink-3 border-line'}`}>
                     {patientJoined ? 'Connected' : 'Waiting'}
                   </span>
                 </div>
@@ -647,7 +647,7 @@ export function DoctorConsultationModal({
                   <button
                     type="button"
                     onClick={onClose}
-                    className="px-4 py-2 border rounded-lg text-sm text-ink-2 hover:bg-slate-50"
+                    className="px-4 py-2 border border-line rounded-lg text-sm text-ink-2 hover:bg-subcanvas"
                   >
                     Cancel
                   </button>
@@ -697,7 +697,7 @@ export function DoctorConsultationModal({
                 </div>
 
                 {/* PRE-FLIGHT SPEECH-TO-TEXT PIPELINE VERIFICATION */}
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                <div className="p-4 bg-subcanvas border border-line rounded-xl space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Volume2 className="w-4 h-4 text-primary" />
@@ -744,12 +744,12 @@ export function DoctorConsultationModal({
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                           Recognized Transcript:
                         </span>
-                        <span className="font-mono text-emerald-800 bg-white/90 px-2 py-0.5 rounded border border-emerald-200 text-[10px] flex items-center gap-1">
+                        <span className="font-mono text-emerald-800 dark:text-emerald-300 bg-surface px-2 py-0.5 rounded border border-line text-[10px] flex items-center gap-1">
                           <Zap className="w-3 h-3 text-amber-500 fill-amber-400" />
                           {sttTestResult.latencyMs}ms • {sttTestResult.provider || 'Whisper'}
                         </span>
                       </div>
-                      <p className="text-xs text-ink font-medium bg-white p-2.5 rounded-lg border border-emerald-100 italic shadow-xs">
+                      <p className="text-xs text-ink font-medium bg-surface p-2.5 rounded-lg border border-line italic shadow-xs">
                         "{sttTestResult.text}"
                       </p>
                     </div>
@@ -776,7 +776,7 @@ export function DoctorConsultationModal({
                         sttTesting
                           ? 'bg-rose-500 text-white cursor-not-allowed opacity-80'
                           : hasCompletedSttTest || sttTestResult
-                          ? 'bg-white border border-slate-300 text-ink-2 hover:bg-slate-50'
+                          ? 'bg-surface border border-line text-ink-2 hover:bg-subcanvas'
                           : 'bg-primary text-white hover:bg-primary-dark ring-2 ring-primary/20'
                       }`}
                     >
@@ -807,17 +807,17 @@ export function DoctorConsultationModal({
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 pt-1">
-                  <div className={`p-3 border rounded-xl flex items-center justify-between text-xs ${doctorReady ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className={`p-3 border rounded-xl flex items-center justify-between text-xs ${doctorReady ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800/40 dark:text-emerald-300' : 'bg-subcanvas border-line text-ink-3'}`}>
                     <span className="font-medium">Doctor Device</span>
                     {doctorReady ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <span className="text-slate-400 font-medium">Pending</span>}
                   </div>
-                  <div className={`p-3 border rounded-xl flex items-center justify-between text-xs ${patientReady ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className={`p-3 border rounded-xl flex items-center justify-between text-xs ${patientReady ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800/40 dark:text-emerald-300' : 'bg-subcanvas border-line text-ink-3'}`}>
                     <span className="font-medium">Patient Device</span>
                     {patientReady ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <span className="text-slate-400 font-medium">Optional / Joined</span>}
                   </div>
                 </div>
 
-                <label className="flex items-start gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer select-none">
+                <label className="flex items-start gap-3 p-3.5 bg-subcanvas border border-line rounded-xl cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={consentAccepted}
@@ -884,7 +884,7 @@ export function DoctorConsultationModal({
                   {formatTimer(elapsedSec)}
                 </div>
 
-                <div className="max-w-xs mx-auto p-3 bg-slate-50 border rounded-xl text-xs space-y-1.5">
+                <div className="max-w-xs mx-auto p-3 bg-subcanvas border border-line rounded-xl text-xs space-y-1.5">
                   <div className="flex justify-between font-medium text-ink-2">
                     <span>Audio Slices Transferred:</span>
                     <span className="font-bold text-ink">{chunksUploaded}</span>
@@ -948,7 +948,7 @@ export function DoctorConsultationModal({
                   <button
                     type="button"
                     onClick={onClose}
-                    className="px-5 py-2 border rounded-lg text-sm text-ink-2 hover:bg-slate-50 transition"
+                    className="px-5 py-2 border border-line rounded-lg text-sm text-ink-2 hover:bg-subcanvas transition"
                   >
                     Return to Patient Record
                   </button>
@@ -962,7 +962,7 @@ export function DoctorConsultationModal({
         {activeTab === 'TRANSCRIPT' && (
           <div className="space-y-4">
             {/* Status & Processing Progress Banner */}
-            <div className="bg-slate-50 border border-line rounded-xl p-3.5 space-y-2.5">
+            <div className="bg-subcanvas border border-line rounded-xl p-3.5 space-y-2.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs">
                   {transcriptData?.isProcessing ? (
@@ -988,7 +988,7 @@ export function DoctorConsultationModal({
                     type="button"
                     onClick={() => loadTranscript()}
                     disabled={loadingTranscript}
-                    className="p-1.5 hover:bg-slate-200 border rounded-lg text-ink-2 text-xs transition"
+                    className="p-1.5 hover:bg-subcanvas border border-line rounded-lg text-ink-2 text-xs transition"
                     title="Refresh transcript"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${loadingTranscript ? 'animate-spin' : ''}`} />
@@ -997,7 +997,7 @@ export function DoctorConsultationModal({
                     type="button"
                     onClick={handleCopyTranscript}
                     disabled={!transcriptData?.segments?.length}
-                    className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-slate-200 border rounded-lg text-ink-2 text-xs transition disabled:opacity-40"
+                    className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-subcanvas border border-line rounded-lg text-ink-2 text-xs transition disabled:opacity-40"
                     title="Copy transcript dialogue"
                   >
                     {copiedTranscript ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
@@ -1007,7 +1007,7 @@ export function DoctorConsultationModal({
                     type="button"
                     onClick={handleDownloadTranscript}
                     disabled={!transcriptData?.segments?.length}
-                    className="flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-slate-100 border rounded-lg text-ink-2 text-xs transition shadow-sm disabled:opacity-40"
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-surface hover:bg-subcanvas border border-line rounded-lg text-ink-2 text-xs transition shadow-sm disabled:opacity-40"
                     title="Download .txt transcript"
                   >
                     <Download className="w-3.5 h-3.5" />
@@ -1029,7 +1029,7 @@ export function DoctorConsultationModal({
                       ` (${Math.round(((transcriptData.transcribedChunks || 0) / transcriptData.totalChunks) * 100)}%)`}
                   </span>
                 </div>
-                <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                <div className="h-1.5 w-full bg-line rounded-full overflow-hidden">
                   <div
                     className="h-full bg-primary transition-all duration-300 rounded-full"
                     style={{
@@ -1082,12 +1082,12 @@ export function DoctorConsultationModal({
 
                         <div className="flex items-center gap-1.5 text-ink-3 text-[10px]">
                           {seg.confidence != null && (
-                            <span className="bg-white/80 px-1.5 py-0.5 rounded border border-line">
+                            <span className="bg-surface px-1.5 py-0.5 rounded border border-line">
                               {Math.round(seg.confidence * 100)}% conf
                             </span>
                           )}
                           {seg.language && (
-                            <span className="bg-white/80 px-1.5 py-0.5 rounded border border-line uppercase font-mono">
+                            <span className="bg-surface px-1.5 py-0.5 rounded border border-line uppercase font-mono">
                               {seg.language}
                             </span>
                           )}

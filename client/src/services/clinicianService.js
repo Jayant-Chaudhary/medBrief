@@ -85,7 +85,7 @@ export async function fetchPatients() {
  * components consume.
  */
 export async function fetchPatientDashboard(patientId, appointmentId) {
-  const [appointment, responses, reports, postVisit, consultationTemplates, actionTemplates, aiSummary] = await Promise.all([
+  const [appointment, responses, reports, postVisit, consultationTemplates, actionTemplates, aiSummary, deviceTrajectory] = await Promise.all([
     request(`/api/appointments/${appointmentId}`),
     request(`/api/questionnaire/responses/${appointmentId}`),
     // Only what the patient chose to share with this appointment.
@@ -94,6 +94,7 @@ export async function fetchPatientDashboard(patientId, appointmentId) {
     getTemplates('consultation'),
     getTemplates('action'),
     request(`/api/checkin/summary/${appointmentId}`).catch(() => null),
+    request(`/api/checkin/device-metrics/trajectory?appointmentId=${appointmentId}`).catch(() => null),
   ]);
 
   // Every report shared with any of this doctor's visits, for the history
@@ -140,6 +141,7 @@ export async function fetchPatientDashboard(patientId, appointmentId) {
     actionTemplates: actionTemplates.map((t) => t.label),
     prescriptions: postVisit?.prescriptions ?? [],
     aiSummary: aiSummary || null,
+    deviceTrajectory: deviceTrajectory || null,
     notifications: [],
   };
 }
@@ -359,4 +361,9 @@ export async function importMaternityReports(patientId) {
 /** Generate or re-synthesize the AI Pre-Visit Clinical Brief */
 export async function generatePreVisitSummary(appointmentId) {
   return request(`/api/checkin/summary/${appointmentId}/generate`, { method: 'POST' });
+}
+
+/** Fetch genuine wearable device metrics and trajectory for an appointment */
+export async function getDeviceMetricsTrajectory(appointmentId) {
+  return request(`/api/checkin/device-metrics/trajectory?appointmentId=${appointmentId}`);
 }

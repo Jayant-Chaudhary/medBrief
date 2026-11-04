@@ -35,6 +35,9 @@ class _GuidedCheckinPageState extends State<GuidedCheckinPage> {
   final Map<String, String> _notes = {};
   final Set<String> _flaggedKeys = {};
 
+  late final TextEditingController _noteController;
+  String? _noteError;
+
   bool _isSubmitting = false;
   String? _errorMessage;
   bool _completed = false;
@@ -44,6 +47,13 @@ class _GuidedCheckinPageState extends State<GuidedCheckinPage> {
   void initState() {
     super.initState();
     _questions = PrenatalQuestionsBank.forGestationalWeek(widget.gestationalWeek);
+    _noteController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
   }
 
   PrenatalCheckinQuestion? get _currentQuestion =>
@@ -58,15 +68,12 @@ class _GuidedCheckinPageState extends State<GuidedCheckinPage> {
       final isFlag = q.isRedFlagTrigger && (value == q.flagIfTrue);
       if (isFlag) {
         _flaggedKeys.add(q.key);
-        _hasRedFlagAlert = true;
       } else {
         _flaggedKeys.remove(q.key);
+        _noteError = null;
       }
+      _hasRedFlagAlert = _flaggedKeys.isNotEmpty;
     });
-
-    if (q.isRedFlagTrigger && (value == q.flagIfTrue)) {
-      _showEmergencyIntercept(q);
-    }
   }
 
   void _onAnswerScale(int value) {
@@ -78,101 +85,32 @@ class _GuidedCheckinPageState extends State<GuidedCheckinPage> {
     });
   }
 
-  void _showEmergencyIntercept(PrenatalCheckinQuestion question) {
-    showModalBottomSheet<void>(
-      context: context,
-      isDismissible: false,
-      enableDrag: false,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFBECE8),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.warning_amber_rounded,
-                      color: Color(0xFF9E543B),
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  const Expanded(
-                    child: Text(
-                      'Important Clinical Alert',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: ink,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'The symptom you just reported is an obstetric red flag that warrants prompt evaluation by a clinician.',
-                style: TextStyle(fontSize: 15, color: ink, height: 1.4),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFBF8F5),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: line),
-                ),
-                child: Text(
-                  widget.emergencyContactPhone != null
-                      ? 'Triage / Emergency contact: ${widget.emergencyContactPhone}'
-                      : 'Please call your maternity triage unit or doctor immediately.',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: ink,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 50),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Continue Check-in'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   void _next() {
+    final q = _currentQuestion;
+    if (q == null) return;
+
+    final ans = _answers[q.key];
+    final isFlag = q.isRedFlagTrigger && (ans == q.flagIfTrue);
+
+    // If concerning, mandatory symptom description is required before moving forward
+    if (isFlag) {
+      final noteText = _notes[q.key]?.trim() ?? '';
+      if (noteText.isEmpty) {
+        setState(() {
+          _noteError = 'Please describe this symptom before continuing.';
+        });
+        return;
+      }
+    }
+
+    setState(() {
+      _noteError = null;
+    });
+
     if (_currentIndex < _questions.length - 1) {
       setState(() {
         _currentIndex++;
+        _noteController.text = _notes[_questions[_currentIndex].key] ?? '';
       });
     } else {
       _submit();
@@ -183,6 +121,8 @@ class _GuidedCheckinPageState extends State<GuidedCheckinPage> {
     if (_currentIndex > 0) {
       setState(() {
         _currentIndex--;
+        _noteError = null;
+        _noteController.text = _notes[_questions[_currentIndex].key] ?? '';
       });
     }
   }
@@ -191,6 +131,7 @@ class _GuidedCheckinPageState extends State<GuidedCheckinPage> {
     setState(() {
       _isSubmitting = true;
       _errorMessage = null;
+      _hasRedFlagAlert = _flaggedKeys.isNotEmpty;
     });
 
     final payloadList = <CheckinAnswerPayload>[];
@@ -305,11 +246,29 @@ class _GuidedCheckinPageState extends State<GuidedCheckinPage> {
                 const SizedBox(height: 10),
                 Text(
                   _hasRedFlagAlert
-                      ? 'You reported one or more priority symptoms. Your clinician will be alerted, and please reach out to triage if symptoms persist.'
+                      ? 'You reported one or more priority symptoms. Your clinician has been alerted, and details have been flagged for clinical review.'
                       : 'Your responses have been recorded. Our clinical assistant will prepare a pre-visit summary for your doctor.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(fontSize: 15, color: muted, height: 1.4),
                 ),
+                if (_hasRedFlagAlert && widget.emergencyContactPhone != null) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFBECE8),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      'Triage helpline: ${widget.emergencyContactPhone}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF9E543B),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 32),
                 FilledButton(
                   onPressed: widget.onCompleted,
@@ -327,6 +286,7 @@ class _GuidedCheckinPageState extends State<GuidedCheckinPage> {
 
     final progress = (_currentIndex + 1) / _questions.length;
     final currentAnswer = _answers[q.key];
+    final isCurrentFlag = q.isRedFlagTrigger && (currentAnswer == q.flagIfTrue);
 
     return Scaffold(
       appBar: AppBar(
@@ -407,7 +367,7 @@ class _GuidedCheckinPageState extends State<GuidedCheckinPage> {
                       height: 1.45,
                     ),
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 24),
                   if (q.answerType == 'boolean') ...[
                     Row(
                       children: [
@@ -437,6 +397,7 @@ class _GuidedCheckinPageState extends State<GuidedCheckinPage> {
                     ),
                   ] else if (q.answerType == 'text') ...[
                     TextField(
+                      controller: _noteController,
                       maxLines: 4,
                       decoration: const InputDecoration(
                         hintText: 'Type any details or questions here...',
@@ -444,13 +405,113 @@ class _GuidedCheckinPageState extends State<GuidedCheckinPage> {
                       onChanged: (text) {
                         setState(() {
                           _answers[q.key] = text;
+                          _notes[q.key] = text;
                         });
                       },
                     ),
                   ],
-                  const SizedBox(height: 24),
-                  if (q.answerType != 'text') ...[
+
+                  // In-line notice if answered with concerning response
+                  if (isCurrentFlag) ...[
+                    Container(
+                      margin: const EdgeInsets.only(top: 16),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFBECE8),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE8BBB0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: const [
+                              Icon(Icons.warning_amber_rounded, color: Color(0xFF9E543B), size: 20),
+                              SizedBox(width: 8),
+                              Text(
+                                'Priority Clinical Symptom',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF9E543B),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Please describe below when this began, amount, or intensity so your doctor can evaluate this properly.',
+                            style: TextStyle(fontSize: 13, color: ink, height: 1.35),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFBF8F5),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: _noteError != null ? const Color(0xFF9E543B) : line,
+                          width: _noteError != null ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Text(
+                                'Describe your symptoms',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: ink,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0x1F9E543B),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'Required',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF9E543B),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _noteController,
+                            maxLines: 3,
+                            decoration: InputDecoration(
+                              hintText: 'e.g. Started about an hour ago, clear watery fluid, mild lower cramping...',
+                              errorText: _noteError,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            onChanged: (text) {
+                              _notes[q.key] = text;
+                              if (_noteError != null && text.trim().isNotEmpty) {
+                                setState(() => _noteError = null);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else if (q.answerType != 'text') ...[
+                    const SizedBox(height: 16),
                     ExpansionTile(
+                      key: ValueKey('expansion_${q.key}'),
+                      initiallyExpanded: (_notes[q.key]?.isNotEmpty == true),
                       tilePadding: EdgeInsets.zero,
                       title: const Text(
                         'Add optional note or details',
@@ -462,6 +523,7 @@ class _GuidedCheckinPageState extends State<GuidedCheckinPage> {
                       ),
                       children: [
                         TextField(
+                          controller: _noteController,
                           maxLines: 2,
                           decoration: const InputDecoration(
                             hintText: 'e.g. noticed this since Tuesday morning...',
@@ -649,4 +711,3 @@ class _DimensionChip extends StatelessWidget {
     );
   }
 }
-

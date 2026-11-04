@@ -186,17 +186,17 @@ export function PreVisitAiBriefCard({ summary, onGenerate, isGenerating = false 
 
           {/* Patient Top Questions */}
           {topQuestions.length > 0 && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3.5">
-              <div className="flex items-center gap-2 text-label-sm font-semibold text-amber-900 uppercase tracking-wide">
-                <HelpCircle className="h-4 w-4 text-amber-700" />
+            <div className="rounded-xl border border-amber-200 bg-amber-50/70 dark:border-amber-800/40 dark:bg-amber-950/30 p-3.5">
+              <div className="flex items-center gap-2 text-label-sm font-semibold text-amber-900 dark:text-amber-300 uppercase tracking-wide">
+                <HelpCircle className="h-4 w-4 text-amber-700 dark:text-amber-400" />
                 <span>Patient's Agenda for Today</span>
               </div>
-              <ul className="mt-2 space-y-1 text-body-sm text-amber-950">
+              <ul className="mt-2 space-y-1 text-body-sm text-amber-950 dark:text-amber-200">
                 {topQuestions.map((q, idx) => (
                   <li key={idx} className="flex items-start gap-2">
-                    <span className="font-semibold text-amber-700">"</span>
+                    <span className="font-semibold text-amber-700 dark:text-amber-400">"</span>
                     <span className="italic">{q}</span>
-                    <span className="font-semibold text-amber-700">"</span>
+                    <span className="font-semibold text-amber-700 dark:text-amber-400">"</span>
                   </li>
                 ))}
               </ul>
@@ -205,8 +205,8 @@ export function PreVisitAiBriefCard({ summary, onGenerate, isGenerating = false 
 
           {/* Suggested Doctor Talking Points */}
           {summary.doctor_talking_points && (
-            <div className="rounded-xl border border-cypress/20 bg-cypress/5 p-3.5">
-              <div className="flex items-center gap-2 text-label-sm font-semibold text-cypress-deep uppercase tracking-wide">
+            <div className="rounded-xl border border-cypress/20 bg-cypress/5 dark:bg-cypress/10 p-3.5">
+              <div className="flex items-center gap-2 text-label-sm font-semibold text-cypress-deep dark:text-cypress uppercase tracking-wide">
                 <FileText className="h-4 w-4 text-cypress" />
                 <span>Suggested Clinical Focus</span>
               </div>

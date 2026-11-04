@@ -1,4 +1,4 @@
-const { assertAppointmentAccess } = require('../services/access.service');
+const { assertAppointmentAccess, clinicianHasPatient } = require('../services/access.service');
 const {
   recordCheckin,
   recordAdHocConcern,
@@ -7,6 +7,11 @@ const {
   getPatientCheckinHistory,
 } = require('../services/checkin.service');
 const { generatePreVisitSummary, getPreVisitSummary } = require('../services/checkinAi.service');
+const {
+  syncDeviceMetrics,
+  getPatientDeviceMetrics,
+  computeMetricsTrajectory,
+} = require('../services/deviceMetrics.service');
 
 /**
  * Submit structured check-in responses (patient only).
@@ -148,6 +153,81 @@ async function generateSummary(req, res, next) {
   }
 }
 
+/**
+ * Sync patient device metrics from Health Connect (patient only).
+ */
+async function syncMetrics(req, res, next) {
+  try {
+    const { metrics } = req.validated;
+    const result = await syncDeviceMetrics(req.user.id, metrics);
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Retrieve patient device metrics (patient for own, clinician for assigned patient).
+ */
+async function getMetrics(req, res, next) {
+  try {
+    let targetPatientId = req.user.id;
+    if (req.user.role === 'clinician') {
+      const { patientId, appointmentId } = req.query;
+      if (appointmentId) {
+        const access = await assertAppointmentAccess(appointmentId, req.user);
+        if (!access.ok) return res.status(access.status).json({ error: access.error });
+        targetPatientId = access.appointment.patient_id;
+      } else if (patientId) {
+        const allowed = await clinicianHasPatient(req.user.id, patientId);
+        if (!allowed) return res.status(403).json({ error: 'Clinician not authorized for this patient' });
+        targetPatientId = patientId;
+      } else {
+        return res.status(400).json({ error: 'patientId or appointmentId required' });
+      }
+    }
+
+    const { startDate, endDate, limit } = req.query;
+    const data = await getPatientDeviceMetrics(targetPatientId, {
+      startDate,
+      endDate,
+      limit: limit ? Number(limit) : 30,
+    });
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Retrieve longitudinal trajectory & alerts for device metrics.
+ */
+async function getMetricsTrajectory(req, res, next) {
+  try {
+    let targetPatientId = req.user.id;
+    if (req.user.role === 'clinician') {
+      const { patientId, appointmentId } = req.query;
+      if (appointmentId) {
+        const access = await assertAppointmentAccess(appointmentId, req.user);
+        if (!access.ok) return res.status(access.status).json({ error: access.error });
+        targetPatientId = access.appointment.patient_id;
+      } else if (patientId) {
+        const allowed = await clinicianHasPatient(req.user.id, patientId);
+        if (!allowed) return res.status(403).json({ error: 'Clinician not authorized for this patient' });
+        targetPatientId = patientId;
+      } else {
+        return res.status(400).json({ error: 'patientId or appointmentId required' });
+      }
+    }
+
+    const { intervalStart, intervalEnd } = req.query;
+    const trajectory = await computeMetricsTrajectory(targetPatientId, intervalStart, intervalEnd);
+    res.json(trajectory);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   submitCheckin,
   submitAdHoc,
@@ -156,4 +236,7 @@ module.exports = {
   getHistory,
   getSummary,
   generateSummary,
+  syncMetrics,
+  getMetrics,
+  getMetricsTrajectory,
 };
