@@ -157,47 +157,51 @@ async function navigateRound({
 
   const messages = buildNavigatorMessages({ message, checklist, note, results, page, role });
 
-  try {
-    const raw = await provider.complete({
-      messages,
-      schema: NAVIGATOR_SCHEMA,
-      timeoutMs: settings.timeoutMs || 15000,
-    });
+  const timeoutMs = settings.modelCallTimeoutMs || settings.timeoutMs || 30000;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const raw = await provider.complete({
+        messages,
+        schema: NAVIGATOR_SCHEMA,
+        timeoutMs,
+      });
 
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    if (parsed && typeof parsed === 'object') {
-      let actions = Array.isArray(parsed.actions) ? parsed.actions.slice(0, 3) : [];
-      // Backward compatibility with Phase 5 pageActions in test helpers:
-      if (!actions.length && Array.isArray(parsed.pageActions)) {
-        actions = parsed.pageActions.map((a) => ({
-          op: a.op,
-          ref: a.ref,
-          text: a.value,
-          value: a.value,
-          find: a.find,
-          option: a.value,
-        })).slice(0, 3);
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (parsed && typeof parsed === 'object') {
+        let actions = Array.isArray(parsed.actions) ? parsed.actions.slice(0, 3) : [];
+        // Backward compatibility with Phase 5 pageActions in test helpers:
+        if (!actions.length && Array.isArray(parsed.pageActions)) {
+          actions = parsed.pageActions.map((a) => ({
+            op: a.op,
+            ref: a.ref,
+            text: a.value,
+            value: a.value,
+            find: a.find,
+            option: a.value,
+          })).slice(0, 3);
+        }
+        let status = ['continue', 'done', 'ask', 'cannot'].includes(parsed.status) ? parsed.status : null;
+        if (!status) {
+          status = parsed.next || parsed.action === 'run' ? 'continue' : 'done';
+        }
+        const cleanNote = String(parsed.note || '').slice(0, 200);
+        return {
+          note: cleanNote,
+          actions,
+          status,
+          ...(parsed.question && { question: String(parsed.question).slice(0, 200) }),
+          ...(parsed.reason && { reason: String(parsed.reason).slice(0, 300) }),
+        };
       }
-      let status = ['continue', 'done', 'ask', 'cannot'].includes(parsed.status) ? parsed.status : null;
-      if (!status) {
-        status = parsed.next || parsed.action === 'run' ? 'continue' : 'done';
-      }
-      const cleanNote = String(parsed.note || '').slice(0, 200);
+    } catch (err) {
+      if (attempt === 0) continue; // Retry once on timeout/error
       return {
-        note: cleanNote,
-        actions,
-        status,
-        ...(parsed.question && { question: String(parsed.question).slice(0, 200) }),
-        ...(parsed.reason && { reason: String(parsed.reason).slice(0, 300) }),
+        note: "Couldn't finish: the model didn't answer",
+        actions: [],
+        status: 'cannot',
+        reason: "Couldn't finish: the model didn't answer",
       };
     }
-  } catch (err) {
-    return {
-      note: 'Failed to generate next actions',
-      actions: [],
-      status: 'cannot',
-      reason: err.code === 'TIMEOUT' ? 'Model took too long to respond.' : 'Could not determine next steps.',
-    };
   }
 
   return {

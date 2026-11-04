@@ -17,7 +17,7 @@ class OllamaProvider extends LlmProvider {
     this.maxOutputTokens = maxOutputTokens;
   }
 
-  async complete({ messages, schema, timeoutMs }) {
+  async complete({ messages, schema, timeoutMs = 30000 }) {
     const data = await postJson(
       `${this.baseUrl}/api/chat`,
       {

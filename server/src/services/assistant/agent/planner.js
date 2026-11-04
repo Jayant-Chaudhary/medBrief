@@ -120,21 +120,26 @@ async function planChecklist(message, { provider, settings = config } = {}) {
     { role: 'user', content: text },
   ];
 
-  try {
-    const raw = await provider.complete({
-      messages,
-      schema: CHECKLIST_SCHEMA,
-      timeoutMs: settings.timeoutMs || 15000,
-    });
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    if (Array.isArray(parsed?.checklist) && parsed.checklist.length > 0) {
-      return parsed.checklist
-        .filter((item) => typeof item === 'string' && item.trim().length > 0)
-        .slice(0, 8)
-        .map((item) => ({ text: item.trim().slice(0, 160), done: false }));
+  const timeoutMs = settings.modelCallTimeoutMs || settings.timeoutMs || 30000;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const raw = await provider.complete({
+        messages,
+        schema: CHECKLIST_SCHEMA,
+        timeoutMs,
+      });
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (Array.isArray(parsed?.checklist) && parsed.checklist.length > 0) {
+        return parsed.checklist
+          .filter((item) => typeof item === 'string' && item.trim().length > 0)
+          .slice(0, 8)
+          .map((item) => ({ text: item.trim().slice(0, 160), done: false }));
+      }
+      break;
+    } catch (_err) {
+      if (attempt === 1) break;
+      // Retry once on timeout
     }
-  } catch (_err) {
-    // Model timeout, parse error or network error: gracefully fall back to heuristics
   }
 
   return fallbackChecklist(text);

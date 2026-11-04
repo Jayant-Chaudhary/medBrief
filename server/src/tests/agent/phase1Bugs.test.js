@@ -71,4 +71,34 @@ describe('Phase 1 Bug Fixes', () => {
       expect(reply.checklist[1].done).toBe(false);
     });
   });
+
+  describe('Bug 3: Hangs and runaway requests with retry and timeouts', () => {
+    it('retries once on model call timeout and reports clear error if unanswered', async () => {
+      const provider = new FakeProvider();
+      let calls = 0;
+      provider.complete = jest.fn().mockImplementation(async () => {
+        calls += 1;
+        const err = new Error('Model timeout');
+        err.code = 'TIMEOUT';
+        throw err;
+      });
+
+      const reply = await assistant.handleStep({
+        message: 'write follow up in notes',
+        role: 'clinician',
+        userId: 'dr-1',
+        round: 0,
+        provider,
+        settings: {
+          agentLoop: true,
+          modelCallTimeoutMs: 100,
+          requestTimeoutMs: 500,
+        },
+      });
+
+      // Should have attempted once + 1 retry = at least 2 calls
+      expect(calls).toBeGreaterThanOrEqual(2);
+      expect(reply.message).toMatch(/the model didn't answer/i);
+    });
+  });
 });

@@ -57,6 +57,10 @@ module.exports = {
   coldStartTimeoutMs: positiveInteger('ASSISTANT_COLD_START_TIMEOUT_MS', 90000),
   warmWindowMs: positiveInteger('ASSISTANT_WARM_WINDOW_MS', 10 * 60 * 1000),
 
+  // Granular model-call and whole-request limits (Phase 6):
+  modelCallTimeoutMs: positiveInteger('ASSISTANT_MODEL_TIMEOUT_MS', 30000),
+  requestTimeoutMs: positiveInteger('ASSISTANT_REQUEST_TIMEOUT_MS', 180000),
+
   maxMessageChars: positiveInteger('ASSISTANT_MAX_MESSAGE_CHARS', 600),
   // One request can take several read-and-act rounds, each a request of its own.
   rateLimitPerMinute: positiveInteger('ASSISTANT_RATE_LIMIT_PER_MINUTE', 60),
