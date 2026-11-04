@@ -24,7 +24,7 @@ const { listClinicianPatients } = require('../patientDirectory.service');
 const { nowInWords, wallClock, safeTimeZone } = require('./resolvers/datetime');
 const { redact, applyTokenBudget, classify, confirmGroup, describeElements, checkPageActions, checkAnswer, matchPageCommand, splitParts, doneLine } = require('./pageSnapshot');
 
-const { planChecklist, checkDone } = require('./agent/planner');
+const { planChecklist, checkDone, fallbackChecklist } = require('./agent/planner');
 const { navigateRound } = require('./agent/navigator');
 const { validateAgentActions } = require('./agent/actions');
 
@@ -762,6 +762,22 @@ async function runAgentLoop({
   };
 }
 
+function hasMultipleInstructions(message, ruled, pages) {
+  if (ruled?.pageIds && ruled.pageIds.length > 1) return true;
+  if (pages && pages.length) {
+    let mentioned = 0;
+    for (const p of pages) {
+      if (p.aliases.some((alias) => new RegExp(`\\b${alias}\\b`, 'i').test(message))) {
+        mentioned += 1;
+        if (mentioned > 1) return true;
+      }
+    }
+  }
+  const items = fallbackChecklist(message);
+  if (items.length > 1) return true;
+  return false;
+}
+
 /**
  * @returns {Promise<{ type: 'navigate'|'run'|'choose'|'clarify'|'answer'|'done'|'unsupported'|'unavailable', continue?: boolean, attempts: number, errorCode?: string }>}
  */
@@ -787,9 +803,22 @@ async function handleStep({
   const pages = pagesFor(role);
   if (!pages.length) return { ...unsupported('none'), attempts: 0 };
 
+
+
+  const isPhase6Agent = Boolean(
+    settings.agentLoop === true ||
+    (Array.isArray(checklist) && checklist.length > 0) ||
+    (Array.isArray(results) && results.length > 0) ||
+    (typeof note === 'string' && note.length > 0)
+  );
+
   const ruled = round > 0 ? null : matchIntent(message, pages);
-  if (ruled?.kind === 'open') return { ...flagSubmit(navigate(role, ruled.pageIds[0], 'rules'), message), attempts: 0 };
-  if (ruled?.kind === 'clarify') return { ...clarify(role, ruled.pageIds, 'rules'), attempts: 0 };
+  const isMulti = isPhase6Agent && hasMultipleInstructions(message, ruled, pages);
+
+  if (!isMulti) {
+    if (ruled?.kind === 'open') return { ...flagSubmit(navigate(role, ruled.pageIds[0], 'rules'), message), attempts: 0 };
+    if (ruled?.kind === 'clarify') return { ...clarify(role, ruled.pageIds, 'rules'), attempts: 0 };
+  }
 
   const clock = {
     now: new Date(now()),
@@ -810,12 +839,7 @@ async function handleStep({
     );
   }
 
-  const isPhase6Agent = Boolean(
-    settings.agentLoop === true ||
-    (Array.isArray(checklist) && checklist.length > 0) ||
-    (Array.isArray(results) && results.length > 0) ||
-    (typeof note === 'string' && note.length > 0)
-  );
+
 
   // 1. Fast path: Page phrase rules
   if (seen && !isPhase6Agent) {
