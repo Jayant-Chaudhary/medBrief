@@ -134,3 +134,44 @@ npm run build
 
 Known gaps: tab-scoped session memory of previous requests is Slice 5; full
 clinician-side coverage evaluation and live browser verification are Slice 6.
+
+## Slice 5: memory of previous requests (this browser tab only)
+
+Commit: `696cb14` (`2026-11-04 13:48:25 +0530`).
+
+Plan: keep the last `ASSISTANT_MEMORY_ITEMS` (default 10) requests in React state
+only inside `AssistantDock.jsx` (no `localStorage`, no server storage, no
+database migration), expiring entries older than `ASSISTANT_MEMORY_MAX_AGE_MIN`
+(default 120 minutes) and clearing on tab close, sign-out, or a **Forget** button
+in the panel header; bound and validate the compact `memory` payload in
+`assistant.validators.js`, never log it, verify/redact patient names against the
+clinician directory in `server/src/services/assistant/memory.js`, include
+`"Earlier in this session: …"` in Planner and Navigator prompts, and support
+follow-ups (`"do the same for Asha"`, `"also add calcium"`, `"go back to the last
+patient"`, `"repeat that"`, `"finish what failed"`, `"which patient was that?"`)
+while enforcing that a newly named patient always beats memory, typed values must
+come from the current request or explicitly referenced earlier words, and every
+save still requires a Confirm card.
+
+Changed:
+- Added `server/src/services/assistant/memory.js` and `client/src/components/assistant/memoryState.js`
+- Updated `server/src/config/assistant.config.js`, `server/.env.example`, `server/src/validators/assistant.validators.js`, `server/src/controllers/assistant.controller.js`
+- Updated `server/src/services/assistant/assistant.service.js`, `server/src/services/assistant/agent/planner.js`, `server/src/services/assistant/agent/navigator.js`
+- Updated `client/src/components/assistant/AssistantDock.jsx` and `client/src/services/assistantService.js`
+- Added `server/src/tests/agent/memory.test.js`, `client/src/tests/assistantMemory.test.js`, and log-redaction test in `server/src/tests/assistant.test.js`
+
+Measured verification:
+
+```powershell
+cd server
+npm test -- --runInBand --coverage=false src/tests/assistant.test.js src/tests/services src/tests/agent
+# 22 suites, 499 tests passed
+cd ../client
+npm test -- --run src/tests
+# 13 suites, 86 tests passed
+npm run build
+# passed (4.89s; same Vite chunk size warning)
+```
+
+Known gaps: full clinician-side coverage inventory, simulator upgrades, coverage
+eval on local Ollama `gemma4:e4b`, and live browser verification are Slice 6.
