@@ -608,7 +608,7 @@ export function ClinicianDashboard() {
         </div>
 
         {/* Tab 1: Patient Overview */}
-        <div className={`scroll-column min-h-0 flex-1 space-y-4 pr-1 ${activeDashboardTab === 'overview' ? 'block' : 'hidden'}`}>
+        <div className={`scroll-column min-h-0 flex-1 space-y-4 pr-1 pb-32 ${activeDashboardTab === 'overview' ? 'block' : 'hidden'}`}>
           <PatientHeaderCard patient={data.patient} />
           <PreVisitAiBriefCard
             summary={data.aiSummary}
@@ -627,29 +627,37 @@ export function ClinicianDashboard() {
         </div>
 
         {/* Tab 2: Clinical Flowsheet & Labs */}
-        <div className={`scroll-column min-h-0 flex-1 space-y-4 pr-1 ${activeDashboardTab === 'flowsheet' ? 'block' : 'hidden'}`}>
+        <div className={`scroll-column min-h-0 flex-1 space-y-4 pr-1 pb-32 ${activeDashboardTab === 'flowsheet' ? 'block' : 'hidden'}`}>
           <OcrTriageAlert alerts={data.triageAlerts} onResolve={handleResolveAlert} />
           <HistoryGrid flowsheet={data.flowsheet} patientId={data.patient.id} onResolve={handleResolveAlert} />
         </div>
 
         {/* Tab 3: Consultant Notes & Prescriptions */}
-        <div className={`scroll-column min-h-0 flex-1 space-y-4 pr-1 ${activeDashboardTab === 'consultation' ? 'block' : 'hidden'}`}>
+        <div
+          className={`min-h-0 flex-1 flex flex-col space-y-3 ${
+            activeDashboardTab === 'consultation' ? 'flex' : 'hidden'
+          }`}
+        >
           {/* Sub-view Controls: Side-by-Side vs Notes vs Prescriptions */}
-          <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 border border-slate-200/80 px-3.5 py-2 rounded-xl text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 border border-slate-200/80 px-3.5 py-2 rounded-xl text-xs shrink-0">
             <div className="flex items-center gap-2 font-medium text-slate-700">
               <NotebookPen className="w-4 h-4 text-cypress shrink-0" />
               <span>Consultation Workspace</span>
               <span className="text-slate-300 hidden sm:inline">|</span>
-              <span className="text-slate-500 hidden sm:inline">Clinical notes, ambient audio draft & prescription workspace</span>
+              <span className="text-slate-500 hidden sm:inline">
+                Independent side-by-side scrolling for clinical notes & prescriptions
+              </span>
             </div>
             <div className="flex items-center gap-1 bg-white border border-slate-200 p-0.5 rounded-lg shadow-2xs">
               <button
                 type="button"
                 onClick={() => setConsultationSubView('both')}
                 className={`px-3 py-1 rounded-md font-semibold transition text-xs ${
-                  consultationSubView === 'both' ? 'bg-cypress text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                  consultationSubView === 'both'
+                    ? 'bg-cypress text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
-                title="Display Notes & Prescriptions side-by-side"
+                title="Display Notes & Prescriptions side-by-side with independent scrolling"
               >
                 Side-by-Side
               </button>
@@ -657,7 +665,9 @@ export function ClinicianDashboard() {
                 type="button"
                 onClick={() => setConsultationSubView('notes')}
                 className={`px-3 py-1 rounded-md font-semibold transition text-xs ${
-                  consultationSubView === 'notes' ? 'bg-cypress text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                  consultationSubView === 'notes'
+                    ? 'bg-cypress text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
                 title="Focus on Doctor's Notes & Ambient Audio"
               >
@@ -667,7 +677,9 @@ export function ClinicianDashboard() {
                 type="button"
                 onClick={() => setConsultationSubView('rx')}
                 className={`px-3 py-1 rounded-md font-semibold transition text-xs ${
-                  consultationSubView === 'rx' ? 'bg-cypress text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                  consultationSubView === 'rx'
+                    ? 'bg-cypress text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
                 title="Focus on Prescriptions & Bundles"
               >
@@ -676,15 +688,58 @@ export function ClinicianDashboard() {
             </div>
           </div>
 
-          {/* Grid layout depending on sub-view */}
-          <div className={`grid gap-5 items-start ${
-            consultationSubView === 'both'
-              ? 'grid-cols-1 xl:grid-cols-12'
-              : 'grid-cols-1'
-          }`}>
-            {/* Left Column: Doctor's Clinical Notes, Ambient AI Audio Draft, Checklist & Patient Next Steps */}
-            {(consultationSubView === 'both' || consultationSubView === 'notes') && (
-              <div className={`${consultationSubView === 'both' ? 'xl:col-span-5' : 'max-w-4xl mx-auto w-full'} space-y-4`}>
+          {/* Consultation Workspace Content */}
+          <div className="min-h-0 flex-1">
+            {/* Side-by-Side View (Default on desktop) */}
+            {consultationSubView === 'both' && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 h-full min-h-0 max-lg:overflow-y-auto max-lg:scroll-column max-lg:pb-32">
+                {/* Left Column: Doctor's Clinical Notes, Ambient AI Audio Draft, Checklist & Actions */}
+                <div className="lg:col-span-5 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:scroll-column space-y-4 pr-1.5 lg:pb-32">
+                  <ConsultancyNotes
+                    notes={data.notes}
+                    onSave={handleSaveNotes}
+                    flushRef={flushNotesRef}
+                    templates={data.consultationTemplates}
+                    checkedItems={data.consultationItems}
+                    onCheckItem={handleCheckConsultation}
+                    onUncheckItem={handleUncheckConsultation}
+                    draft={consultDraft.draft}
+                    draftBusy={consultDraft.busy}
+                    draftError={consultDraft.error}
+                    draftStalled={consultDraft.stalled}
+                    draftWaiting={consultDraft.waiting}
+                    onGenerateDraft={consultDraft.generate}
+                    onApproveDraft={consultDraft.approve}
+                    onRejectDraft={consultDraft.reject}
+                    similarityData={similarityData}
+                    similarityLoading={similarityLoading}
+                  />
+                  <ActionChecklist
+                    templates={data.actionTemplates}
+                    items={data.actionItems}
+                    onAdd={handleAddAction}
+                    onRemove={handleRemoveAction}
+                  />
+                </div>
+
+                {/* Right Column: Prescriptions Workspace (Independently Scrollable) */}
+                <div className="lg:col-span-7 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:scroll-column pr-1.5 pb-32">
+                  <PrescriptionUpload prescriptions={data.prescriptions} onUpload={handleUploadPrescription}>
+                    <PrescriptionTemplates
+                      patient={data.patient}
+                      appointment={data.appointment}
+                      appointmentId={selectedAppointmentId}
+                      reports={data.historyReports}
+                      similarityData={similarityData}
+                    />
+                  </PrescriptionUpload>
+                </div>
+              </div>
+            )}
+
+            {/* Notes & Audio Focus View */}
+            {consultationSubView === 'notes' && (
+              <div className="h-full min-h-0 overflow-y-auto scroll-column max-w-4xl mx-auto w-full space-y-4 pr-1.5 pb-32">
                 <ConsultancyNotes
                   notes={data.notes}
                   onSave={handleSaveNotes}
@@ -713,9 +768,9 @@ export function ClinicianDashboard() {
               </div>
             )}
 
-            {/* Right Column: Prescriptions Workspace */}
-            {(consultationSubView === 'both' || consultationSubView === 'rx') && (
-              <div className={`${consultationSubView === 'both' ? 'xl:col-span-7' : 'max-w-5xl mx-auto w-full'}`}>
+            {/* Prescriptions Focus View */}
+            {consultationSubView === 'rx' && (
+              <div className="h-full min-h-0 overflow-y-auto scroll-column max-w-5xl mx-auto w-full pr-1.5 pb-32">
                 <PrescriptionUpload prescriptions={data.prescriptions} onUpload={handleUploadPrescription}>
                   <PrescriptionTemplates
                     patient={data.patient}
