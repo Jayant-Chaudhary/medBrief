@@ -41,6 +41,7 @@ async function createAndSendInvite({ appointmentId, patientEmail, patientFullNam
 
   const inviteLink = `${env.clientAppUrl}/invite/${token}`;
 
+  let emailSent = false;
   try {
     await transporter.sendMail({
       from: env.smtp.from,
@@ -53,6 +54,7 @@ async function createAndSendInvite({ appointmentId, patientEmail, patientFullNam
         <p>This link expires in ${env.inviteTokenTtlHours} hours.</p>
       `,
     });
+    emailSent = true;
     log.info('invite email sent', { appointmentId, inviteId: invite.id });
   } catch (emailErr) {
     log.warn('could not send invite email via SMTP; invite token was still created', {
@@ -66,7 +68,7 @@ async function createAndSendInvite({ appointmentId, patientEmail, patientFullNam
   // The link is returned so the clinician UI can show and copy it. SMTP is
   // best-effort in development, and an invite the doctor cannot hand over is
   // useless.
-  return { ...invite, inviteLink };
+  return { ...invite, inviteLink, emailSent };
 }
 
 module.exports = { createAndSendInvite };

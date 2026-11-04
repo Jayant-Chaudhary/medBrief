@@ -79,6 +79,21 @@ export function maternityFactorValues(card, asOf = Date.now()) {
   }
   if (visits[0]) set('anc_last_date',visits[0].date,'',visits[0].date,'Maternity antenatal visit',visits[0]);
   const labs = datedRows(card.labs,asOf);
+  // These rows are already on the clinician-reviewed maternity card. Reuse
+  // the latest dated card result for matching; never fall back to an older
+  // uploaded report that has not been imported onto the card.
+  const labFactorByKey = {
+    hemoglobin:'hemoglobin', hematocrit:'hematocrit', platelets:'platelets', wbc:'wbc',
+    blood_glucose_fasting:'fasting_glucose', blood_glucose_pp:'postmeal_glucose', blood_glucose_random:'random_glucose', hba1c:'hba1c',
+    tsh:'tsh', t3_free:'t3_free', t4_free:'free_t4', t4_total:'t4_total', ferritin:'ferritin', iron:'iron', folate:'folate', vitamin_b12:'vitamin_b12',
+    vitamin_d:'vitamin_d', calcium:'calcium', creatinine:'creatinine', urea:'urea', uric_acid:'uric_acid', alt:'alt', ast:'ast',
+    bilirubin_total:'bilirubin_total', ldh:'ldh', urine_protein:'urine_protein', urine_glucose:'urine_glucose', urine_ketones:'urine_ketones',
+    urine_pus_cells:'urine_pus_cells', urine_protein_creatinine_ratio:'urine_protein_creatinine_ratio', urine_acr:'urine_acr', beta_hcg:'beta_hcg', progesterone:'progesterone',
+  };
+  for (const [key, id] of Object.entries(labFactorByKey)) {
+    const row = labs.find(item => item.key === key && present(item.result));
+    if (row) set(id, row.result, row.unit || '', row.date, 'Maternity card · investigation', row);
+  }
   set('maternity_investigations',labs.map(row=>[row.date,row.test,row.result,row.unit,row.notes].filter(present).join(' | ')).join('\n'),'','', 'Maternity investigation history');
   const scans = datedRows(card.scans,asOf);
   if (scans[0]) {

@@ -6,7 +6,7 @@ import { readLocal } from './templateModel.js';
 import { fetchPrescriptionFactors, savePrescriptionFactors } from '../../services/medicationDecisionService.js';
 import { DEFAULT_FACTORS, FACTOR_GROUPS, FACTOR_SOURCES, validDefinitions, validFactorValues, resolveFactorValues, usableFactor } from './factorModel.js';
 
-export function usePrescriptionFactors({ ownerId, patient, appointment, appointmentId, reports }) {
+export function usePrescriptionFactors({ ownerId, patient, appointment, appointmentId }) {
   const [definitions, setDefinitions] = useState(DEFAULT_FACTORS);
   const [overrides, setOverrides] = useState({});
   const [error, setError] = useState('');
@@ -55,7 +55,7 @@ export function usePrescriptionFactors({ ownerId, patient, appointment, appointm
       if (card?.patient?.id !== patient.id) throw new Error('The returned maternity card does not match this patient.');
       setMaternity({ card, loading: false, error: '' });
     } catch {
-      if (sequence === loadSequence.current) setMaternity({ card: null, loading: false, error: 'Maternity card unavailable. Report/profile values are still shown; retry to load the saved card.' });
+      if (sequence === loadSequence.current) setMaternity({ card: null, loading: false, error: 'Maternity card unavailable. Profile values and visit entries remain available; maternity-card values are not used until the card loads. Retry to load the saved card.' });
     }
   }, [patient.id]);
   useEffect(() => {
@@ -63,7 +63,11 @@ export function usePrescriptionFactors({ ownerId, patient, appointment, appointm
     window.addEventListener('focus', refreshMaternity);
     return () => { ++loadSequence.current; window.removeEventListener('focus', refreshMaternity); };
   }, [refreshMaternity]);
-  const records = useMemo(() => resolveFactorValues(definitions, patient, appointment, reports, overrides, maternity.card), [definitions, patient, appointment, reports, overrides, maternity.card]);
+  // The maternity card is the clinical source of truth for lab-derived values.
+  // Do not independently re-import an older attached report into this visit's
+  // matching context; the doctor can review the dated card value or enter a
+  // visit-specific override in the compact factor editor.
+  const records = useMemo(() => resolveFactorValues(definitions, patient, appointment, overrides, maternity.card), [definitions, patient, appointment, overrides, maternity.card]);
   function persist(nextDefinitions, nextOverrides) {
     clearTimeout(persistTimer.current);
     persistTimer.current = setTimeout(() => {

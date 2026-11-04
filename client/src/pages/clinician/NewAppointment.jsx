@@ -134,7 +134,7 @@ export default function NewAppointment() {
       showToast(
         created.isReturningPatient
           ? 'Appointment added to the existing patient record.'
-          : 'Appointment created and invite sent.'
+          : created.inviteEmailSent ? 'Appointment created and invite sent.' : 'Appointment created; email was not sent. Copy the invite link.'
       );
     } catch (err) {
       showToast(err.message || 'Could not create the appointment.', 'error');
@@ -160,7 +160,9 @@ export default function NewAppointment() {
               <p className="mb-3 text-body-md text-ink-2">
                 {result.isReturningPatient
                   ? 'Added to the patient’s account — they will see it when they sign in.'
-                  : 'The invite was emailed. Copy the link here if you need to send it another way.'}
+                  : result.inviteEmailSent
+                    ? 'The invite was emailed. Copy the link here if you need to send it another way.'
+                    : 'The invite email was not sent. Copy the link to share it with the patient.'}
               </p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 truncate rounded-xl border border-line bg-subcanvas px-3 py-2 text-body-sm text-ink">

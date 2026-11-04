@@ -30,7 +30,7 @@ describe('Appointments API', () => {
 
     // No existing account for the invited email unless a test says otherwise.
     supabaseAdmin.auth.admin.listUsers.mockResolvedValue({ data: { users: [] }, error: null });
-    createAndSendInvite.mockResolvedValue({ id: 'invite-1', inviteLink: 'http://localhost:5173/invite/tok' });
+    createAndSendInvite.mockResolvedValue({ id: 'invite-1', inviteLink: 'http://localhost:5173/invite/tok', emailSent: true });
   });
 
   describe('POST /appointments', () => {
@@ -54,6 +54,7 @@ describe('Appointments API', () => {
         ...mockCreatedAppointment,
         isReturningPatient: false,
         inviteLink: 'http://localhost:5173/invite/tok',
+        inviteEmailSent: true,
       });
       expect(chains.appointments[0].insert).toHaveBeenCalledWith(
         expect.objectContaining({ clinician_id: mockUser.id, patient_id: null, status: 'invited' })
@@ -63,6 +64,17 @@ describe('Appointments API', () => {
         patientEmail: validPayload.patientEmail,
         patientFullName: validPayload.patientFullName,
       });
+    });
+
+    it('reports when an invite link was created but email delivery failed', async () => {
+      mockTables(supabaseAdmin, {
+        profiles: profileRow('clinician'),
+        appointments: ok({ id: 'appt-123', status: 'invited' }),
+      });
+      createAndSendInvite.mockResolvedValue({ id: 'invite-1', inviteLink: 'http://localhost:5173/invite/tok', emailSent: false });
+      const response = await send('post', '/api/appointments').send(validPayload);
+      expect(response.status).toBe(201);
+      expect(response.body).toMatchObject({ inviteEmailSent: false, inviteLink: 'http://localhost:5173/invite/tok' });
     });
 
     it('should link a returning patient and mark the appointment active', async () => {

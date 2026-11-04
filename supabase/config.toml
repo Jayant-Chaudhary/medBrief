@@ -19,4 +19,9 @@ jwt_expiry = 3600
 
 [storage]
 enabled = true
-buckets = ["lab-reports", "prescriptions"]
+
+[storage.buckets.lab-reports]
+public = false
+
+[storage.buckets.prescriptions]
+public = false

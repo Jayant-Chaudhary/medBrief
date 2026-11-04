@@ -79,6 +79,7 @@ function Field({ label, value, onChange, multiline = false, ...props }) {
 }
 const medicationSummary = row => [row.strength, row.dose, row.route, row.frequency, row.duration].filter(Boolean).join(' · ');
 const typeLabel = row => ({ injection: 'Injection', vaccination: 'Vaccination' }[row.kind] || 'Medicine');
+const factorDate = value => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleDateString('en-IN') : 'Date not recorded';
 function IngredientCatalogPicker({ value, onSelect }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -241,7 +242,7 @@ function TemplatePreview({ template, context, onClose, onApply, onFeedback, even
       {eventId && <div className="rx-feedback-form"><strong>Suggestion decision</strong><p className="rx-muted">Your choice is stored to review the matcher. It is not a treatment outcome.</p><label className="rx-field"><span>Reason (optional)</span><select value={feedbackReason} onChange={event => setFeedbackReason(event.target.value)}><option value="">Choose a reason</option><option value="indication_mismatch">Ailment or category mismatch</option><option value="patient_context">Patient context</option><option value="allergy_or_safety_review">Allergy or safety review</option><option value="dose_or_regimen">Dose or regimen</option><option value="outdated_template">Template outdated</option><option value="other">Other</option></select></label><Field label="Comment (optional)" value={feedbackComment} onChange={setFeedbackComment} maxLength={1000} placeholder="Brief reason for this decision"/></div>}
       {allergy.status !== 'none-reported' && <section className="rx-allergy-list" aria-label="Patient allergy list"><strong>Patient allergy list</strong>{allergy.allergies.length ? <ul>{allergy.allergies.map((item, index) => <li key={`${item.name}-${index}`}>{item.name}{item.reaction && ` — ${item.reaction}`}</li>)}</ul> : <p>{allergy.status === 'reported' ? 'Allergy reported; details not recorded.' : 'No allergy details recorded.'}</p>}</section>}
       {applyError && <p role="alert" className="rx-error">{applyError}</p>}
-      <div className="rx-footer"><span className="rx-muted">Adds to the editable draft for clinician review.</span><button type="button" className="rx-button" onClick={onClose}>Back</button>{eventId && <><button type="button" className="rx-button" disabled={feedbackBusy || applying} onClick={() => sendDecision('rejected')}>Not suitable</button><button type="button" className="rx-button" disabled={feedbackBusy || applying} onClick={() => sendDecision('deferred')}>Defer</button></>}<button type="button" className="rx-button rx-primary" disabled={applying || feedbackBusy || template.archived || (template.autoCapture && template.autoCapture.stage !== 'visit-completed') || (!selected.length && !instructions && !followUp)} onClick={async () => { setApplying(true); try { if (await onApply(template, selected, instructions, followUp, eventId)) onClose(); else setApplyError('The draft could not be saved to the server. Your selections remain open.'); } catch { setApplyError('The draft could not be saved to the server. Your selections remain open.'); } finally { setApplying(false); } }}>{applying ? 'Saving…' : <>Add to draft <ArrowRight size={15}/></>}</button></div>
+      <div className="rx-footer"><span className="rx-muted">Adds to the editable draft for clinician review.</span><button type="button" className="rx-button" onClick={onClose}>Back</button>{eventId && <><button type="button" className="rx-button" disabled={feedbackBusy || applying} onClick={() => sendDecision('rejected')}>Not suitable</button><button type="button" className="rx-button" disabled={feedbackBusy || applying} onClick={() => sendDecision('deferred')}>Defer</button></>}<button type="button" className="rx-button rx-primary" disabled={applying || feedbackBusy || template.archived || (template.autoCapture && template.autoCapture.stage !== 'visit-completed') || (!selected.length && !instructions && !followUp)} onClick={async () => { setApplying(true); try { if (await onApply(template, selected, instructions, followUp, eventId, { reasonKey: feedbackReason, comment: feedbackComment })) onClose(); else setApplyError('The draft could not be saved to the server. Your selections remain open.'); } catch { setApplyError('The draft could not be saved to the server. Your selections remain open.'); } finally { setApplying(false); } }}>{applying ? 'Saving…' : <>Add to draft <ArrowRight size={15}/></>}</button></div>
     </div>
   </Dialog>;
 }
@@ -275,11 +276,11 @@ function BrowseTemplates({ ranked, onClose, onPreview, onEdit, onArchive, onCrea
   </Dialog>;
 }
 
-export function PrescriptionTemplates({ patient, appointment, appointmentId, reports = [] }) {
+export function PrescriptionTemplates({ patient, appointment, appointmentId }) {
   const { user } = useAuthContext();
   if (!user?.id) return null;
   if (!patient?.id || !appointmentId) return <p className="rx-muted">Select a patient visit to open its prescription.</p>;
-  return <Workspace key={`${user.id}:${patient.id}:${appointmentId}`} ownerId={user.id} patient={patient} appointment={appointment} appointmentId={appointmentId} reports={reports}/>;
+  return <Workspace key={`${user.id}:${patient.id}:${appointmentId}`} ownerId={user.id} patient={patient} appointment={appointment} appointmentId={appointmentId}/>;
 }
 
 export function MedicationTemplateLibraryPage() {
@@ -357,7 +358,7 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports }) {
   const [evaluationError, setEvaluationError] = useState('');
   const [dismissedGhostKey, setDismissedGhostKey] = useState('');
   const [error, setError] = useState('');
-  const factors = usePrescriptionFactors({ ownerId, patient, appointment, appointmentId, reports });
+  const factors = usePrescriptionFactors({ ownerId, patient, appointment, appointmentId });
   const context = useMemo(() => ({ ...contextWithFactors(buildPatientContext(patient, appointment), factors.definitions, factors.records), ...serverContext }), [patient, appointment, factors.definitions, factors.records, serverContext]);
   const activeFactors = factors.definitions.filter(definition => definition.enabled);
   const populatedFactors = activeFactors.filter(definition => usableFactor(definition, factors.records[definition.id]));
@@ -488,15 +489,7 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports }) {
     {loadError ? <div className="rx-note" role="alert"><p>{loadError}</p><button type="button" className="rx-button" onClick={() => setReloadToken(value => value + 1)}>Retry loading</button></div> : <p className="rx-muted">Loading saved prescription data…</p>}
   </section>;
   return <section className="rx-workspace rx-inline" aria-label="Prescription suggestions and draft">
-    <div className="rx-section-top"><span className="rx-overline">CURRENT VISIT</span><button type="button" className="rx-text" onClick={() => setDialog({ type: 'browse' })}><BookOpen size={14}/> Templates{activeCount ? ` (${activeCount})` : ''}</button></div>
-    <div className="rx-factors-area" aria-label="Factors">
-      <div className="rx-section-label"><div><h3>Factors</h3><p className="rx-muted">{populatedFactors.length} available / {activeFactors.length} fields</p></div><div className="rx-inline-actions"><button type="button" className="rx-button" onClick={() => setDialog({ type: 'allergies' })}>Patient allergies</button><button type="button" className="rx-button" onClick={() => setDialog({ type: 'factors' })}>Edit / add factors</button></div></div>
-      <div className="rx-factor-chips">{populatedFactors.slice(0, 4).map(definition => <span key={definition.id}>{definition.label}: {factors.records[definition.id].value} {definition.unit}</span>)}</div>
-      <p className="rx-muted">Shared report values are reused when available. Missing details stay unknown.</p>
-      {factors.maternity.loading && <p className="rx-muted">Loading maternity card values...</p>}
-      {factors.maternity.error && <p className="rx-amber">{factors.maternity.error}</p>}
-      {factors.error && <p className="rx-error" role="alert">{factors.error}</p>}
-    </div>
+    <div className="rx-section-top"><span className="rx-overline">CURRENT VISIT</span><div className="rx-inline-actions"><button type="button" className="rx-button" onClick={() => setDialog({ type: 'allergies' })}>Patient allergies</button><button type="button" className="rx-text" onClick={() => setDialog({ type: 'browse' })}><BookOpen size={14}/> Templates{activeCount ? ` (${activeCount})` : ''}</button></div></div>
     {error && <p className="rx-error rx-note" role="alert">{error}</p>}
     {message && <p className="rx-success" role="status">{message}</p>}
     <div className="rx-draft-summary rx-direct-editor">
@@ -512,19 +505,29 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports }) {
       </details>
       <p className="rx-muted" role="status">Visit prescriptions stay in the visit draft. Save a clinician-reviewed regimen as a template for future suggestions.</p>
     </div>
-    <section className="rx-recommendation-run" aria-label="Template recommendations"><div className="rx-section-label"><div><h3>Find matching templates</h3><p className="rx-muted">Search uses this visit’s recorded factors. Add or review factors above before searching; allergies remain visible in this panel.</p></div><div><button type="button" className="rx-text" onClick={() => setDialog({ type: 'feedback' })}>Suggestion feedback</button><button type="button" className="rx-button" onClick={() => setDialog({ type: 'browse' })}><BookOpen size={14}/> Manage templates</button></div></div><div className="rx-evaluate-row"><span className="rx-muted">Match approved templates to structured patient factors and recorded examples.</span><button type="button" className="rx-button rx-primary" disabled={evaluating || factors.loading} onClick={requestSuggestions}>{evaluating ? 'Searching…' : 'Search templates'}</button></div>{evaluationError && <p className="rx-error" role="alert">{evaluationError}</p>}{recommendationEvent && <p className="rx-muted" role="status">Search recorded · {recommendationEvent.candidates.length} matching template(s) shown · visit factors saved with the search.</p>}
+    <section className="rx-recommendation-run" aria-label="Template recommendations"><div className="rx-section-label"><div><h3>Find matching templates</h3><p className="rx-muted">Search uses the latest maternity-card values and any visit factors you add below. Allergies remain accessible in this panel.</p></div><div><button type="button" className="rx-text" onClick={() => setDialog({ type: 'feedback' })}>Suggestion feedback</button><button type="button" className="rx-button" onClick={() => setDialog({ type: 'browse' })}><BookOpen size={14}/> Manage templates</button></div></div><div className="rx-evaluate-row"><span className="rx-muted">Match approved templates to structured patient factors and recorded examples.</span><button type="button" className="rx-button rx-primary" disabled={evaluating || factors.loading || factors.maternity.loading} onClick={requestSuggestions}>{evaluating ? 'Searching…' : factors.maternity.loading ? 'Loading maternity card…' : 'Search templates'}</button></div>{evaluationError && <p className="rx-error" role="alert">{evaluationError}</p>}{recommendationEvent && <p className="rx-muted" role="status">Search recorded · {recommendationEvent.candidates.length} matching template(s) shown · visit factors saved with the search.</p>}
       {confirmedSuggestions.length > 0 ? <div className="rx-options">{confirmedSuggestions.map(({ template, match }) => <TemplateOption key={template.id} template={template} match={match} matchLabel={match.method === 'gower' ? 'Similar recorded factors' : 'Template applicability rules matched'} onPreview={showPreview}/>)}</div> : recommendationEvent ? <div className="rx-quiet-empty"><FileText size={22}/><div><strong>{recommendationEvent.candidates.length ? 'No template matched the recorded factors' : 'No approved templates are available'}</strong><p>Update the visit factors or browse the reusable template library. The search event was saved.</p></div></div> : <p className="rx-muted">Search after recording the patient factors relevant to this treatment.</p>}
     </section>
     <p className="rx-score-caption">Similarity* accounts for both closeness and available data. It is not treatment safety or a calibrated probability.</p>
     {confirmedSuggestions.length > 0 && !ghostSuggestion && ghostChoice.reason && <p className="rx-score-caption">{ghostChoice.reason}</p>}
     {activeCount > 0 && <button type="button" className="rx-text rx-view-all" onClick={() => setDialog({ type: 'browse' })}>View all {activeCount} templates <ArrowRight size={13}/></button>}
+    <details className="rx-factor-collapsible" aria-label="Review or add matching factors">
+      <summary><span><strong>Review / add factors</strong><small>{populatedFactors.length} recorded · maternity card, profile and visit entries</small></span><span>{factors.maternity.loading ? 'Loading card…' : 'Optional'}</span></summary>
+      <div className="rx-factor-review-body">
+        <p className="rx-muted">Matching uses the latest values recorded on the maternity card, plus any visit-specific entries you add. Each value shows its source and date for review; missing values stay blank.</p>
+        {factors.maternity.error && <p className="rx-amber">{factors.maternity.error}</p>}
+        {factors.error && <p className="rx-error" role="alert">{factors.error}</p>}
+        {populatedFactors.length ? <div className="rx-factor-review-list">{populatedFactors.map(definition => { const record = factors.records[definition.id]; return <div key={definition.id}><strong>{definition.label}</strong><span>{record.value} {record.unit || definition.unit || ''}</span><small>{record.source || 'Recorded factor'} · {factorDate(record.recordedAt)}</small></div>; })}</div> : <p className="rx-muted">No matching factors recorded yet. Add only the details relevant to this visit.</p>}
+        <button type="button" className="rx-button" onClick={() => setDialog({ type: 'factors' })}>Review / add factors</button>
+      </div>
+    </details>
     <p className="rx-local">Draft and templates are stored with the clinician visit record. The draft is not sent to the patient until the clinician publishes it.</p>
     {dialog?.type === 'factors' && <Dialog title="Factors" subtitle="Review report values, fill missing details, or add your own reusable fields." onClose={close}><FactorsEditor factors={factors}/></Dialog>}
     {dialog?.type === 'allergies' && <AllergyEditor context={serverContext} appointmentId={appointmentId} onClose={close} onSaved={async () => { const updated = await fetchMedicationContext(appointmentId); setServerContext({ allergyReview: updated?.allergyReview || { status: 'not_assessed' }, allergies: updated?.allergies || [] }); }}/ >}
     {dialog?.type === 'browse' && <BrowseTemplates ranked={ranked} onClose={close} onPreview={showPreview} onEdit={value => setDialog({ type: 'template', value })} onArchive={archive} onCreate={() => setDialog({ type: 'template', value: blankTemplate() })}/>}
     {dialog?.type === 'template' && <TemplateEditor definitions={factors.definitions} key={dialog.value.id} initial={dialog.value} onClose={close} onSave={storeTemplate}/>}
     {dialog?.type === 'feedback' && <FeedbackHistory onClose={close}/>}
-    {dialog?.type === 'preview' && <TemplatePreview template={dialog.value} eventId={dialog.eventId} onFeedback={recordFeedback} similarityMatch={dialog.similarityMatch} context={context} patientName={patient.name} onClose={close} onApply={async (template, ids, instructions, followUp, eventId) => {
+    {dialog?.type === 'preview' && <TemplatePreview template={dialog.value} eventId={dialog.eventId} onFeedback={recordFeedback} similarityMatch={dialog.similarityMatch} context={context} patientName={patient.name} onClose={close} onApply={async (template, ids, instructions, followUp, eventId, decision) => {
       const result = applyTemplate(draft, template, ids, instructions, followUp);
       await savePrescriptionDraft(appointmentId, result.draft);
       let feedbackMessage = '';
@@ -534,7 +537,7 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports }) {
         const previousIds = new Set(draft.medications.map(item => item.id));
         const addedIds = new Set(result.draft.medications.filter(item => !previousIds.has(item.id)).map(item => item.id));
         try {
-          const feedback = await submitMedicationFeedback({ eventId, templateId: template.id, action: unchanged ? 'accepted' : 'edited', reasonKey: unchanged ? null : 'selection_or_duplicate_edit', finalItems: result.draft.medications.filter(item => addedIds.has(item.id)).map(({ name, ingredientKey, strength, dose, route, frequency, duration, kind }) => ({ name, ingredientKey, strength, dose, route, frequency, duration, kind })) });
+          const feedback = await submitMedicationFeedback({ eventId, templateId: template.id, action: unchanged ? 'accepted' : 'edited', reasonKey: decision?.reasonKey || (unchanged ? null : 'selection_or_duplicate_edit'), comment: decision?.comment || '', finalItems: result.draft.medications.filter(item => addedIds.has(item.id)).map(({ name, ingredientKey, strength, dose, route, frequency, duration, kind }) => ({ name, ingredientKey, strength, dose, route, frequency, duration, kind })) });
           finalDraft = { ...result.draft, feedbackEventIds: [...new Set([...(result.draft.feedbackEventIds || []), feedback.id])], medications: result.draft.medications.map(item => addedIds.has(item.id) ? { ...item, source: { ...item.source, feedbackEventId: feedback.id } } : item) };
           feedbackMessage = ` ${unchanged ? 'Acceptance' : 'Selection/edit'} recorded.`;
           try { await savePrescriptionDraft(appointmentId, finalDraft); feedbackMessage += ' Later draft edits to these items will update the captured regimen.'; }

@@ -74,7 +74,7 @@ const SECTIONS = {
     // Values imported from an uploaded report are hidden, not deleted.
     hideable: true,
     describe: (row) => ({ fromReport: Boolean(row.lab_report_id) }),
-    fields: { date: 'performed_on', test: 'investigation_name', result: 'result_text', unit: 'result_unit', notes: 'notes' },
+    fields: { date: 'performed_on', key: 'investigation_key', test: 'investigation_name', result: 'result_text', unit: 'result_unit', notes: 'notes' },
     // A numeric result is also stored as a number, so it can be charted.
     derive: (values) =>
       values.result === undefined

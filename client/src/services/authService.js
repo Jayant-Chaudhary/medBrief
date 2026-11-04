@@ -142,7 +142,7 @@ export async function signOutUser() {
   }
 }
 
-export async function fetchProfile(userId) {
+export async function fetchProfile(userId, activeSession = null) {
   if (!userId) return null;
   try {
     const { data: profile, error } = await supabase
@@ -151,7 +151,7 @@ export async function fetchProfile(userId) {
       .eq('id', userId)
       .single();
 
-    const { data: { session } } = await supabase.auth.getSession();
+    const session = activeSession || (await supabase.auth.getSession()).data.session;
     const userMetaRole = session?.user?.user_metadata?.role;
 
     if (error || !profile) {
@@ -163,6 +163,24 @@ export async function fetchProfile(userId) {
     const first = (value) => (Array.isArray(value) ? value[0] : value) ?? null;
     profile.clinicianDetails = first(profile.clinician_details);
     profile.patientDetails = first(profile.patient_details);
+
+    // The embedded details row can be hidden by RLS. The authenticated API
+    // reads the caller's own details without granting client-side write access.
+    if (profile.role === 'clinician' && !profile.clinicianDetails && session?.access_token) {
+      try {
+        const details = await request('/api/profile', { accessToken: session.access_token });
+        if (details?.role === 'clinician') {
+          profile.clinicianDetails = {
+            specialty: details.specialty,
+            license_number: details.licenseNumber,
+            state_medical_council: details.stateMedicalCouncil,
+            is_verified: details.isVerified === true,
+          };
+        }
+      } catch (error) {
+        console.warn('[fetchProfile Warning]: Could not load clinician details from the API');
+      }
+    }
 
     // The stored role is authoritative. user_metadata is writable by the user
     // themselves, so it may only fill in for a profile that has no role yet.

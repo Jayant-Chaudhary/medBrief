@@ -72,8 +72,8 @@ export function usableFactor(definition, record) {
   if (definition.type === 'select' && !definition.options.includes(record.value)) return false;
   return true;
 }
-/** A thin view adapter over already-shared reports. No downloads or new database queries. */
-export function resolveFactorValues(definitions, patient, appointment, reports, overrides = {}, maternityCard = null) {
+/** Use the maternity card plus explicit profile/visit entries; uploaded reports are not read here. */
+export function resolveFactorValues(definitions, patient, appointment, overrides = {}, maternityCard = null) {
   const result = {};
   const maternity = maternityFactorValues(maternityCard);
   for (const definition of definitions) {
@@ -83,29 +83,8 @@ export function resolveFactorValues(definitions, patient, appointment, reports, 
     if (definition.appointment && appointment?.[definition.appointment]) {
       result[definition.id] = { value: String(appointment[definition.appointment]), unit: definition.unit, source: 'Visit record', recordedAt: appointment.scheduled_at || '', needsReview: false };
     }
-    const candidates = [];
-    for (const report of reports || []) {
-      const date = report.report_date || report.uploaded_at;
-      if (!date || !Number.isFinite(Date.parse(date)) || Date.parse(date) > Date.now()) continue;
-      for (const metric of report.lab_report_metrics || []) {
-        if (!definition.metrics?.includes(metric.standard_key)) continue;
-        const reviewed = metric.reviewed_value !== null && metric.reviewed_value !== undefined;
-        const bounded = !reviewed && /^[<>\u2264\u2265]/.test(String(metric.raw_value || '').trim());
-        const value = reviewed ? metric.reviewed_value : bounded ? metric.raw_value : metric.parsed_value ?? metric.raw_value;
-        if (value === null || value === undefined || String(value).trim() === '') continue;
-        candidates.push({ value: String(value), unit: metric.unit_standard || metric.unit_raw || '', source: reviewed ? 'Clinician-reviewed report' : 'Extracted report', recordedAt: date, reportId: report.id, metricId: metric.id, printedValue: metric.raw_value == null ? '' : String(metric.raw_value), needsReview: bounded || !reviewed && metric.needs_review !== false });
-      }
-    }
-    candidates.sort((a, b) => Date.parse(b.recordedAt) - Date.parse(a.recordedAt));
-    if (candidates.length) result[definition.id] = candidates[0];
     const cardRecord = maternity[definition.id];
-    if (cardRecord) {
-      const existing = result[definition.id];
-      const cardDate = Date.parse(cardRecord.recordedAt);
-      const existingDate = Date.parse(existing?.recordedAt);
-      // A newer dated report wins; card-only fields and dated card observations are reused.
-      if (!existing || !Number.isFinite(existingDate) || (Number.isFinite(cardDate) && cardDate >= existingDate)) result[definition.id] = cardRecord;
-    }
+    if (cardRecord) result[definition.id] = cardRecord;
     if (Object.hasOwn(overrides, definition.id)) result[definition.id] = { ...overrides[definition.id], source: 'Doctor entry', needsReview: false };
   }
   return result;

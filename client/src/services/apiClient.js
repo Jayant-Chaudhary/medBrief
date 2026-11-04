@@ -45,7 +45,7 @@ async function authHeader() {
 }
 
 /** Thin fetch wrapper: attaches the Supabase JWT and unwraps JSON errors. */
-export async function request(path, { method = 'GET', body, signal } = {}) {
+export async function request(path, { method = 'GET', body, signal, accessToken } = {}) {
   const startedAt = performance.now();
   const response = await fetch(`${BASE_URL}${path}`, {
     method,
@@ -53,7 +53,7 @@ export async function request(path, { method = 'GET', body, signal } = {}) {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(await authHeader()),
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : await authHeader()),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
