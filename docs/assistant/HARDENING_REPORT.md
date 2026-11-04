@@ -97,3 +97,40 @@ Known gaps: declared form controls (`data-assistant-id`) and bridge buttons are
 still hidden from the agent loop navigator (addressed in Slice 4); tab-scoped
 session memory is Slice 5; full clinician-side coverage evaluation and live
 browser verification are Slice 6.
+
+## Slice 4: forms and buttons inside the agent loop
+
+Commit: `77d67c3` (`2026-11-04 13:40:47 +0530`).
+
+Plan: expose the current page's declared controls and pressable buttons from
+`controls.registry.js` in the Navigator prompt (with control id, label, kind,
+options, date format `YYYY-MM-DDTHH:mm`, and current date/time), while keeping
+`[data-assistant-id]` fields hidden from `pageReader.js` so they are never listed
+twice; add `fill(control, value)` and `press(button)` to `NAVIGATOR_SCHEMA` and
+`validateAgentActions` checked by `checkValue` and `findButton`, emitting bridge
+`fill`/`press` steps with patient context, Slice 2 execution evidence, Slice 3
+duplicate write guard, and single-Confirm enforcement.
+
+Changed:
+- Updated `server/src/services/assistant/agent/navigator.js` (`describeDeclaredForm`, `fill`/`press` schema and prompt)
+- Updated `server/src/services/assistant/agent/actions.js` (`fill(control, value)` and `press(button)` validation, BP pair split, single-Confirm cut)
+- Updated `server/src/services/assistant/assistant.service.js` (`formStep` integration and `writes.guard` on agent `fill` steps)
+- Updated `server/src/services/assistant/execution.js` (`pendingActions` field/hash tracking and `matchingItem` support for `fill`/`press`)
+- Updated `client/src/components/assistant/AssistantDock.jsx` (hash tracking for confirmed bridge fills)
+- Added `server/src/tests/agent/forms.test.js` (6 tests covering prompt declaration, multi-round booking, maternity BP split + Confirm, round 2+ relative date conversion, ungrounded value refusal, and past/future date rules)
+
+Measured verification:
+
+```powershell
+cd server
+npm test -- --runInBand --coverage=false src/tests/assistant.test.js src/tests/services src/tests/agent
+# 21 suites, 490 tests passed
+cd ../client
+npm test -- --run src/tests
+# 12 suites, 83 tests passed
+npm run build
+# passed (4.84s; same Vite chunk size warning)
+```
+
+Known gaps: tab-scoped session memory of previous requests is Slice 5; full
+clinician-side coverage evaluation and live browser verification are Slice 6.
