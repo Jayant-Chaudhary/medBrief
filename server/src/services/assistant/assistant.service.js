@@ -843,18 +843,30 @@ async function handleStep({
     const groundingMsg = effectiveGroundingMessage(followUp?.expandedMessage || message, cleanMemory);
     const namedPatient = Boolean(followUp?.patient) || patients.some(p => [p.fullName, String(p.fullName || '').split(' ')[0]].some(name => name && require('./agent/actions').isGrounded(name, groundingMsg)));
     if (patientSpecific && !current && !namedPatient) return { type: 'clarify', message: 'Which patient?', options: [], checklist: active, source: reply.source };
+    const successes = [...(saved?.successes || []), ...verifiedResults.filter(r => r.result === 'ok').map(r => r.replay).filter(Boolean)];
+    let replayed = false;
+    function omitReplay(a) {
+      if (!successes.includes(execution.replayKey(a, currentPath))) return false;
+      const index = execution.matchingItem(active, a);
+      if (index >= 0) active[index] = { ...active[index], done: true };
+      replayed = true; return true;
+    }
+    if (reply.type === 'navigate' && omitReplay(reply)) reply = { ...reply, type: 'run', steps: [] };
     if (writtenState.length >= settings.maxWrittenEntries) return execution.stop(active, 'the write limit was reached');
     for (const step of reply.steps || []) {
+      if (step.path && omitReplay({ ...step, op: step.op || 'go' })) delete step.path;
+      if (step.press && omitReplay({ ...step.press, op: 'press' })) delete step.press;
       if (step.page) {
+        step.page.actions = step.page.actions.filter(a => !omitReplay(a));
         const guarded = writes.guard(step.page.actions, writtenState, { record: current, path: currentPath });
         step.page.actions = guarded.actions;
         step.page.refused = [...(step.page.refused || []), ...guarded.refused];
       }
       if (reply.source === 'agent' && step.fill?.fields) {
         const fillList = Object.entries(step.fill.fields).map(([control, value]) => ({
-          op: 'fill', control, value, name: step.fill.filled?.find(f => f.id === control)?.label || control,
+          op: 'fill', control, value, page: step.fill.page, name: step.fill.filled?.find(f => f.id === control)?.label || control,
         }));
-        const guarded = writes.guard(fillList, writtenState, { record: current, path: currentPath });
+        const guarded = writes.guard(fillList.filter(a => !omitReplay(a)), writtenState, { record: current, path: currentPath });
         const nextFields = {};
         const nextFilled = [];
         for (const a of guarded.actions) {
@@ -875,11 +887,18 @@ async function handleStep({
         }
       }
     }
-    if (reply.type === 'run' && (reply.steps || []).some(step => step.page?.refused?.length) && !(reply.steps || []).some(step => step.path || step.recordTarget || step.fill || step.press || step.page?.actions?.length)) {
-      const reasons = (reply.steps || []).flatMap(step => step.page?.refused || []).map(r => r.reason);
-      return execution.stop(active.length ? active : [{ text: message, done: false }], reasons.includes('already written') ? 'already written' : 'the requested action was refused');
+    const refusals = (reply.steps || []).flatMap(step => step.page?.refused || []);
+    const hasActions = (reply.steps || []).some(step => step.path || step.recordTarget || step.fill || step.press || step.page?.actions?.length);
+    const refusedOnly = reply.type === 'run' && refusals.length > 0 && !hasActions;
+    const refusedRounds = refusedOnly ? (saved?.refusedRounds || 0) + 1 : 0;
+    const reasons = { ...(saved?.reasons || {}) };
+    for (const refused of refusals) {
+      let index = active.findIndex(c => !c.done && refused.name && c.text.toLowerCase().includes(refused.name.toLowerCase()));
+      if (index < 0) index = active.findIndex(c => !c.done);
+      if (index >= 0) reasons[index] = refused.reason;
     }
-
+    if (refusedOnly && refusedRounds >= settings.maxRefusedRounds) return execution.stop(active, reasons);
+    if (replayed && active.length && active.every(c => c.done)) return { type: 'done', checklist: active, source: 'agent', steps: [], message: 'Completed.' };
     if (now() >= deadline) return execution.stop(active.length ? active : [{ text: message, done: false }], 'the request time limit was reached');
     if (!canAgent || (!reply.continue && reply.source !== 'agent')) return reply;
     if (!['run','navigate','choose'].includes(reply.type)) return reply;
@@ -888,7 +907,7 @@ async function handleStep({
     reply.continue = true;
     const pending = execution.pendingActions(reply, checklist, round, currentPath);
     return { ...reply, checklist, mode: 'agent', continuationToken: continuation.issue(userId, message, {
-      round: round + 1, startedAt: initialTime, checklist, pending, history, originRecord: origin, written: writtenState,
+      round: round + 1, startedAt: initialTime, checklist, pending, history, originRecord: origin, written: writtenState, successes: [...new Set(successes)], refusedRounds, reasons, feedback: refusals.map(r => ({ ...r, result: 'refused' })),
     }) };
   }
   async function agent() {
@@ -898,7 +917,7 @@ async function handleStep({
     const initialChecklist = verifiedChecklist.length ? verifiedChecklist : (followUp?.checklist || []);
     const activeCurrent = current || (followUp?.patient ? { kind: followUp.record?.kind || 'visit', id: followUp.record?.id || followUp.patient.id, patientId: followUp.patient.id } : null);
     return finish(await runAgentLoop({ message: activeMsg, groundingMessage: groundingMsg, memory: cleanMemory, role, userId, timeZone, currentPath, page,
-      round, progress, checklist: initialChecklist, note, results: verifiedResults, pageHash,
+      round, progress, checklist: initialChecklist, note, results: [...verifiedResults, ...(saved?.feedback || [])], pageHash,
       provider, directory, settings, clock, onPage, seen, patients, recordContext: { originRecord: origin, currentRecord: activeCurrent }, writtenState }));
   }
   if (isPhase6Agent || isMulti) return agent();

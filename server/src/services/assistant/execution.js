@@ -1,13 +1,18 @@
 const { digest } = require('./continuation');
 const { findPage } = require('./pages.registry');
 const canonical = s => String(s || '').toLowerCase().replace(/consultancy|consultation/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-const words = s => canonical(s).split(' ').filter(w => w.length > 2 && !['the', 'please', 'open', 'show', 'write', 'add', 'with', 'into', 'then', 'and', 'check', 'tick', 'mark', 'done', 'set'].includes(w));
+const words = s => canonical(s).split(' ').filter(w => (w.length > 2 || ['bp','hb'].includes(w)) && !['the', 'please', 'open', 'show', 'write', 'add', 'with', 'into', 'then', 'and', 'check', 'tick', 'mark', 'done', 'set'].includes(w));
 function matchingItem(checklist, action) {
   return checklist.findIndex(item => {
     if (item.done) return false;
     const text = canonical(item.text);
     // A malformed composite checklist item cannot be certified by one action.
     if (/\b(and|then|aur|phir)\b.*\b(open|go|write|type|add|tick|check|fill|save|send)\b/.test(text)) return false;
+    const searchValue = action.state?.assistantQuery || (['type','fill'].includes(action.op) && (action.control === 'patients.query' || (action.page === 'patients' && action.control === 'query') || action.kind === 'search' || /search/i.test(action.name || '')) ? action.value : '');
+    if (searchValue && /\b(find|search|look up|dhundo)\b/.test(text)) {
+      const nameWords = canonical(searchValue).split(' ').filter(Boolean);
+      return nameWords.length > 0 && nameWords.every(w => text.split(' ').includes(w));
+    }
     if (action.op === 'return_record') return Boolean(action.recordId) && /\b(return|back)\b/.test(text);
     if (action.op === 'go') {
       const page = findPage('clinician', action.pageId || action.page);
@@ -45,8 +50,9 @@ function pendingActions(reply, checklist, round, currentPath) {
     action.actionId = `${round}:${pending.length}`;
     const itemIndex = matchingItem(checklist, action);
     const { value, find } = action;
+    const replay = replayKey(action, currentPath);
     const safe = Object.fromEntries(['actionId', 'op', 'ref', 'name', 'section', 'control', 'page', 'pageId', 'path', 'kind', 'recordId', 'field', 'hash'].filter(k => action[k] !== undefined).map(k => [k, action[k]]));
-    pending.push({ ...safe, itemIndex, fingerprint: digest(JSON.stringify([currentPath, action.op, action.pageId || action.path || action.section, action.name || action.control || action.ref, value, find])) });
+    pending.push({ ...safe, replay, itemIndex, fingerprint: digest(JSON.stringify([currentPath, action.op, action.pageId || action.path || action.section, action.name || action.control || action.ref, value, find])) });
   }
   if (reply.type === 'navigate') add(reply);
   for (const step of reply.steps || []) {
@@ -83,9 +89,10 @@ function applyResults(checklist, results) {
   });
 }
 function stop(checklist, reason, source = 'agent') {
+  const reasonFor = (c, i) => typeof reason === 'object' ? (reason[i] || 'not reached') : reason;
   return {
-    type: 'unsupported', source, steps: [], checklist: checklist.map(c => c.done ? c : { ...c, reason }),
-    message: checklist.map(c => c.done ? `✓ ${c.text}` : `Couldn't: ${c.text} because ${reason}`).join('\n') || `Couldn't complete this request because ${reason}`
+    type: 'unsupported', source, steps: [], checklist: checklist.map((c,i) => c.done ? c : { ...c, reason: reasonFor(c,i) }),
+    message: checklist.map((c,i) => c.done ? `✓ ${c.text}` : `Couldn't: ${c.text} because ${reasonFor(c,i)}`).join('\n') || `Couldn't complete this request because ${reason}`
   };
 }
 function boundProvider(provider, deadline, settings, clock = Date.now) {
@@ -102,4 +109,7 @@ function boundProvider(provider, deadline, settings, clock = Date.now) {
     }
   };
 }
-module.exports = { matchingItem, pendingActions, acceptResults, applyResults, stop, boundProvider };
+function replayKey(a, path) {
+  return digest(JSON.stringify([path, a.op, a.control || a.name || a.ref || a.pageId || a.path, a.section || '', a.value, a.find, a.state?.assistantQuery]));
+}
+module.exports = { replayKey, matchingItem, pendingActions, acceptResults, applyResults, stop, boundProvider };

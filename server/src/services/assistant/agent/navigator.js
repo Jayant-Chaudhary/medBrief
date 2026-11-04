@@ -66,7 +66,7 @@ function describeDeclaredForm(role, onPage) {
   if (!form) return '';
   const lines = [];
   if (form.controls?.length) {
-    lines.push('Declared Form Controls (use fill(control, value)):');
+    lines.push('Declared Form Controls (use fill(control, value); these ids are NEVER element refs):');
     for (const c of form.controls) {
       const opts = c.options?.length ? ` [options: ${c.options.map((o) => o.label).join(', ')}]` : '';
       const fmt = c.kind === 'datetime' ? ' (format: YYYY-MM-DDTHH:mm)' : c.kind === 'date' ? ' (format: YYYY-MM-DD)' : '';

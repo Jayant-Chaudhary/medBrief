@@ -75,6 +75,7 @@ module.exports = {
   maxWrittenEntries: positiveInteger('ASSISTANT_MAX_WRITTEN_ENTRIES', 120),
   memoryItems: positiveInteger('ASSISTANT_MEMORY_ITEMS', 10),
   memoryMaxAgeMin: positiveInteger('ASSISTANT_MEMORY_MAX_AGE_MIN', 120),
+  maxRefusedRounds: positiveInteger('ASSISTANT_MAX_REFUSED_ROUNDS', 2),
   maxActionRepeats: positiveInteger('ASSISTANT_MAX_ACTION_REPEATS', 2),
   continuationMaxChars: positiveInteger('ASSISTANT_CONTINUATION_MAX_CHARS', 32000),
   stallLimit: positiveInteger('ASSISTANT_STALL_LIMIT', 2),

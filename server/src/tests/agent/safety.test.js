@@ -62,8 +62,10 @@ test('duplicate-notes trace remembers successful hashes despite omitted client w
   const action = first.steps[0].page.actions[0];
   expect(action.op).toBe('append');
   const next = await assistant.handleStep({ ...base, round: 1, mode: first.mode, continuationToken: first.continuationToken, results: [{ actionId: action.actionId, result: 'ok' }], written: [] });
-  expect(next.type).toBe('unsupported');
-  expect(next.message).toContain('already written');
+  expect(next.type).not.toBe('unsupported');
+  expect(next.continue).toBe(true);
+  expect((next.steps || []).flatMap(s => s.page?.actions || [])).toHaveLength(0);
+  expect((next.steps || []).some(s => s.fill)).toBe(false);
   expect(next.checklist[0].done).toBe(true);
   expect(next.checklist[1].done).toBe(false);
 });

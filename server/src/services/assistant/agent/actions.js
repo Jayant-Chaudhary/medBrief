@@ -113,6 +113,11 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
   for (const act of rawActions) {
     if (!act || typeof act !== 'object' || !act.op) continue;
     let op = act.op;
+    const exactControl = onPage && findControl(role, onPage, act.ref);
+    if (exactControl && ['type','append','select','check'].includes(op)) {
+      proposedFills.push({ control: exactControl, rawValue: act.value ?? act.text ?? act.option });
+      continue;
+    }
 
     // 1. Menu navigation: go(pageId)
     if (op === 'go') {
@@ -343,17 +348,6 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
       if (op === 'replace' && (!find || !isGrounded(find, message))) {
         refused.push({ name: element.name, reason: REASONS.notInMessage });
         continue;
-      }
-      if (Array.isArray(context.writtenState) && context.writtenState.length > 0) {
-        const probe = writes.guard(
-          [{ ref: element.ref, op, name: element.name, section: element.section, value }],
-          context.writtenState,
-          { record: context.currentRecord, path: context.currentPath }
-        );
-        if (!probe.actions.length) {
-          refused.push(...probe.refused);
-          continue;
-        }
       }
     } else if (op === 'select') {
       const option = act.option || value;
