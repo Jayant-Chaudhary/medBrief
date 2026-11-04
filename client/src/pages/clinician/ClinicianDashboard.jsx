@@ -8,7 +8,6 @@ import { PreVisitAiBriefCard } from '../../components/clinician/PreVisitAiBriefC
 import { SimilarCasesTriageCard } from '../../components/clinician/SimilarCasesTriageCard.jsx';
 import { OcrTriageAlert } from '../../components/clinician/OcrTriageAlert.jsx';
 import { HistoryGrid } from '../../components/clinician/HistoryGrid.jsx';
-import { SlideOver } from '../../components/ui/SlideOver.jsx';
 import { Modal } from '../../components/ui/Modal.jsx';
 import { useToast } from '../../context/ToastContext';
 import { ConsultancyNotes } from '../../components/clinician/ConsultancyNotes.jsx';
@@ -128,8 +127,6 @@ function extractQueryPatientFromDashboard(data) {
  */
 export function ClinicianDashboard() {
   const [collapsed, setCollapsed] = useState(false);
-  const [notesOpen, setNotesOpen] = useState(false);
-  const closeNotes = useCallback(() => setNotesOpen(false), []);
   const [audioConsultOpen, setAudioConsultOpen] = useState(false);
   const [generatingBrief, setGeneratingBrief] = useState(false);
   const [audioConsultTab, setAudioConsultTab] = useState('RECORD');
@@ -172,7 +169,7 @@ export function ClinicianDashboard() {
     if (!appointment.isPending) setSearchParams({ appointment: appointment.appointmentId });
   };
   const close = () => {
-    setNotesOpen(false);
+    setActiveDashboardTab('overview');
     setSearchParams({});
   };
 
@@ -180,7 +177,8 @@ export function ClinicianDashboard() {
   const appointmentId = data?.appointment?.id;
   const consultDraft = useConsultDraft(appointmentId, Boolean(selected));
 
-  const [activeDashboardTab, setActiveDashboardTab] = useState('overview'); // 'overview' | 'flowsheet'
+  const [activeDashboardTab, setActiveDashboardTab] = useState('overview'); // 'overview' | 'flowsheet' | 'consultation'
+  const [consultationSubView, setConsultationSubView] = useState('both'); // 'both' | 'notes' | 'rx'
   const [similarityData, setSimilarityData] = useState(null);
   const [similarityLoading, setSimilarityLoading] = useState(false);
   const [similarityError, setSimilarityError] = useState(null);
@@ -298,7 +296,6 @@ export function ClinicianDashboard() {
         patient: { ...current.patient, visitStatus: 'completed' },
       }));
       setConfirmEnd(false);
-      setNotesOpen(false);
       showToast("Visit ended. The summary is now on the patient's visit history.", 'success');
       loadAppointments();
     } catch (err) {
@@ -505,11 +502,13 @@ export function ClinicianDashboard() {
 
             <button
               type="button"
-              onClick={() => setNotesOpen(true)}
-              aria-haspopup="dialog"
-              aria-expanded={notesOpen}
-              className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-label-lg font-semibold text-emerald-900 transition-all hover:bg-emerald-100 hover:border-emerald-400 hover:shadow-sm active:scale-[0.98]"
-              title="Consultation notes, action checklist, and prescriptions"
+              onClick={() => setActiveDashboardTab('consultation')}
+              className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-label-lg font-semibold transition-all ${
+                activeDashboardTab === 'consultation'
+                  ? 'border-emerald-500 bg-emerald-100 text-emerald-950 shadow-xs ring-1 ring-emerald-300'
+                  : 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100 hover:border-emerald-400 hover:shadow-sm active:scale-[0.98]'
+              }`}
+              title="Open Consultant Notes & Prescriptions Workspace"
             >
               <NotebookPen className="h-4 w-4 text-emerald-700 shrink-0" />
               <span>Consultation notes</span>
@@ -539,13 +538,13 @@ export function ClinicianDashboard() {
           </div>
         </div>
 
-        {/* Segmented Two-Tab Navigation for Patient Dashboard */}
-        <div className="flex items-center justify-between border-b border-slate-200 bg-white px-2 pt-1 pb-0 mb-3 rounded-xl shadow-2xs shrink-0">
-          <div className="flex items-center gap-1 sm:gap-2">
+        {/* Segmented Three-Tab Navigation for Patient Dashboard */}
+        <div className="flex items-center justify-between border-b border-slate-200 bg-white px-2 pt-1 pb-0 mb-3 rounded-xl shadow-2xs shrink-0 overflow-x-auto">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={() => setActiveDashboardTab('overview')}
-              className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 text-sm font-semibold border-b-2 transition-all ${
+              className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
                 activeDashboardTab === 'overview'
                   ? 'border-cypress text-cypress'
                   : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
@@ -564,7 +563,7 @@ export function ClinicianDashboard() {
             <button
               type="button"
               onClick={() => setActiveDashboardTab('flowsheet')}
-              className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 text-sm font-semibold border-b-2 transition-all ${
+              className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
                 activeDashboardTab === 'flowsheet'
                   ? 'border-cypress text-cypress'
                   : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
@@ -578,85 +577,158 @@ export function ClinicianDashboard() {
                 </span>
               )}
             </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveDashboardTab('consultation')}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
+                activeDashboardTab === 'consultation'
+                  ? 'border-cypress text-cypress'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+              }`}
+            >
+              <NotebookPen className="h-4 w-4" />
+              <span>Consultant Notes & Prescriptions</span>
+              {(data.notes?.text?.trim() || data.actionItems?.length > 0 || data.prescriptions?.length > 0) && (
+                <span
+                  className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse"
+                  title="Consultation notes, action items, or prescriptions drafted"
+                />
+              )}
+            </button>
           </div>
 
-          <div className="text-xs text-slate-400 hidden md:block pr-3">
+          <div className="text-xs text-slate-400 hidden lg:block pr-3 shrink-0">
             {activeDashboardTab === 'overview'
               ? 'Demographics · AI Brief · Similar Cases · Pre-visit'
-              : 'OCR verification · Longitudinal metrics & Trend charts'}
+              : activeDashboardTab === 'flowsheet'
+              ? 'OCR verification · Longitudinal metrics & Trend charts'
+              : 'Clinical notes · Ambient AI draft · Prescriptions & Prophylaxis'}
           </div>
         </div>
 
         {/* Tab 1: Patient Overview */}
-        {activeDashboardTab === 'overview' && (
-          <div className="scroll-column min-h-0 flex-1 space-y-4 pr-1">
-            <PatientHeaderCard patient={data.patient} />
-            <PreVisitAiBriefCard
-              summary={data.aiSummary}
-              onGenerate={handleGenerateAiBrief}
-              isGenerating={generatingBrief}
-            />
-            <SimilarCasesTriageCard
-              similarityData={similarityData}
-              loading={similarityLoading}
-              error={similarityError}
-              onRefresh={loadSimilarity}
-            />
-            {data.questionnaire.answers.length > 0 && (
-              <PreVisitQuestionnairePanel questionnaire={data.questionnaire} />
-            )}
-          </div>
-        )}
+        <div className={`scroll-column min-h-0 flex-1 space-y-4 pr-1 ${activeDashboardTab === 'overview' ? 'block' : 'hidden'}`}>
+          <PatientHeaderCard patient={data.patient} />
+          <PreVisitAiBriefCard
+            summary={data.aiSummary}
+            onGenerate={handleGenerateAiBrief}
+            isGenerating={generatingBrief}
+          />
+          <SimilarCasesTriageCard
+            similarityData={similarityData}
+            loading={similarityLoading}
+            error={similarityError}
+            onRefresh={loadSimilarity}
+          />
+          {data.questionnaire.answers.length > 0 && (
+            <PreVisitQuestionnairePanel questionnaire={data.questionnaire} />
+          )}
+        </div>
 
         {/* Tab 2: Clinical Flowsheet & Labs */}
-        {activeDashboardTab === 'flowsheet' && (
-          <div className="scroll-column min-h-0 flex-1 space-y-4 pr-1">
-            <OcrTriageAlert alerts={data.triageAlerts} onResolve={handleResolveAlert} />
-            <HistoryGrid flowsheet={data.flowsheet} patientId={data.patient.id} onResolve={handleResolveAlert} />
-          </div>
-        )}
+        <div className={`scroll-column min-h-0 flex-1 space-y-4 pr-1 ${activeDashboardTab === 'flowsheet' ? 'block' : 'hidden'}`}>
+          <OcrTriageAlert alerts={data.triageAlerts} onResolve={handleResolveAlert} />
+          <HistoryGrid flowsheet={data.flowsheet} patientId={data.patient.id} onResolve={handleResolveAlert} />
+        </div>
 
-        <SlideOver
-          open={notesOpen}
-          onClose={closeNotes}
-          title="Consultation"
-          subtitle={`Notes, actions and prescription for ${data.patient.name ?? 'this visit'}`}
-        >
-          <PrescriptionUpload prescriptions={data.prescriptions} onUpload={handleUploadPrescription}>
-            <PrescriptionTemplates
-              patient={data.patient}
-              appointment={data.appointment}
-              appointmentId={selectedAppointmentId}
-              reports={data.historyReports}
-              similarityData={similarityData}
-            />
-          </PrescriptionUpload>
-          <ConsultancyNotes
-            notes={data.notes}
-            onSave={handleSaveNotes}
-            flushRef={flushNotesRef}
-            templates={data.consultationTemplates}
-            checkedItems={data.consultationItems}
-            onCheckItem={handleCheckConsultation}
-            onUncheckItem={handleUncheckConsultation}
-            draft={consultDraft.draft}
-            draftBusy={consultDraft.busy}
-            draftError={consultDraft.error}
-            draftStalled={consultDraft.stalled}
-            draftWaiting={consultDraft.waiting}
-            onGenerateDraft={consultDraft.generate}
-            onApproveDraft={consultDraft.approve}
-            onRejectDraft={consultDraft.reject}
-            similarityData={similarityData}
-            similarityLoading={similarityLoading}
-          />
-          <ActionChecklist
-            templates={data.actionTemplates}
-            items={data.actionItems}
-            onAdd={handleAddAction}
-            onRemove={handleRemoveAction}
-          />
-        </SlideOver>
+        {/* Tab 3: Consultant Notes & Prescriptions */}
+        <div className={`scroll-column min-h-0 flex-1 space-y-4 pr-1 ${activeDashboardTab === 'consultation' ? 'block' : 'hidden'}`}>
+          {/* Sub-view Controls: Side-by-Side vs Notes vs Prescriptions */}
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 border border-slate-200/80 px-3.5 py-2 rounded-xl text-xs">
+            <div className="flex items-center gap-2 font-medium text-slate-700">
+              <NotebookPen className="w-4 h-4 text-cypress shrink-0" />
+              <span>Consultation Workspace</span>
+              <span className="text-slate-300 hidden sm:inline">|</span>
+              <span className="text-slate-500 hidden sm:inline">Clinical notes, ambient audio draft & prescription workspace</span>
+            </div>
+            <div className="flex items-center gap-1 bg-white border border-slate-200 p-0.5 rounded-lg shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setConsultationSubView('both')}
+                className={`px-3 py-1 rounded-md font-semibold transition text-xs ${
+                  consultationSubView === 'both' ? 'bg-cypress text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Display Notes & Prescriptions side-by-side"
+              >
+                Side-by-Side
+              </button>
+              <button
+                type="button"
+                onClick={() => setConsultationSubView('notes')}
+                className={`px-3 py-1 rounded-md font-semibold transition text-xs ${
+                  consultationSubView === 'notes' ? 'bg-cypress text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Focus on Doctor's Notes & Ambient Audio"
+              >
+                Notes & Audio
+              </button>
+              <button
+                type="button"
+                onClick={() => setConsultationSubView('rx')}
+                className={`px-3 py-1 rounded-md font-semibold transition text-xs ${
+                  consultationSubView === 'rx' ? 'bg-cypress text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Focus on Prescriptions & Bundles"
+              >
+                Prescriptions
+              </button>
+            </div>
+          </div>
+
+          {/* Grid layout depending on sub-view */}
+          <div className={`grid gap-5 items-start ${
+            consultationSubView === 'both'
+              ? 'grid-cols-1 xl:grid-cols-12'
+              : 'grid-cols-1'
+          }`}>
+            {/* Left Column: Doctor's Clinical Notes, Ambient AI Audio Draft, Checklist & Patient Next Steps */}
+            {(consultationSubView === 'both' || consultationSubView === 'notes') && (
+              <div className={`${consultationSubView === 'both' ? 'xl:col-span-5' : 'max-w-4xl mx-auto w-full'} space-y-4`}>
+                <ConsultancyNotes
+                  notes={data.notes}
+                  onSave={handleSaveNotes}
+                  flushRef={flushNotesRef}
+                  templates={data.consultationTemplates}
+                  checkedItems={data.consultationItems}
+                  onCheckItem={handleCheckConsultation}
+                  onUncheckItem={handleUncheckConsultation}
+                  draft={consultDraft.draft}
+                  draftBusy={consultDraft.busy}
+                  draftError={consultDraft.error}
+                  draftStalled={consultDraft.stalled}
+                  draftWaiting={consultDraft.waiting}
+                  onGenerateDraft={consultDraft.generate}
+                  onApproveDraft={consultDraft.approve}
+                  onRejectDraft={consultDraft.reject}
+                  similarityData={similarityData}
+                  similarityLoading={similarityLoading}
+                />
+                <ActionChecklist
+                  templates={data.actionTemplates}
+                  items={data.actionItems}
+                  onAdd={handleAddAction}
+                  onRemove={handleRemoveAction}
+                />
+              </div>
+            )}
+
+            {/* Right Column: Prescriptions Workspace */}
+            {(consultationSubView === 'both' || consultationSubView === 'rx') && (
+              <div className={`${consultationSubView === 'both' ? 'xl:col-span-7' : 'max-w-5xl mx-auto w-full'}`}>
+                <PrescriptionUpload prescriptions={data.prescriptions} onUpload={handleUploadPrescription}>
+                  <PrescriptionTemplates
+                    patient={data.patient}
+                    appointment={data.appointment}
+                    appointmentId={selectedAppointmentId}
+                    reports={data.historyReports}
+                    similarityData={similarityData}
+                  />
+                </PrescriptionUpload>
+              </div>
+            )}
+          </div>
+        </div>
 
         <Modal isOpen={confirmEnd} onClose={() => !ending && setConfirmEnd(false)} title="End this visit?">
           <p className="text-body-md text-ink-2">
