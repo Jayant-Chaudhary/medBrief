@@ -146,21 +146,14 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
         continue;
       }
       let patientName = String(act.patient || '').trim();
-      const named = clinicianPatients.flatMap((p) => [p.fullName, String(p.fullName || '').split(' ')[0]]).find((name) => name && isGrounded(name, message));
-      if (!patientName) patientName = named || clinicianPatients.find((p) => p.id === context.currentRecord?.patientId)?.fullName || '';
+      if (!patientName) patientName = clinicianPatients.find((p) => p.id === context.currentRecord?.patientId)?.fullName || '';
       if (!patientName) { disambiguation = { type: 'clarify', message: 'Which patient?', options: [] }; break; }
       const match = resolvePatient(patientName, clinicianPatients);
-      const fromCurrent = !named && match.status === 'one' && match.patient.id === context.currentRecord?.patientId;
+      const fromCurrent = match.status === 'one' && match.patient.id === context.currentRecord?.patientId;
       if (!isGrounded(patientName, message) && !fromCurrent) { refused.push({ name: 'patient record', reason: REASONS.notInMessage }); continue; }
-      let kind = String(act.kind || act.ref || act.page || '').trim().toLowerCase();
-      if (!kind) {
-        if (/\b(?:maternity|antenatal)\b/i.test(message)) kind = 'maternity';
-        else if (/\b(?:new\s+appointment|book|invite)\b/i.test(message)) kind = 'new_appointment';
-        else if (/\b(?:next\s+visit|upcoming\s+visit)\b/i.test(message)) kind = 'next_visit';
-        else if (/\b(?:last\s+visit|previous\s+visit|past\s+visit|visit|record)\b/i.test(message)) kind = 'last_visit';
-      }
+      let kind = String(act.kind || act.ref || '').trim().toLowerCase();
       if (['maternity_card', 'antenatal', 'card'].includes(kind)) kind = 'maternity';
-      else if (['visit', 'previous_visit', 'past_visit', 'record'].includes(kind)) kind = 'last_visit';
+      else if (['visit', 'previous_visit', 'past_visit'].includes(kind)) kind = 'last_visit';
       else if (['upcoming_visit'].includes(kind)) kind = 'next_visit';
       else if (['appointment', 'book'].includes(kind)) kind = 'new_appointment';
       if (!['last_visit', 'next_visit', 'maternity', 'new_appointment'].includes(kind)) { refused.push({ name: 'record', reason: REASONS.badPatientRecord }); continue; }
@@ -187,11 +180,7 @@ function validateAgentActions(rawActions = [], page = {}, message = '', clinicia
 
     // 3. Open row: open_row(patient)
     if (op === 'open_row') {
-      let patientName = String(act.patient || act.name || act.value || act.text || '').trim();
-      if (!patientName) {
-        const named = clinicianPatients.flatMap((p) => [p.fullName, String(p.fullName || '').split(' ')[0]]).find((name) => name && isGrounded(name, message));
-        if (named) patientName = named;
-      }
+      let patientName = String(act.patient || act.name || act.value || '').trim();
       if (!patientName || !isGrounded(patientName, message)) {
         refused.push({ name: 'patient row', reason: REASONS.notInMessage }); continue;
       }

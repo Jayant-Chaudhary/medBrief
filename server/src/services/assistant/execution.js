@@ -16,17 +16,17 @@ function matchingItem(checklist, action) {
     }
     if (action.op === 'open_record') {
       const labels = {
-        last_visit: ['last visit', 'previous visit', 'past visit', 'record', 'visit'],
-        next_visit: ['next visit', 'upcoming visit', 'visit'],
-        maternity: ['maternity', 'antenatal', 'card'],
-        new_appointment: ['appointment', 'book', 'invite'],
+        last_visit: ['last visit', 'previous visit', 'past visit'],
+        next_visit: ['next visit', 'upcoming visit'],
+        maternity: ['maternity', 'antenatal'],
+        new_appointment: ['appointment', 'book'],
       };
       return Boolean(action.recordId) && (labels[action.kind] || []).some(s => text.includes(s)) && !/\b(write|fill|weight|bp)\b/.test(text);
     }
     if (action.op === 'open_row') {
       const patWords = words(action.patient || action.name || action.value);
-      const hasPat = patWords.length && patWords.some(w => text.includes(w));
-      return /\b(open|show|view|find|visit|patient|record)\b/.test(text) && (hasPat || /\b(visit|patient|record)\b/.test(text)) && !/\b(write|type|append|add|tick|check)\b/.test(text);
+      const hasPat = patWords.length && patWords.every(w => text.includes(w));
+      return hasPat && /\b(open|show|view|find|search|visit|patient)\b/.test(text) && !/\b(write|type|append|add|tick|check|notes|prescription)\b/.test(text);
     }
     const target = words(action.name || action.label || action.control || action.id || action.ref);
     const hasTarget = target.length && target.every(w => text.includes(w));

@@ -720,7 +720,8 @@ async function handleStep({
 
 
 
-  settings = { ...config, ...settings };
+  const explicitAgentLoop = 'agentLoop' in settings ? settings.agentLoop : (settings === config || !Object.keys(settings).length ? config.agentLoop : false);
+  settings = { ...config, ...settings, agentLoop: explicitAgentLoop };
   const canAgent = role === 'clinician' && settings.agentLoop === true;
   const saved = canAgent && mode === 'agent' ? continuation.read(continuationToken, userId, message) : null;
   if (mode && (!canAgent || mode !== 'agent' || !saved || saved.round !== round)) {
@@ -830,13 +831,7 @@ async function handleStep({
   function finish(reply) {
     const active = reply.checklist || verifiedChecklist;
     const pageActions = (reply.steps || []).flatMap(step => step.page?.actions || []);
-    const presses = (reply.steps || []).map(step => step.press).filter(Boolean);
-    const fills = (reply.steps || []).map(step => step.fill).filter(Boolean);
-    const patientSpecific = ['/clinician', '/clinician/maternity'].includes(currentPath) && (
-      pageActions.some(a => /notes|prescription|medicine|patient instructions|next steps|bp check|iron advice|allergies/i.test((a.name || '') + ' ' + (a.section || ''))) ||
-      presses.some(p => ['open_notes', 'save_notes', 'open_audio_consult', 'save_visit', 'save_lab', 'save_scan', 'save_vaccine'].includes(p.id)) ||
-      fills.some(f => f.page === 'maternity')
-    );
+    const patientSpecific = ['/clinician', '/clinician/maternity'].includes(currentPath) && pageActions.some(a => /notes|prescription|medicine|patient instructions|next steps|bp check/i.test((a.name || '') + ' ' + (a.section || '')));
     const groundingMsg = effectiveGroundingMessage(followUp?.expandedMessage || message, cleanMemory);
     const namedPatient = Boolean(followUp?.patient) || patients.some(p => [p.fullName, String(p.fullName || '').split(' ')[0]].some(name => name && require('./agent/actions').isGrounded(name, groundingMsg)));
     if (patientSpecific && !current && !namedPatient) return { type: 'clarify', message: 'Which patient?', options: [], checklist: active, source: reply.source };
