@@ -14,6 +14,7 @@
  */
 
 const { mentions, norm } = require('./resolvers/values');
+const { CONTROLS } = require('./controls.registry');
 
 // Labels that are never pressed. Deletes stay manual by decision; recording and
 // consent must be the doctor's own act; browsers do not let code choose files.
@@ -74,7 +75,11 @@ function classify(element, op) {
     return element.effect === 'save' || element.effect === 'send' ? 'confirm' : 'free';
   }
   if (element.effect === 'free') return 'free';
-  if (element.effect === 'save' || element.effect === 'send') return 'confirm';
+  // A declared saving button owns its effect. Generic opening controls may
+  // inherit a saving region's mark without committing anything themselves.
+  const declaredSave = Object.values(CONTROLS).some(form => form.buttons.some(button =>
+    ['save', 'send'].includes(button.effect) && [button.label, ...(button.aliases || [])].some(label => norm(label) === norm(element.name))));
+  if (declaredSave) return 'confirm';
   // Opening, showing and filtering stay harmless even inside a region that saves.
   if ((FREE_KINDS.has(element.kind) || FREE.test(element.name)) && !COMMITS.test(element.name)) return 'free';
   return 'confirm';

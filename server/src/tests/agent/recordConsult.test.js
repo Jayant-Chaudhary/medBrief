@@ -3,6 +3,7 @@ const assistant = require('../../services/assistant/assistant.service');
 const { validateAgentActions } = require('../../services/assistant/agent/actions');
 const { findButton } = require('../../services/assistant/controls.registry');
 const config = require('../../config/assistant.config');
+const FakeProvider = require('../../services/assistant/llm/fakeProvider');
 
 describe('Record Consultation & Safety Guards (T4 - Server)', () => {
   const settings = { ...config, agentLoop: false };
@@ -40,6 +41,8 @@ describe('Record Consultation & Safety Guards (T4 - Server)', () => {
       message: phrase,
       role: 'clinician',
       userId: 'dr-1',
+      provider: new FakeProvider(new Error('The recording-window rule must not call a provider')),
+      directory: async () => [],
       currentPath: '/clinician',
       page: {
         title: 'Clinician Dashboard',
