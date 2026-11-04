@@ -13,6 +13,7 @@ import { fillDraftFromTemplate } from './templateSearchModel.js';
 import { InlineGhostField } from './InlineGhostField.jsx';
 import { medicineCompletion } from './inlineGhostModel.js';
 import './prescriptions.css';
+import { Spinner } from '../common/Spinner.jsx';
 
 function Dialog({ title, subtitle, onClose, children }) {
   const ref = useRef(null);
@@ -1267,8 +1268,8 @@ function Workspace({ ownerId, patient, appointment, appointmentId, reports }) {
     saveDraft(nextDraft);
     setMessage(`Added ${bundle.title} (${bundle.badge}) to prescription.`);
   }
-  if (!dataReady) return <section className="rx-workspace rx-inline" aria-label="Prescription suggestions and draft">
-    {loadError ? <div className="rx-note" role="alert"><p>{loadError}</p><button type="button" className="rx-button" onClick={() => setReloadToken(value => value + 1)}>Retry loading</button></div> : <p className="rx-muted">Loading saved prescription data…</p>}
+  if (!dataReady) return <section className="rx-workspace rx-inline" aria-label="Prescription suggestions and draft" aria-busy="true">
+    {loadError ? <div className="rx-note" role="alert"><p>{loadError}</p><button type="button" className="rx-button" onClick={() => setReloadToken(value => value + 1)}>Retry loading</button></div> : <p className="rx-muted flex items-center gap-2"><Spinner size={16} className="text-indigo-600" />Loading saved prescription data…</p>}
   </section>;
   return <section className="rx-workspace rx-inline" aria-label="Prescription suggestions and draft">
     <div className="rx-section-top">

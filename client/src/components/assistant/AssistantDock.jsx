@@ -35,7 +35,7 @@ function waitForSettle(quietMs = 350, timeoutMs = 4000) {
 
     const isLoading = () => {
       if (typeof document === 'undefined') return false;
-      const spinners = document.querySelectorAll('[role="status"][aria-label="Loading"], .animate-spin');
+      const spinners = document.querySelectorAll('[role="status"][aria-label="Loading"], .animate-spin, [aria-busy="true"]');
       return spinners.length > 0;
     };
 
@@ -273,7 +273,7 @@ export default function AssistantDock({ enabled = ENABLED }) {
       inputRef.current?.focus();
       return;
     }
-    await waitForSettle(300, 3000);
+    await waitForSettle(350, 4000);
     if (stopped.current.has(requestId)) return;
     const finishedPart = reply.part !== undefined && reply.partDone;
     await runRound({
