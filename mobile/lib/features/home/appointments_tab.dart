@@ -24,6 +24,7 @@ class AppointmentsTab extends StatefulWidget {
     required this.controller,
     required this.onNavigate,
     this.onCheckin,
+    this.onPeriodicCheckin,
     this.onViewSummary,
     this.onSignOut,
   });
@@ -31,6 +32,7 @@ class AppointmentsTab extends StatefulWidget {
   final HomeController controller;
   final void Function(String route) onNavigate;
   final void Function(Appointment appointment)? onCheckin;
+  final VoidCallback? onPeriodicCheckin;
   final void Function(Appointment appointment)? onViewSummary;
   final VoidCallback? onSignOut;
 

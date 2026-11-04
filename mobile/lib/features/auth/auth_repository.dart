@@ -8,6 +8,8 @@ class PatientProfile {
     required this.role,
     required this.fullName,
     this.phone,
+    this.dueDate,
+    this.emergencyContactPhone,
   });
 
   factory PatientProfile.fromJson(Map<String, dynamic> json) => PatientProfile(
@@ -15,12 +17,16 @@ class PatientProfile {
     role: json['role'] as String,
     fullName: json['fullName'] as String? ?? '',
     phone: json['phone'] as String?,
+    dueDate: json['dueDate'] as String? ?? json['due_date'] as String?,
+    emergencyContactPhone: json['emergencyContactPhone'] as String? ?? json['emergency_contact_phone'] as String?,
   );
 
   final String id;
   final String role;
   final String fullName;
   final String? phone;
+  final String? dueDate;
+  final String? emergencyContactPhone;
   bool get needsOnboarding => fullName.trim().isEmpty;
 }
 

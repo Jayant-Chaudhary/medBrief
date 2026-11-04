@@ -13,7 +13,7 @@ class ConsultAudioConfig {
       defaultValue: 25000,
     ),
     this.pauseMs = const int.fromEnvironment('PAUSE_MS', defaultValue: 500),
-    this._silenceDbfs = -45.0,
+    double silenceDbfs = -45.0,
     this.sampleRate = const int.fromEnvironment(
       'AUDIO_SAMPLE_RATE',
       defaultValue: 16000,
@@ -46,7 +46,7 @@ class ConsultAudioConfig {
       'AUDIO_CONSENT_VERSION',
       defaultValue: 'v1.0',
     ),
-    this._retryBackoffMs = const [1000, 2000, 4000, 8000, 30000],
+    List<int> retryBackoffMs = const [1000, 2000, 4000, 8000, 30000],
     this.httpTimeoutMs = const int.fromEnvironment(
       'AUDIO_HTTP_TIMEOUT_MS',
       defaultValue: 30000,
@@ -63,7 +63,8 @@ class ConsultAudioConfig {
       'AUDIO_LEVEL_CHECK_MS',
       defaultValue: 2000,
     ),
-  });
+  }) : _silenceDbfs = silenceDbfs,
+       _retryBackoffMs = retryBackoffMs;
 
   /// Minimum audio chunk length (15s).
   final int chunkMinMs;

@@ -85,7 +85,7 @@ export async function fetchPatients() {
  * components consume.
  */
 export async function fetchPatientDashboard(patientId, appointmentId) {
-  const [appointment, responses, reports, postVisit, consultationTemplates, actionTemplates] = await Promise.all([
+  const [appointment, responses, reports, postVisit, consultationTemplates, actionTemplates, aiSummary] = await Promise.all([
     request(`/api/appointments/${appointmentId}`),
     request(`/api/questionnaire/responses/${appointmentId}`),
     // Only what the patient chose to share with this appointment.
@@ -93,6 +93,7 @@ export async function fetchPatientDashboard(patientId, appointmentId) {
     request(`/api/post-visit/${appointmentId}`),
     getTemplates('consultation'),
     getTemplates('action'),
+    request(`/api/checkin/summary/${appointmentId}`).catch(() => null),
   ]);
 
   // Every report shared with any of this doctor's visits, for the history
@@ -138,6 +139,7 @@ export async function fetchPatientDashboard(patientId, appointmentId) {
     })),
     actionTemplates: actionTemplates.map((t) => t.label),
     prescriptions: postVisit?.prescriptions ?? [],
+    aiSummary: aiSummary || null,
     notifications: [],
   };
 }
@@ -351,4 +353,10 @@ export async function deleteMaternityRow(patientId, section, rowId) {
 /** Pull confirmed values from newly shared lab reports onto the card; returns the investigations list. */
 export async function importMaternityReports(patientId) {
   return request(`/api/maternity/${patientId}/import-reports`, { method: 'POST' });
+}
+
+
+/** Generate or re-synthesize the AI Pre-Visit Clinical Brief */
+export async function generatePreVisitSummary(appointmentId) {
+  return request(`/api/checkin/summary/${appointmentId}/generate`, { method: 'POST' });
 }

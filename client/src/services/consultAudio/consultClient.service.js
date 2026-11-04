@@ -8,9 +8,9 @@
  */
 
 import { io } from 'socket.io-client';
-import { request } from '../apiClient.js';
+import { request, getApiBaseUrl } from '../apiClient.js';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+const BASE_URL = getApiBaseUrl();
 
 /**
  * Creates a consultation audio session for an appointment.

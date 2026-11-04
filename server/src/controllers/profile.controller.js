@@ -23,6 +23,7 @@ function shapeProfile(profile, details, role) {
   return {
     ...base,
     dateOfBirth: details?.date_of_birth ?? null,
+    dueDate: details?.due_date ?? null,
     bloodType: details?.blood_type ?? null,
     address: details?.address ?? null,
     emergencyContactName: details?.emergency_contact_name ?? null,
@@ -85,6 +86,7 @@ async function updateProfile(req, res, next) {
           }
         : {
             dateOfBirth: 'date_of_birth',
+            dueDate: 'due_date',
             bloodType: 'blood_type',
             address: 'address',
             emergencyContactName: 'emergency_contact_name',

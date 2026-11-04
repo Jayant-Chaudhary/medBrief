@@ -1,213 +1,285 @@
+import 'package:health_on_patient/features/auth/auth_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:health_on_patient/features/checkin/checkin_controller.dart';
-import 'package:health_on_patient/features/checkin/checkin_page.dart';
+import 'package:health_on_patient/features/checkin/ad_hoc_concern_sheet.dart';
 import 'package:health_on_patient/features/checkin/checkin_repository.dart';
+import 'package:health_on_patient/features/checkin/guided_checkin_page.dart';
+import 'package:health_on_patient/features/checkin/prenatal_questions.dart';
+import 'package:health_on_patient/features/checkin/quick_pulse_sheet.dart';
 import 'package:health_on_patient/features/home/appointment_repository.dart';
+import 'package:health_on_patient/features/home/home_controller.dart';
+import 'package:health_on_patient/features/home/home_tab.dart';
 
-class FakeCheckinRepository extends CheckinRepository {
-  FakeCheckinRepository({
-    this.questions,
-    this.checklist,
-    this.previousResponses,
-  });
-
-  List<QuestionTemplate>? questions;
-  List<ChecklistItem>? checklist;
-  List<Map<String, dynamic>>? previousResponses;
-
-  final submittedResponses = <Map<String, dynamic>>[];
-  final toggledItems = <Map<String, dynamic>>[];
-  bool checkinCompleted = false;
-  bool sharedReports = false;
+class FakeCheckinRepo extends CheckinRepository {
+  List<CheckinAnswerPayload>? lastSubmittedAnswers;
+  String? lastSessionType;
+  int? lastGestationalWeek;
+  String? lastAppointmentId;
+  String? lastAdHocDescription;
+  int? lastComfortRating;
 
   @override
-  Future<List<QuestionTemplate>> getQuestions(String appointmentId) async {
-    return questions ??
-        [
-          const QuestionTemplate(
-            id: 'q-1',
-            questionText: 'Have you experienced any severe headaches?',
-            responseType: 'yes_no',
-            isRedFlagTrigger: true,
-            sortOrder: 1,
-          ),
-          const QuestionTemplate(
-            id: 'q-2',
-            questionText: 'Any other symptoms you would like the doctor to know about?',
-            responseType: 'text',
-            isRedFlagTrigger: false,
-            sortOrder: 2,
-          ),
-        ];
+  Future<CheckinSessionResult> submitPeriodicCheckin({
+    String? appointmentId,
+    required String sessionType,
+    int? gestationalWeek,
+    required List<CheckinAnswerPayload> answers,
+  }) async {
+    lastAppointmentId = appointmentId;
+    lastSessionType = sessionType;
+    lastGestationalWeek = gestationalWeek;
+    lastSubmittedAnswers = answers;
+    return CheckinSessionResult(
+      id: 'session-fake-123',
+      status: answers.any((a) => a.isRedFlag) ? 'flagged_urgent' : 'completed',
+      hasRedFlag: answers.any((a) => a.isRedFlag),
+      appointmentId: appointmentId,
+      sessionType: sessionType,
+      gestationalWeek: gestationalWeek,
+    );
   }
 
   @override
-  Future<List<Map<String, dynamic>>> getPreviousResponses(String appointmentId) async {
-    return previousResponses ?? [];
+  Future<CheckinSessionResult> submitAdHocConcern({
+    required String description,
+    String category = 'concern',
+    String severity = 'mild',
+    int? gestationalWeek,
+  }) async {
+    lastAdHocDescription = description;
+    return CheckinSessionResult(
+      id: 'session-fake-adhoc',
+      status: severity == 'severe' ? 'flagged_urgent' : 'completed',
+      hasRedFlag: severity == 'severe',
+      sessionType: 'ad_hoc_concern',
+    );
   }
 
   @override
-  Future<void> saveResponses(
-    String appointmentId,
-    List<QuestionResponseAnswer> responses,
-  ) async {
-    submittedResponses.addAll(responses.map((r) => r.toJson()));
+  Future<CheckinSessionResult> submitQuickPulse({
+    required int comfortRating,
+    List<String> discomforts = const [],
+    String? notes,
+    int? gestationalWeek,
+  }) async {
+    lastComfortRating = comfortRating;
+    return const CheckinSessionResult(
+      id: 'session-fake-pulse',
+      status: 'completed',
+      hasRedFlag: false,
+      sessionType: 'quick_pulse',
+    );
   }
 
   @override
-  Future<List<ChecklistItem>> getChecklist(String appointmentId) async {
-    return checklist ??
-        [
-          const ChecklistItem(
-            id: 'item-1',
-            label: 'Bring your physical ID',
-            source: 'static',
-            isCompleted: false,
-          ),
-          const ChecklistItem(
-            id: 'item-2',
-            label: 'Bring previous ultrasound scan',
-            source: 'ai_generated',
-            isCompleted: true,
-          ),
-        ];
+  Future<CheckinCadenceStatus> getCheckinStatus() async {
+    return const CheckinCadenceStatus(
+      nextDueType: 'routine_weekly',
+      isWeeklyDue: true,
+      isQuickPulseDue: true,
+      totalCompleted: 2,
+    );
   }
+}
+
+class FakeAppointmentRepo extends AppointmentRepository {
+  @override
+  Future<AppointmentSet> getAppointments() async => AppointmentSet.empty();
 
   @override
-  Future<void> toggleChecklistItem(String itemId, bool isCompleted) async {
-    toggledItems.add({'id': itemId, 'isCompleted': isCompleted});
-  }
-
-  @override
-  Future<void> completeCheckin(String appointmentId) async {
-    checkinCompleted = true;
-  }
-
-  @override
-  Future<void> shareAllReports(String appointmentId) async {
-    sharedReports = true;
-  }
+  Future<LatestVitals> getLatestVitals() async => LatestVitals();
 }
 
 void main() {
-  final testAppointment = Appointment(
-    id: 'appt-1',
-    status: 'active',
-    scheduledAt: DateTime.now().add(const Duration(days: 2)),
-    clinicianName: 'Dr. Jane Smith',
-  );
+  group('Prenatal Questions Bank', () {
+    test('filters questions based on gestational age', () {
+      final t1Questions = PrenatalQuestionsBank.forGestationalWeek(10);
+      expect(t1Questions.any((q) => q.key == 'fetal_movement'), isFalse);
 
-  test('CheckinController manages symptoms validation and submission lifecycle', () async {
-    final repo = FakeCheckinRepository();
-    final controller = CheckinController(repo: repo, appointmentId: 'appt-1');
-
-    await controller.load();
-    expect(controller.stage, CheckinStage.ready);
-    expect(controller.step, CheckinStep.symptoms);
-    expect(controller.questions.length, 2);
-    expect(controller.checklist.length, 2);
-    expect(controller.allSymptomsAnswered, isFalse);
-
-    // Answer Q1 with 'yes' and notes
-    controller.setYesNo('q-1', 'yes');
-    controller.setNotes('q-1', 'Started this morning');
-    expect(controller.allSymptomsAnswered, isFalse); // Q2 still empty
-
-    // Answer Q2 with text
-    controller.setText('q-2', 'Mild nausea after meals');
-    expect(controller.allSymptomsAnswered, isTrue);
-
-    // Save and advance to checklist
-    await controller.saveSymptomsAndContinue();
-    expect(controller.step, CheckinStep.checklist);
-    expect(repo.submittedResponses.length, 2);
-    expect(repo.submittedResponses[0]['answer'], isTrue);
-    expect(repo.submittedResponses[0]['detail'], 'Started this morning');
-    expect(repo.submittedResponses[1]['text'], 'Mild nausea after meals');
-
-    // Toggle checklist item
-    final item = controller.checklist[0];
-    await controller.toggleChecklistItem(item);
-    expect(controller.checklist[0].isCompleted, isTrue);
-    expect(repo.toggledItems.first['isCompleted'], isTrue);
-
-    // Complete check-in
-    await controller.completeCheckin();
-    expect(controller.step, CheckinStep.done);
-    expect(repo.checkinCompleted, isTrue);
+      final t3Questions = PrenatalQuestionsBank.forGestationalWeek(28);
+      expect(t3Questions.any((q) => q.key == 'fetal_movement'), isTrue);
+      expect(t3Questions.any((q) => q.key == 'sudden_swelling'), isTrue);
+    });
   });
 
-  testWidgets('CheckinPage renders steps and handles complete flow', (tester) async {
-    tester.view.physicalSize = const Size(430, 1400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  group('GuidedCheckinPage Widget', () {
+    late FakeCheckinRepo fakeRepo;
 
-    final repo = FakeCheckinRepository();
-    bool finished = false;
+    setUp(() {
+      fakeRepo = FakeCheckinRepo();
+    });
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: CheckinPage(
-            appointment: testAppointment,
-            repository: repo,
-            onFinished: () => finished = true,
+    testWidgets('renders check-in title and progress', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: GuidedCheckinPage(
+            gestationalWeek: 28,
+            repository: fakeRepo,
+            onCompleted: () {},
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    // Step 1: Symptoms view
-    expect(find.text('How are you feeling today?'), findsOneWidget);
-    expect(find.text('Have you experienced any severe headaches?'), findsOneWidget);
-    expect(find.text('Any other symptoms you would like the doctor to know about?'), findsOneWidget);
+      expect(find.text('Week 28 Check-In'), findsOneWidget);
+      expect(find.textContaining('Question 1 of'), findsOneWidget);
+    });
 
-    // Initially continue button is disabled
-    final continueButton = find.widgetWithText(FilledButton, 'Please answer all questions');
-    expect(continueButton, findsOneWidget);
+    testWidgets('triggers emergency intercept alert on red-flag answer',
+        (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: GuidedCheckinPage(
+            gestationalWeek: 28,
+            emergencyContactPhone: '+1 555-0199',
+            repository: fakeRepo,
+            onCompleted: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    // Tap "Yes" on Q1 -> reveals detail input
-    await tester.tap(find.text('Yes'));
-    await tester.pumpAndSettle();
-    expect(find.text('Please provide a few details:'), findsOneWidget);
-    await tester.enterText(find.byType(TextFormField).first, 'Pain behind eyes');
+      final noButton = find.widgetWithText(InkWell, 'No');
+      expect(noButton, findsOneWidget);
+      await tester.tap(noButton);
+      await tester.pumpAndSettle();
 
-    // Enter text in Q2
-    await tester.enterText(find.byType(TextFormField).last, 'Mild fatigue');
-    await tester.pumpAndSettle();
+      expect(find.text('Important Clinical Alert'), findsOneWidget);
+      expect(find.textContaining('+1 555-0199'), findsOneWidget);
 
-    // Now button should be enabled with "Continue to Checklist"
-    expect(find.text('Continue to Checklist'), findsOneWidget);
-    await tester.tap(find.text('Continue to Checklist'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Continue Check-in'));
+      await tester.pumpAndSettle();
 
-    // Step 2: Checklist view
-    expect(find.text('Pre-Visit Checklist'), findsOneWidget);
-    expect(find.text('Bring your physical ID'), findsOneWidget);
-    expect(find.text('Bring previous ultrasound scan'), findsOneWidget);
-    expect(find.text('Report follow-up'), findsOneWidget);
+      expect(find.text('Important Clinical Alert'), findsNothing);
+    });
 
-    // Toggle checklist item
-    await tester.tap(find.text('Bring your physical ID'));
-    await tester.pumpAndSettle();
-    expect(repo.toggledItems.isNotEmpty, isTrue);
+    testWidgets('allows progressing and completing check-in', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: GuidedCheckinPage(
+            gestationalWeek: 12,
+            repository: fakeRepo,
+            onCompleted: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    // Tap Complete check-in
-    await tester.tap(find.text('Complete check-in'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(InkWell, 'No'));
+      await tester.pumpAndSettle();
 
-    // Step 3: Done view
-    expect(find.text('You’re all set!'), findsOneWidget);
-    expect(find.text('What happens next?'), findsOneWidget);
-    expect(find.text('Back to Dashboard'), findsOneWidget);
+      await tester.tap(find.text('Next Question'));
+      await tester.pumpAndSettle();
 
-    // Tap Back to Dashboard
-    await tester.tap(find.text('Back to Dashboard'));
-    await tester.pumpAndSettle();
-    expect(finished, isTrue);
+      expect(find.textContaining('Question 2 of'), findsOneWidget);
+    });
+  });
+
+  group('Ad-Hoc Concern Sheet', () {
+    testWidgets('submits spontaneous patient concern', (tester) async {
+      final fakeRepo = FakeCheckinRepo();
+      bool submitted = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AdHocConcernSheet(
+              repository: fakeRepo,
+              gestationalWeek: 24,
+              onSubmitted: () => submitted = true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Log a Concern Anytime'), findsOneWidget);
+
+      await tester.enterText(
+        find.byType(TextField),
+        'Felt stomach aches regularly after lunch',
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Save for Doctor'));
+      await tester.pumpAndSettle();
+
+      expect(fakeRepo.lastAdHocDescription, contains('Felt stomach aches'));
+      expect(submitted, isTrue);
+    });
+  });
+
+  group('Quick Pulse Sheet', () {
+    testWidgets('logs 30-second comfort pulse', (tester) async {
+      final fakeRepo = FakeCheckinRepo();
+      bool submitted = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: QuickPulseSheet(
+              repository: fakeRepo,
+              gestationalWeek: 24,
+              onSubmitted: () => submitted = true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Quick 30s Pulse Check'), findsOneWidget);
+
+      await tester.tap(find.text("Save Today's Pulse (Done)"));
+      await tester.pumpAndSettle();
+
+      expect(fakeRepo.lastComfortRating, 4);
+      expect(submitted, isTrue);
+    });
+  });
+
+  group('HomeTab Periodic Check-In Card', () {
+    testWidgets('renders Dynamic Cadence Card on dashboard', (tester) async {
+      final apptRepo = FakeAppointmentRepo();
+      final checkinRepo = FakeCheckinRepo();
+      final controller = HomeController(
+        repo: apptRepo,
+        checkinRepo: checkinRepo,
+        profile: const PatientProfile(id: 'p-1', role: 'patient', fullName: 'Maya Sharma'),
+      );
+      await controller.load();
+      bool startedWeekly = false;
+      bool startedConcern = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: HomeTab(
+              controller: controller,
+              onNavigate: (_) {},
+              onPeriodicCheckin: () {
+                startedWeekly = true;
+              },
+              onLogConcern: () {
+                startedConcern = true;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Weekly Check-In Due'), findsOneWidget);
+      expect(
+        find.text('Comprehensive milestone review for doctor (2 mins)'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Start (2m)'));
+      expect(startedWeekly, isTrue);
+
+      expect(find.text('Have a concern right now?'), findsOneWidget);
+      await tester.tap(find.text('Log Concern'));
+      expect(startedConcern, isTrue);
+    });
   });
 }
-

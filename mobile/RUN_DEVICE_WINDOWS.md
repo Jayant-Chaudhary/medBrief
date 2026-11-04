@@ -1,4 +1,4 @@
-# Windows Startup Guide: Running the App on Physical Phone via USB
+re# Windows Startup Guide: Running the App on Physical Phone via USB
 
 This guide contains the exact Windows PowerShell commands needed to start all backend services and run the mobile Flutter app on a real Android phone via USB debugging.
 
@@ -15,7 +15,7 @@ Open `mobile/config.json` and verify `API_BASE_URL` points to `127.0.0.1:4000`:
   "API_BASE_URL": "http://127.0.0.1:4000"
 }
 ```
-*(Note: Use `http://10.0.2.2:4000` only if testing on the Android Emulator, and `http://127.0.0.1:4000` for physical phone USB debugging).*
+*(Note: For local Wi-Fi hosting without USB cable/adb, set `API_BASE_URL` to your computer's local Wi-Fi IP e.g. `http://192.168.31.82:4000`. Use `http://10.0.2.2:4000` only if testing on the Android Emulator, and `http://127.0.0.1:4000` for physical phone USB debugging with adb reverse).*
 
 ---
 

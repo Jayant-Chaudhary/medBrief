@@ -1013,7 +1013,18 @@ export function MaternityCardPage() {
                               type="date"
                               required
                               value={v.date || ''}
-                              onChange={e => setPendingValues('visits', { date: e.target.value })}
+                              onChange={e => {
+                                const newDate = e.target.value;
+                                const updates = { date: newDate };
+                                if (state.patient?.lmp && newDate) {
+                                  const ga = gestation(state.patient.lmp, newDate);
+                                  if (ga) {
+                                    updates.weeks = String(ga.weeks);
+                                    updates.days = String(ga.days);
+                                  }
+                                }
+                                setPendingValues('visits', updates);
+                              }}
                             />
                           </label>
                           <label className="field span-3">
@@ -1034,6 +1045,41 @@ export function MaternityCardPage() {
                               placeholder="2"
                             />
                           </label>
+                          {state.patient?.lmp && (
+                            <div className="field span-12" style={{ marginTop: '-4px', marginBottom: '6px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: '#64748b' }}>
+                                <span>LMP: <strong style={{ color: '#334155' }}>{fmtDate(state.patient.lmp)}</strong></span>
+                                <button
+                                  type="button"
+                                  style={{
+                                    border: '1px solid #c7d2fe',
+                                    borderRadius: '4px',
+                                    padding: '2px 8px',
+                                    background: '#eef2ff',
+                                    color: '#4338ca',
+                                    fontWeight: 600,
+                                    fontSize: '11px',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}
+                                  onClick={() => {
+                                    const targetDate = v.date || todayISO();
+                                    const ga = gestation(state.patient.lmp, targetDate);
+                                    if (ga) {
+                                      setPendingValues('visits', { date: targetDate, weeks: String(ga.weeks), days: String(ga.days) });
+                                      showToast(`Calculated: ${ga.weeks}w ${ga.days}d for ${fmtDate(targetDate)}`);
+                                    } else {
+                                      showToast('Could not calculate GA: visit date precedes LMP');
+                                    }
+                                  }}
+                                >
+                                  ⚡ Auto-calc GA from LMP
+                                </button>
+                              </div>
+                            </div>
+                          )}
                           <label className="field span-6">
                             <span className="field-label">Weight (kg)</span>
                             <input
@@ -2035,6 +2081,12 @@ export function MaternityCardPage() {
                       className="block-edit no-print"
                       onClick={() => {
                         cancelEditRow('visits');
+                        const today = todayISO();
+                        const ga = state.patient?.lmp ? gestation(state.patient.lmp, today) : null;
+                        setPendingValues('visits', {
+                          date: today,
+                          ...(ga ? { weeks: String(ga.weeks), days: String(ga.days) } : {}),
+                        });
                         jumpToSection('section-visits', true);
                       }}
                     >
@@ -2088,7 +2140,7 @@ export function MaternityCardPage() {
                             <td>{row.weight ? `${row.weight} kg` : ''}</td>
                             <td>
                               {(row.systolic || row.diastolic) && (
-                                <span className={bpHigh(row) ? 'flag' : ''}>
+                                <span className={bpHigh(row) ? 'flag-danger' : ''} title={bpHigh(row) ? 'High blood pressure (≥140/90 mmHg)' : undefined}>
                                   {row.systolic || '–'}/{row.diastolic || '–'}
                                 </span>
                               )}
@@ -2100,26 +2152,26 @@ export function MaternityCardPage() {
                             </td>
                             <td>
                               {row.fhr && (
-                                <span className={fhrAbnormal(row.fhr) ? 'flag' : ''}>
+                                <span className={fhrAbnormal(row.fhr) ? 'flag-warning' : ''} title={fhrAbnormal(row.fhr) ? 'Fetal heart rate outside 110-160 bpm range' : undefined}>
                                   {row.fhr} bpm
                                 </span>
                               )}
                             </td>
                             <td>
                               {row.albumin && (
-                                <span className={`line ${urinePositive(row.albumin) ? 'flag' : ''}`}>
+                                <span className={`line ${urinePositive(row.albumin) ? 'flag-warning' : ''}`} title={urinePositive(row.albumin) ? 'Albumin / proteinuria detected' : undefined}>
                                   Alb: {row.albumin}
                                 </span>
                               )}
                               {row.sugar && (
-                                <span className={`sub ${urinePositive(row.sugar) ? 'flag' : ''}`}>
+                                <span className={`sub ${urinePositive(row.sugar) ? 'flag-warning' : ''}`} title={urinePositive(row.sugar) ? 'Glycosuria detected' : undefined}>
                                   Sug: {row.sugar}
                                 </span>
                               )}
                             </td>
                             <td>
                               {row.hb && (
-                                <span className={`line ${hbLow(row.hb) ? 'flag' : ''}`}>
+                                <span className={`line ${hbLow(row.hb) ? (Number(row.hb) < 10 ? 'flag-danger' : 'flag-warning') : ''}`} title={hbLow(row.hb) ? `Hemoglobin below 11 g/dL (${row.hb})` : undefined}>
                                   Hb {row.hb}
                                 </span>
                               )}
@@ -2136,6 +2188,12 @@ export function MaternityCardPage() {
                             className="blank"
                             onClick={() => {
                               cancelEditRow('visits');
+                              const today = todayISO();
+                              const ga = state.patient?.lmp ? gestation(state.patient.lmp, today) : null;
+                              setPendingValues('visits', {
+                                date: today,
+                                ...(ga ? { weeks: String(ga.weeks), days: String(ga.days) } : {}),
+                              });
                               jumpToSection('section-visits', true);
                             }}
                           >

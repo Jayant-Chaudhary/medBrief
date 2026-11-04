@@ -57,7 +57,7 @@ class PendingAudioStore {
           final chunk = PendingChunk.fromJson(
             Map<String, dynamic>.from(item as Map),
           );
-          if (chunk.seq < 0 || chunk.filePath != _chunkPath(chunk.seq)) {
+          if (chunk.seq < 0 || _normalizePath(chunk.filePath) != _normalizePath(_chunkPath(chunk.seq))) {
             throw const FormatException('ERR_AUDIO_MANIFEST');
           }
           _manifest.add(chunk);
@@ -68,6 +68,8 @@ class PendingAudioStore {
       }
     }
   }
+
+  static String _normalizePath(String path) => path.replaceAll(r'\', '/');
 
   String _chunkPath(int seq) =>
       '${sessionDirectory.path}/chunk_${sessionId}_patient_$seq.aac';
@@ -213,7 +215,7 @@ class PendingAudioStore {
     await for (final file in sessionDirectory.list()) {
       if (file is File &&
           (file.path.endsWith('.aac') || file.path.endsWith('.tmp')) &&
-          !_manifest.any((c) => c.filePath == file.path)) {
+          !_manifest.any((c) => _normalizePath(c.filePath) == _normalizePath(file.path))) {
         final match = RegExp(r'_patient_(\d+)\.aac$').firstMatch(file.path);
         if (match != null && int.parse(match[1]!) >= nextSeq) {
           await updateControl({'incomplete': true});

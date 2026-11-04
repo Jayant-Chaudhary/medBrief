@@ -1,4 +1,6 @@
 import '../../core/api_client.dart';
+import 'checkin_models.dart';
+export 'checkin_models.dart';
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -182,6 +184,153 @@ class CheckinRepository {
     } catch (_) {
       // Best-effort; do not block the patient if this fails
     }
+  }
+
+  /// Submit periodic prenatal check-in answers.
+  /// Submit periodic or weekly guided check-in.
+  Future<CheckinSessionResult> submitPeriodicCheckin({
+    String? appointmentId,
+    required String sessionType,
+    int? gestationalWeek,
+    required List<CheckinAnswerPayload> answers,
+  }) async {
+    final client = api;
+    if (client == null) {
+      return CheckinSessionResult(
+        id: 'local-demo',
+        status: 'completed',
+        hasRedFlag: answers.any((a) => a.isRedFlag),
+        appointmentId: appointmentId,
+        sessionType: sessionType,
+        gestationalWeek: gestationalWeek,
+      );
+    }
+    final res = await client.request(
+      '/api/checkin/sessions',
+      method: 'POST',
+      body: {
+        'appointmentId': ?appointmentId,
+        'sessionType': sessionType,
+        'gestationalWeek': ?gestationalWeek,
+        'answers': answers.map((a) => a.toJson()).toList(),
+      },
+    );
+    if (res is Map<String, dynamic>) {
+      return CheckinSessionResult.fromJson(res);
+    }
+    return CheckinSessionResult(
+      id: '',
+      status: 'completed',
+      hasRedFlag: answers.any((a) => a.isRedFlag),
+    );
+  }
+
+  /// Submit an ad-hoc spontaneous patient concern/symptom (24/7).
+  Future<CheckinSessionResult> submitAdHocConcern({
+    required String description,
+    String category = 'concern',
+    String severity = 'mild',
+    int? gestationalWeek,
+  }) async {
+    final client = api;
+    if (client == null) {
+      return const CheckinSessionResult(
+        id: 'local-adhoc',
+        status: 'completed',
+        hasRedFlag: false,
+        sessionType: 'ad_hoc_concern',
+      );
+    }
+    final res = await client.request(
+      '/api/checkin/ad-hoc',
+      method: 'POST',
+      body: {
+        'category': category,
+        'description': description,
+        'severity': severity,
+        'gestationalWeek': ?gestationalWeek,
+      },
+    );
+    if (res is Map<String, dynamic>) {
+      return CheckinSessionResult.fromJson(res);
+    }
+    return const CheckinSessionResult(
+      id: '',
+      status: 'completed',
+      hasRedFlag: false,
+      sessionType: 'ad_hoc_concern',
+    );
+  }
+
+  /// Submit a 30-second quick pulse check-in.
+  Future<CheckinSessionResult> submitQuickPulse({
+    required int comfortRating,
+    List<String> discomforts = const [],
+    String? notes,
+    int? gestationalWeek,
+  }) async {
+    final client = api;
+    if (client == null) {
+      return const CheckinSessionResult(
+        id: 'local-pulse',
+        status: 'completed',
+        hasRedFlag: false,
+        sessionType: 'quick_pulse',
+      );
+    }
+    final res = await client.request(
+      '/api/checkin/quick-pulse',
+      method: 'POST',
+      body: {
+        'comfortRating': comfortRating,
+        'discomforts': discomforts,
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+        'gestationalWeek': ?gestationalWeek,
+      },
+    );
+    if (res is Map<String, dynamic>) {
+      return CheckinSessionResult.fromJson(res);
+    }
+    return const CheckinSessionResult(
+      id: '',
+      status: 'completed',
+      hasRedFlag: false,
+      sessionType: 'quick_pulse',
+    );
+  }
+
+  /// Get current check-in cadence status and upcoming due type.
+  Future<CheckinCadenceStatus> getCheckinStatus() async {
+    final client = api;
+    if (client == null) {
+      return const CheckinCadenceStatus();
+    }
+    try {
+      final res = await client.request('/api/checkin/status');
+      if (res is Map<String, dynamic>) {
+        return CheckinCadenceStatus.fromJson(res);
+      }
+    } catch (_) {}
+    return const CheckinCadenceStatus();
+  }
+
+  /// Get past check-in sessions.
+  Future<List<dynamic>> getCheckinHistory({int? lookbackDays}) async {
+    final client = api;
+    if (client == null) return const [];
+    final query = lookbackDays != null ? '?lookbackDays=$lookbackDays' : '';
+    final res = await client.request('/api/checkin/history$query');
+    if (res is! List) return const [];
+    return res;
+  }
+
+  /// Get pre-visit AI brief summary.
+  Future<VisitAiSummary?> getAiVisitSummary(String appointmentId) async {
+    final client = api;
+    if (client == null) return null;
+    final res = await client.request('/api/checkin/summary/${Uri.encodeComponent(appointmentId)}');
+    if (res is! Map<String, dynamic>) return null;
+    return VisitAiSummary.fromJson(res);
   }
 }
 

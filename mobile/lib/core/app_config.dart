@@ -16,7 +16,7 @@ class AppConfig {
       ),
       apiBaseUrl = const String.fromEnvironment(
         'API_BASE_URL',
-        defaultValue: 'http://10.0.2.2:4000',
+        defaultValue: 'http://192.168.31.82:4000',
       );
 
   final String supabaseUrl;

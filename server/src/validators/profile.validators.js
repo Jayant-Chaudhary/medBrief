@@ -11,6 +11,7 @@ const baseProfileSchema = {
 const patientProfileSchema = z.object({
   ...baseProfileSchema,
   dateOfBirth: z.string().date().nullish(),
+  dueDate: z.string().date().nullish(),
   bloodType: z.string().trim().max(10).nullish(),
   address: z.string().trim().max(500).nullish(),
   emergencyContactName: nullableText,
