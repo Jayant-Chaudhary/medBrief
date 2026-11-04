@@ -159,15 +159,15 @@ void main() {
     // Greeting
     expect(find.text('Welcome, Asha'), findsOneWidget);
     // Action Banner
-    expect(find.text('Start pre-visit check-in'), findsOneWidget);
-    expect(find.text('Share lab reports'), findsOneWidget);
+    expect(find.text('Pre-visit check-in'), findsOneWidget);
+    expect(find.text('Upload reports'), findsOneWidget);
     // Vitals moved to profile section
     expect(find.text('Quick Vitals Update'), findsNothing);
     expect(find.text('Weight (kg)'), findsNothing);
     // Appointments list (shown once in banner, once in upcoming, once in past)
     expect(find.text('Upcoming appointments'), findsOneWidget);
     expect(find.text('Past visits'), findsOneWidget);
-    expect(find.text('Dr. Jane Smith'), findsNWidgets(3));
+    expect(find.text('Dr. Jane Smith'), findsNWidgets(2));
     expect(find.text('Scheduled'), findsOneWidget);
     expect(find.text('Completed'), findsOneWidget);
   });

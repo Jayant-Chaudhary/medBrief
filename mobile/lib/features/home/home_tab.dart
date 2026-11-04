@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/app_theme.dart';
+import '../../core/widgets/shimmer_loading.dart';
+import 'widgets/pregnancy_milestone_card.dart';
 import '../checkin/checkin_models.dart';
 import 'appointment_repository.dart';
 import 'appointments_tab.dart';
@@ -37,7 +39,7 @@ class HomeTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (controller.stage == HomeStage.loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const HomeSkeletonView();
     }
 
     if (controller.stage == HomeStage.error) {
@@ -128,6 +130,13 @@ class HomeTab extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
+
+          // ── Pregnancy Milestone & Weekly Tracker ────────────────
+          PregnancyMilestoneCard(
+            dueDateString: controller.dueDate,
+            onSetDueDate: () => onNavigate('/profile'),
+          ),
+          const SizedBox(height: 20),
 
           // ── Action Banner for active appointment ─────────────────
           if (activeAppt != null) ...[

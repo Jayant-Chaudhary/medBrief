@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/app_theme.dart';
+import '../../core/widgets/shimmer_loading.dart';
 import 'appointment_repository.dart';
 import 'home_controller.dart';
 
@@ -48,7 +49,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
     final controller = widget.controller;
 
     if (controller.stage == HomeStage.loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppointmentsSkeletonView();
     }
 
     if (controller.stage == HomeStage.error) {

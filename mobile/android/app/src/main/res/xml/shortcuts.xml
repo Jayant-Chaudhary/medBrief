@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="action_checkin"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_checkin"
+        android:shortcutShortLabel="@string/shortcut_checkin_short"
+        android:shortcutLongLabel="@string/shortcut_checkin_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.healthon.health_on_patient"
+            android:targetClass="com.healthon.health_on_patient.MainActivity"
+            android:data="medbrief://shortcut/checkin" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="action_consultation"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_consultation"
+        android:shortcutShortLabel="@string/shortcut_consultation_short"
+        android:shortcutLongLabel="@string/shortcut_consultation_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.healthon.health_on_patient"
+            android:targetClass="com.healthon.health_on_patient.MainActivity"
+            android:data="medbrief://shortcut/consultation" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="action_emergency"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_emergency"
+        android:shortcutShortLabel="@string/shortcut_emergency_short"
+        android:shortcutLongLabel="@string/shortcut_emergency_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.healthon.health_on_patient"
+            android:targetClass="com.healthon.health_on_patient.MainActivity"
+            android:data="medbrief://shortcut/emergency" />
+    </shortcut>
+</shortcuts>

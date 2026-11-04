@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:quick_actions/quick_actions.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
 import '../../core/app_theme.dart';
@@ -24,6 +27,8 @@ import '../summary/summary_controller.dart';
 import '../summary/summary_page.dart';
 import 'appointment_repository.dart';
 import 'appointments_tab.dart';
+import '../notifications/notification_config.dart';
+import '../notifications/patient_notification_service.dart';
 import 'home_controller.dart';
 import 'home_tab.dart';
 
@@ -47,11 +52,13 @@ class HomePage extends StatefulWidget {
     this.reportRepository,
     this.summaryRepository,
     this.profileRepository,
+    this.notificationService,
   });
 
   final AuthController auth;
   final ApiClient? api;
   final CommunityPush? push;
+  final PatientNotificationService? notificationService;
   final AppointmentRepository? repository;
   final CheckinRepository? checkinRepository;
   final ReportRepository? reportRepository;
@@ -80,6 +87,7 @@ class _HomePageState extends State<HomePage> {
       repo: repo,
       profile: widget.auth.profile!,
       checkinRepo: widget.checkinRepository ?? CheckinRepository(api: widget.api),
+      notificationService: widget.notificationService,
     );
     _homeController.load();
 
@@ -96,6 +104,237 @@ class _HomePageState extends State<HomePage> {
     );
 
     widget.push?.inboxRequests.addListener(_handleInboxRequest);
+    widget.notificationService?.onNotificationTapped = _handleNotificationPayload;
+    _initQuickActions();
+  }
+
+  void _initQuickActions() {
+    try {
+      const quickActions = QuickActions();
+      quickActions.initialize((String type) {
+        if (!mounted) return;
+        switch (type) {
+          case 'action_checkin':
+            _openGuidedCheckin();
+            break;
+          case 'action_consultation':
+            _openConsultation();
+            break;
+          case 'action_emergency':
+            _showEmergencyContactsSheet();
+            break;
+        }
+      });
+      quickActions.setShortcutItems(const <ShortcutItem>[
+        ShortcutItem(
+          type: 'action_checkin',
+          localizedTitle: 'Weekly Check-in',
+          icon: 'ic_shortcut_checkin',
+        ),
+        ShortcutItem(
+          type: 'action_consultation',
+          localizedTitle: 'Join Consultation',
+          icon: 'ic_shortcut_consultation',
+        ),
+        ShortcutItem(
+          type: 'action_emergency',
+          localizedTitle: 'Emergency Contacts',
+          icon: 'ic_shortcut_emergency',
+        ),
+      ]);
+    } catch (_) {
+      /* Supported on device runtime; harmless in unit tests */
+    }
+  }
+
+  void _showEmergencyContactsSheet() {
+    HapticFeedback.mediumImpact();
+    final profile = widget.auth.profile;
+    final emergencyPhone = profile?.emergencyContactPhone?.trim();
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: line,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEE2E2),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.emergency_outlined,
+                        color: Color(0xFFDC2626),
+                        size: 26,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Emergency & Care Contacts',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: ink,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Immediate clinical guidance & triage',
+                          style: TextStyle(fontSize: 12, color: muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBEB),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 20),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Seek emergency care immediately if you experience severe abdominal pain, persistent bleeding, reduced fetal movements, or severe headaches with vision changes.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF92400E),
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              if (emergencyPhone != null && emergencyPhone.isNotEmpty) ...[
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xFFEDF5F4),
+                    child: Icon(Icons.person, color: primary),
+                  ),
+                  title: const Text(
+                    'Personal Emergency Contact',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: ink),
+                  ),
+                  subtitle: Text(
+                    emergencyPhone,
+                    style: const TextStyle(fontSize: 13, color: muted),
+                  ),
+                  trailing: FilledButton.icon(
+                    onPressed: () => launchUrl(Uri.parse('tel:$emergencyPhone')),
+                    icon: const Icon(Icons.call, size: 16),
+                    label: const Text('Call'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: primary,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      minimumSize: const Size(0, 40),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ),
+                const Divider(height: 20, color: line),
+              ] else ...[
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xFFF9F7F4),
+                    child: Icon(Icons.person_add_outlined, color: muted),
+                  ),
+                  title: const Text('No Emergency Contact saved'),
+                  subtitle: const Text('Add in your profile for 1-tap dialling'),
+                  trailing: TextButton(
+                    onPressed: () {
+                      Navigator.of(sheetContext).pop();
+                      _handleNavigate('/profile');
+                    },
+                    child: const Text('Add →'),
+                  ),
+                ),
+                const Divider(height: 20, color: line),
+              ],
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFFFEE2E2),
+                  child: Icon(Icons.local_hospital_outlined, color: Color(0xFFDC2626)),
+                ),
+                title: const Text(
+                  'Emergency Medical Services',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: ink),
+                ),
+                subtitle: const Text(
+                  'National Emergency Helpline',
+                  style: TextStyle(fontSize: 13, color: muted),
+                ),
+                trailing: FilledButton.icon(
+                  onPressed: () => launchUrl(Uri.parse('tel:112')),
+                  icon: const Icon(Icons.phone_in_talk, size: 16),
+                  label: const Text('112'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFDC2626),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    minimumSize: const Size(0, 40),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  void _handleNotificationPayload(String payload) {
+    if (!mounted) return;
+    if (payload == NotificationConfig.payloadAppointments) {
+      setState(() => _tabIndex = 1);
+      widget.notificationService?.cancelAppointmentReminder();
+    } else if (payload == NotificationConfig.payloadCheckin) {
+      _openGuidedCheckin();
+      widget.notificationService?.cancelCheckinReminder();
+    } else if (payload == NotificationConfig.payloadQuickPulse) {
+      _openQuickPulse();
+      widget.notificationService?.cancelCheckinReminder();
+    }
   }
 
   void _handleInboxRequest() {
@@ -138,6 +377,7 @@ class _HomePageState extends State<HomePage> {
           emergencyContactPhone: profile?.emergencyContactPhone,
           onCompleted: () {
             Navigator.of(context).pop();
+            widget.notificationService?.cancelCheckinReminder();
             _homeController.refresh();
           },
           onCancel: () => Navigator.of(context).pop(),
@@ -202,6 +442,7 @@ class _HomePageState extends State<HomePage> {
               widget.checkinRepository ?? CheckinRepository(api: widget.api),
           onFinished: () {
             Navigator.of(context).pop();
+            widget.notificationService?.cancelCheckinReminder();
             _homeController.refresh();
           },
           onCancel: () => Navigator.of(context).pop(),
@@ -397,6 +638,7 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
       actions: [
+
         ListenableBuilder(
           listenable: widget.auth,
           builder: (context, _) => PopupMenuButton<String>(
@@ -560,6 +802,9 @@ class _HomePageState extends State<HomePage> {
       onDestinationSelected: (i) => setState(() {
         _tabIndex = i;
         _communityInboxRequested = false;
+        if (i == 1) {
+          widget.notificationService?.cancelAppointmentReminder();
+        }
       }),
       labelTextStyle: WidgetStateProperty.resolveWith(
         (states) => TextStyle(

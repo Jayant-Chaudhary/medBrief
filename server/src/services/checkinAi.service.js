@@ -36,30 +36,33 @@ function buildDeterministicSummary({ patientDetails, recentSessions, recentVital
         adHocConcerns.push(ans.text_value);
       }
 
+      // Extract patient questions first so they do not leak into physical sensations
+      if (ans.question_key === 'patient_agenda' || ans.question_key.includes('question') || ans.category === 'agenda') {
+        if (ans.text_value && ans.text_value.trim().length > 0) {
+          topQuestions.push(ans.text_value.trim());
+        }
+        continue;
+      }
+
       if (ans.category === 'physical' || ans.category === 'concern') {
+        const label = ans.question_text || ans.question_key.replace(/_/g, ' ');
         if (ans.bool_value || ans.text_value) {
-          physicalNotes.push(`${ans.question_key}: ${ans.text_value || 'Present'}`);
+          physicalNotes.push(`${label}: ${ans.text_value || 'Present'}`);
         } else if (ans.scale_value) {
-          physicalNotes.push(`${ans.question_key}: rated ${ans.scale_value}/5`);
+          physicalNotes.push(`${label}: rated ${ans.scale_value}/5`);
         }
       } else if (ans.category === 'mental') {
+        const label = ans.question_text || ans.question_key.replace(/_/g, ' ');
         if (ans.scale_value && ans.scale_value >= 4) {
           hasModerate = true;
-          mentalNotes.push(`Elevated concern on ${ans.question_key} (rated ${ans.scale_value}/5)`);
+          mentalNotes.push(`Elevated concern on ${label} (rated ${ans.scale_value}/5)`);
         } else if (ans.text_value) {
           mentalNotes.push(ans.text_value);
         }
       } else if (ans.category === 'medical') {
         if (ans.bool_value === false) {
           hasModerate = true;
-          medicalNotes.push(`Missed adherence: ${ans.question_text}`);
-        }
-      }
-
-      // Extract patient questions
-      if (ans.question_key === 'patient_agenda' || ans.question_key.includes('question')) {
-        if (ans.text_value && ans.text_value.trim().length > 0) {
-          topQuestions.push(ans.text_value.trim());
+          medicalNotes.push(`Missed adherence: ${ans.question_text || ans.question_key}`);
         }
       }
     }

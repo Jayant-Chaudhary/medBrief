@@ -16,6 +16,7 @@ import 'features/community/community_push.dart';
 import 'features/community/community_repository.dart';
 import 'features/consult_audio/consult_foreground_task.dart';
 import 'features/consult_audio/pending_audio_store.dart';
+import 'features/notifications/patient_notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -77,9 +78,18 @@ Future<void> main() async {
     SupabaseAuthRepository(supabase: supabase, api: api),
   );
   final push = CommunityPush(CommunityRepository(api), auth);
+  final notificationService = PatientNotificationService();
+  if (Platform.isAndroid) {
+    try {
+      await notificationService.init();
+    } catch (_) {
+      // Best-effort notification service initialization
+    }
+  }
   final existingSignOut = auth.beforeSignOut;
   auth.beforeSignOut = () async {
     await recordingService.shutdown();
+    await notificationService.cancelAll();
     await existingSignOut?.call();
   };
   auth.addListener(() {
@@ -87,6 +97,13 @@ Future<void> main() async {
       unawaited(recordingService.shutdown().catchError((Object _) {}));
     }
   });
-  runApp(HealthOnApp(auth: auth, api: api, push: push));
+  runApp(
+    HealthOnApp(
+      auth: auth,
+      api: api,
+      push: push,
+      notificationService: notificationService,
+    ),
+  );
   unawaited(auth.start());
 }

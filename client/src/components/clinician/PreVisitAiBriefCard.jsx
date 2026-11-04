@@ -67,6 +67,7 @@ export function PreVisitAiBriefCard({ summary, onGenerate, isGenerating = false 
 
   const redFlags = Array.isArray(summary.red_flags) ? summary.red_flags : [];
   const topQuestions = Array.isArray(summary.patient_top_questions) ? summary.patient_top_questions : [];
+  const generatedTime = summary.generated_at || summary.updated_at || summary.created_at;
 
   return (
     <section className="card shrink-0 overflow-hidden border border-line bg-surface">
@@ -109,9 +110,9 @@ export function PreVisitAiBriefCard({ summary, onGenerate, isGenerating = false 
               Interval: {summary.interval_description}
             </span>
           )}
-          {summary.generated_at && (
+          {generatedTime && (
             <span className="hidden text-body-sm text-ink-3 lg:inline">
-              Synthesized {formatDate(summary.generated_at)}
+              Synthesized {formatDate(generatedTime)}
             </span>
           )}
 
@@ -142,7 +143,9 @@ export function PreVisitAiBriefCard({ summary, onGenerate, isGenerating = false 
               </div>
               <ul className="mt-2 list-inside list-disc space-y-1 text-body-sm text-terracotta-deep">
                 {redFlags.map((flag, idx) => (
-                  <li key={idx}>{flag}</li>
+                  <li key={idx}>
+                    {typeof flag === 'string' ? flag : (flag?.text || flag?.flag || JSON.stringify(flag))}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -157,7 +160,9 @@ export function PreVisitAiBriefCard({ summary, onGenerate, isGenerating = false 
                 <span>Physical Sensations</span>
               </div>
               <p className="mt-2 text-body-sm text-ink leading-relaxed">
-                {summary.physical_symptom_trajectory || 'Expected gestational progress with no acute symptoms.'}
+                {typeof summary.physical_symptom_trajectory === 'string'
+                  ? summary.physical_symptom_trajectory
+                  : (JSON.stringify(summary.physical_symptom_trajectory) || 'Expected gestational progress with no acute symptoms.')}
               </p>
             </div>
 
@@ -168,7 +173,9 @@ export function PreVisitAiBriefCard({ summary, onGenerate, isGenerating = false 
                 <span>Emotional Well-Being</span>
               </div>
               <p className="mt-2 text-body-sm text-ink leading-relaxed">
-                {summary.mental_health_assessment || 'Stable mood and sleep patterns reported.'}
+                {typeof summary.mental_health_assessment === 'string'
+                  ? summary.mental_health_assessment
+                  : (JSON.stringify(summary.mental_health_assessment) || 'Stable mood and sleep patterns reported.')}
               </p>
             </div>
 
@@ -179,7 +186,9 @@ export function PreVisitAiBriefCard({ summary, onGenerate, isGenerating = false 
                 <span>Daily Routine & Meds</span>
               </div>
               <p className="mt-2 text-body-sm text-ink leading-relaxed">
-                {summary.medication_compliance || 'Prenatal vitamins reported regular.'}
+                {typeof summary.medication_compliance === 'string'
+                  ? summary.medication_compliance
+                  : (JSON.stringify(summary.medication_compliance) || 'Prenatal vitamins reported regular.')}
               </p>
             </div>
           </div>
@@ -195,7 +204,7 @@ export function PreVisitAiBriefCard({ summary, onGenerate, isGenerating = false 
                 {topQuestions.map((q, idx) => (
                   <li key={idx} className="flex items-start gap-2">
                     <span className="font-semibold text-amber-700 dark:text-amber-400">"</span>
-                    <span className="italic">{q}</span>
+                    <span className="italic">{typeof q === 'string' ? q : (q?.question || q?.text || JSON.stringify(q))}</span>
                     <span className="font-semibold text-amber-700 dark:text-amber-400">"</span>
                   </li>
                 ))}
@@ -210,9 +219,17 @@ export function PreVisitAiBriefCard({ summary, onGenerate, isGenerating = false 
                 <FileText className="h-4 w-4 text-cypress" />
                 <span>Suggested Clinical Focus</span>
               </div>
-              <p className="mt-1.5 text-body-sm text-ink leading-relaxed">
-                {summary.doctor_talking_points}
-              </p>
+              <div className="mt-1.5 text-body-sm text-ink leading-relaxed">
+                {Array.isArray(summary.doctor_talking_points) ? (
+                  <ul className="list-inside list-disc space-y-1">
+                    {summary.doctor_talking_points.map((pt, idx) => (
+                      <li key={idx}>{typeof pt === 'string' ? pt : JSON.stringify(pt)}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>{String(summary.doctor_talking_points)}</p>
+                )}
+              </div>
             </div>
           )}
 
@@ -228,4 +245,3 @@ export function PreVisitAiBriefCard({ summary, onGenerate, isGenerating = false 
 }
 
 export default PreVisitAiBriefCard;
-

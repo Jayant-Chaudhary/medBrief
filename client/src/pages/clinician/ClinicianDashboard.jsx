@@ -246,9 +246,9 @@ export function ClinicianDashboard() {
       setGeneratingBrief(true);
       const updatedSummary = await generatePreVisitSummary(selectedAppointmentId);
       patch(() => ({ aiSummary: updatedSummary }));
-      showToast({ type: 'success', message: 'Pre-visit clinical brief generated.' });
+      showToast('Pre-visit clinical brief generated.', 'success');
     } catch (err) {
-      showToast({ type: 'error', message: err?.message || 'Failed to generate AI brief' });
+      showToast(err?.message || 'Failed to generate AI brief', 'error');
     } finally {
       setGeneratingBrief(false);
     }

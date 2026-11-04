@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/api_client.dart';
 import '../auth/auth_repository.dart';
 import '../checkin/checkin_repository.dart';
+import '../notifications/patient_notification_service.dart';
 import 'appointment_repository.dart';
 
 enum HomeStage { loading, ready, error }
@@ -17,11 +18,13 @@ class HomeController extends ChangeNotifier {
     required this.repo,
     required this.profile,
     this.checkinRepo,
+    this.notificationService,
   });
 
   final AppointmentRepository repo;
   final PatientProfile profile;
   final CheckinRepository? checkinRepo;
+  final PatientNotificationService? notificationService;
 
   HomeStage stage = HomeStage.loading;
   String? error;
@@ -30,6 +33,14 @@ class HomeController extends ChangeNotifier {
   LatestVitals _vitals = const LatestVitals();
   CheckinCadenceStatus _cadenceStatus = const CheckinCadenceStatus();
   String? _selectedId;
+  String? _overrideDueDate;
+
+  String? get dueDate => _overrideDueDate ?? profile.dueDate;
+
+  void updateDueDate(String? newDueDate) {
+    _overrideDueDate = newDueDate;
+    notifyListeners();
+  }
 
   bool _saving = false;
   String? _saveError;
@@ -65,6 +76,14 @@ class HomeController extends ChangeNotifier {
       _selectedId ??=
           _appointments.upcoming.firstOrNull?.id ?? _appointments.all.firstOrNull?.id;
       stage = HomeStage.ready;
+      unawaited(
+        notificationService
+            ?.syncReminders(
+              upcoming: _appointments.upcoming,
+              cadence: _cadenceStatus,
+            )
+            .catchError((_) {}),
+      );
     } catch (e) {
       error = e is AppException ? e.message : 'Could not load your appointments.';
       stage = HomeStage.error;

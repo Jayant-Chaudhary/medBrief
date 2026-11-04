@@ -1,4 +1,7 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../../core/widgets/shimmer_loading.dart';
+import 'widgets/report_scan_preview_dialog.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/app_theme.dart';
 import '../home/appointment_repository.dart';
@@ -48,10 +51,21 @@ class _ReportsPageState extends State<ReportsPage> {
     try {
       final xFile = await _picker.pickImage(source: source, imageQuality: 85);
       if (xFile == null) return;
-      final bytes = await xFile.readAsBytes();
+      final rawBytes = await xFile.readAsBytes();
       if (!mounted) return;
+
+      final processedBytes = await showDialog<Uint8List>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => ReportScanPreviewDialog(
+          imageBytes: rawBytes,
+          filename: xFile.name,
+        ),
+      );
+      if (processedBytes == null || !mounted) return;
+
       await widget.controller.uploadReport(
-        bytes: bytes,
+        bytes: processedBytes,
         filename: xFile.name,
         appointmentId: widget.activeAppointment?.id,
       );
@@ -509,12 +523,7 @@ class _ReportsPageState extends State<ReportsPage> {
               const SizedBox(height: 12),
 
               if (controller.isLoading)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(32),
-                    child: CircularProgressIndicator(),
-                  ),
-                )
+                const ReportsSkeletonView()
               else if (controller.reports.isEmpty)
                 Container(
                   padding: const EdgeInsets.all(32),

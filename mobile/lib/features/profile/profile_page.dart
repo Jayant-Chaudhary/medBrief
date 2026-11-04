@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/app_theme.dart';
 import '../home/appointment_repository.dart';
 import '../home/home_controller.dart';
@@ -29,6 +30,7 @@ class _ProfilePageState extends State<ProfilePage> {
   late TextEditingController _nameCtrl;
   late TextEditingController _phoneCtrl;
   late TextEditingController _dobCtrl;
+  late TextEditingController _dueDateCtrl;
   late TextEditingController _bloodCtrl;
   late TextEditingController _addressCtrl;
   late TextEditingController _emNameCtrl;
@@ -91,6 +93,7 @@ class _ProfilePageState extends State<ProfilePage> {
     _nameCtrl = TextEditingController();
     _phoneCtrl = TextEditingController();
     _dobCtrl = TextEditingController();
+    _dueDateCtrl = TextEditingController();
     _bloodCtrl = TextEditingController();
     _addressCtrl = TextEditingController();
     _emNameCtrl = TextEditingController();
@@ -103,6 +106,7 @@ class _ProfilePageState extends State<ProfilePage> {
       _nameCtrl.text = p.fullName;
       _phoneCtrl.text = p.phone ?? '';
       _dobCtrl.text = p.dateOfBirth ?? '';
+      _dueDateCtrl.text = p.dueDate ?? '';
       _bloodCtrl.text = p.bloodType ?? '';
       _addressCtrl.text = p.address ?? '';
       _emNameCtrl.text = p.emergencyContactName ?? '';
@@ -121,6 +125,7 @@ class _ProfilePageState extends State<ProfilePage> {
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
     _dobCtrl.dispose();
+    _dueDateCtrl.dispose();
     _bloodCtrl.dispose();
     _addressCtrl.dispose();
     _emNameCtrl.dispose();
@@ -252,6 +257,40 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  Future<void> _pickDueDate(BuildContext context) async {
+    HapticFeedback.selectionClick();
+    final now = DateTime.now();
+    final parsed = DateTime.tryParse(_dueDateCtrl.text.trim());
+    final initial = (parsed != null &&
+            !parsed.isBefore(now.subtract(const Duration(days: 300))) &&
+            !parsed.isAfter(now.add(const Duration(days: 300))))
+        ? parsed
+        : now.add(const Duration(days: 140));
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: now.subtract(const Duration(days: 300)),
+      lastDate: now.add(const Duration(days: 300)),
+      helpText: 'Select Estimated Due Date (EDD)',
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: Theme.of(context).colorScheme.copyWith(
+            primary: primary,
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) {
+      final formatted =
+          '${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+      setState(() {
+        _dueDateCtrl.text = formatted;
+      });
+    }
+  }
+
   Future<void> _handleSave() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -259,6 +298,7 @@ class _ProfilePageState extends State<ProfilePage> {
       fullName: _nameCtrl.text.trim(),
       phone: _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
       dateOfBirth: _dobCtrl.text.trim().isEmpty ? null : _dobCtrl.text.trim(),
+      dueDate: _dueDateCtrl.text.trim().isEmpty ? null : _dueDateCtrl.text.trim(),
       bloodType: _bloodCtrl.text.trim().isEmpty ? null : _bloodCtrl.text.trim(),
       address: _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim(),
       emergencyContactName:
@@ -471,11 +511,32 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
                 const SizedBox(height: 16),
 
-                // Health Details Card
+                // Pregnancy & Health Details Card
                 _FormSection(
-                  title: 'Health',
+                  title: 'Pregnancy & Health',
                   icon: Icons.favorite_border_rounded,
                   children: [
+                    TextFormField(
+                      controller: _dueDateCtrl,
+                      readOnly: true,
+                      onTap: () => _pickDueDate(context),
+                      decoration: InputDecoration(
+                        labelText: 'Estimated Due Date (EDD)',
+                        hintText: 'Tap to select delivery date',
+                        helperText: 'Calculates weekly baby size & milestone timeline',
+                        prefixIcon: const Icon(Icons.calendar_month_outlined, size: 20),
+                        suffixIcon: _dueDateCtrl.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 18),
+                                tooltip: 'Clear date',
+                                onPressed: () {
+                                  setState(() => _dueDateCtrl.clear());
+                                },
+                              )
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
                     TextFormField(
                       controller: _bloodCtrl,
                       decoration: const InputDecoration(
