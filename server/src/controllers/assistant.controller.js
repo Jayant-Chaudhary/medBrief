@@ -40,6 +40,10 @@ async function step(req, res, next) {
     });
     const { attempts, errorCode, source, ...reply } = result;
     const pageSteps = (reply.steps || []).filter((s) => s.page);
+    const allRefused = pageSteps.flatMap((s) => s.page.refused || []);
+    if (allRefused.length > 0) {
+      log.warn('assistant actions refused', { reqId: req.id, refused: allRefused });
+    }
 
     log.info('assistant step', {
       reqId: req.id,

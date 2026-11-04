@@ -470,6 +470,7 @@ export function ClinicianDashboard() {
             <button
               type="button"
               data-assistant-id="dashboard.open_notes"
+              data-assistant-effect="free"
               onClick={() => setNotesOpen(true)}
               aria-haspopup="dialog"
               aria-expanded={notesOpen}

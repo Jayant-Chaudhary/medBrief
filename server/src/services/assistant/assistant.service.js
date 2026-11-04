@@ -566,7 +566,7 @@ function flagSubmit(result, message) {
 const FIND_IN_PATIENTS = /^(?:please\s+)?(?:find|search(?:\s+for)?|look\s+(?:up|for))\s+(\p{L}[\p{L}'.-]*(?:\s+\p{L}[\p{L}'.-]*){0,3}?)\s+(?:in|on|from|among)\s+(?:the\s+|my\s+)?patients?(?:\s+(?:list|page|tab))?$/iu;
 
 function tickChecklistItem(checklist, result, role = 'clinician') {
-  if (!result || result.result !== 'ok' || result.ref === 'r_notes_btn') return checklist;
+  if (!result || result.result !== 'ok') return checklist;
 
   // 1. Navigation by page id: op === 'go'
   if (result.op === 'go') {
@@ -612,7 +612,24 @@ function tickChecklistItem(checklist, result, role = 'clinician') {
     return checklist;
   }
 
-  // 3. Other terminal actions (type, append, replace, check, select, click)
+  // 3. Opening consultation notes panel (clicking the notes button)
+  const isNotesButton = result.op === 'click' && (result.name === 'Consultation notes' || result.ref === 'r_notes_btn');
+  if (isNotesButton) {
+    const idx = checklist.findIndex((item) => {
+      if (item.done) return false;
+      const lower = item.text.toLowerCase();
+      return /\b(open|view|show|kholo)\b.*notes/i.test(lower);
+    });
+    if (idx !== -1) {
+      const next = [...checklist];
+      next[idx] = { ...next[idx], done: true };
+      return next;
+    }
+    // Merely opening the notes panel does not complete writing/adding to notes
+    return checklist;
+  }
+
+  // 4. Other terminal actions (type, append, replace, check, select, click)
   const idx = checklist.findIndex((item) => !item.done);
   if (idx !== -1) {
     const next = [...checklist];
@@ -666,6 +683,18 @@ async function runAgentLoop({
     for (const r of results) {
       activeChecklist = tickChecklistItem(activeChecklist, r, role);
     }
+  }
+
+  if (round > 0 && activeChecklist.length > 0 && activeChecklist.every((c) => c.done)) {
+    return {
+      type: 'done',
+      message: 'All done.',
+      checklist: activeChecklist,
+      note,
+      steps: [],
+      source: 'agent',
+      attempts: 1,
+    };
   }
 
   const isStalled = round >= 2 && results.length > 0 && results.every((r) => ['no_change', 'disabled', 'refused'].includes(r.result));

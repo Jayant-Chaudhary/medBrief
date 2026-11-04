@@ -167,6 +167,8 @@ export function ConsultancyNotes({
       </label>
       <textarea
         id="consultancy-notes"
+        aria-label="Consultation notes"
+        data-assistant-label="Consultation notes"
         // The assistant edits this like any page field (through onChange, so autosave runs);
         // it saves as it changes, so the doctor confirms first.
         data-assistant-effect="save"

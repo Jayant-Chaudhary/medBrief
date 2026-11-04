@@ -33,6 +33,7 @@ const checklistItemSchema = z.object({
 const actionResultSchema = z.object({
   ref: z.string().optional(),
   op: z.string().optional(),
+  name: label(120).optional(),
   page: label(80).optional(),
   path: label(120).optional(),
   kind: label(80).optional(),

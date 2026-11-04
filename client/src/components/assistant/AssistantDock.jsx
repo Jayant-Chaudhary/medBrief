@@ -222,7 +222,7 @@ export default function AssistantDock({ enabled = ENABLED }) {
       for (const step of reply.steps || []) {
         if (step.page?.actions?.length) {
           for (const a of step.page.actions) {
-            actionResults.push({ op: a.op, ref: a.ref, result: outcome === 'done' ? 'ok' : 'refused' });
+            actionResults.push({ op: a.op, ref: a.ref, name: a.name, result: outcome === 'done' ? 'ok' : 'refused' });
           }
         } else {
           actionResults.push({ result: outcome === 'done' ? 'ok' : 'refused' });
@@ -438,7 +438,7 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
             {checklist.map((item, i) => (
               <li key={i} className={`flex items-start gap-1.5 ${item.done ? 'text-primary' : 'text-ink-soft'}`}>
                 {item.done ? <Check size={13} className="mt-0.5 shrink-0" /> : <span className="inline-block w-[13px] shrink-0 text-center">·</span>}
-                <span className={item.done ? 'line-through opacity-70' : ''}>{item.item}</span>
+                <span className={item.done ? 'line-through opacity-70' : ''}>{item.text || item.item}</span>
               </li>
             ))}
           </ul>
@@ -470,7 +470,7 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
             {checklist.map((item, i) => (
               <li key={i} className={`flex items-start gap-1.5 ${item.done ? 'text-primary' : 'text-ink-soft'}`}>
                 {item.done ? <Check size={13} className="mt-0.5 shrink-0" /> : <span className="inline-block w-[13px] shrink-0 text-center">·</span>}
-                <span className={item.done ? 'line-through opacity-70' : ''}>{item.item}</span>
+                <span className={item.done ? 'line-through opacity-70' : ''}>{item.text || item.item}</span>
               </li>
             ))}
           </ul>
