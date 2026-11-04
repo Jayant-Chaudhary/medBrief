@@ -18,14 +18,14 @@ function matchingItem(checklist, action) {
       const labels = { last_visit: ['last visit','previous visit','past visit'], next_visit: ['next visit'], maternity: ['maternity','antenatal'], new_appointment: ['appointment','book'] };
       return Boolean(action.recordId) && (labels[action.kind] || []).some(s => text.includes(s)) && !/\b(write|fill|weight|bp)\b/.test(text);
     }
-    const target = words(action.name || action.control || action.ref);
+    const target = words(action.name || action.label || action.control || action.id || action.ref);
     const hasTarget = target.length && target.every(w => text.includes(w));
     if (['type','append','replace','fill','select'].includes(action.op)) {
-      return /\b(write|add|append|type|replace|change|fill|set|notes|likho)\b/.test(text) &&
-        (hasTarget || (action.value && text.includes(canonical(action.value)))) && !/\b(open|go|find)\b/.test(text);
+      return /\b(write|add|append|type|replace|change|fill|set|notes|likho|record|bp|weight|date|time|appointment|schedule|book)\b/.test(text) &&
+        (hasTarget || (action.value && text.includes(canonical(action.value))) || (action.control === 'scheduledAt' && /\b(time|date|tomorrow|today|kal|aaj|\d+)\b/.test(text))) && !/\b(open|go|find)\b/.test(text);
     }
     if (action.op === 'check') return hasTarget && /\b(tick|check|mark)\b/.test(text);
-    if (['click','press'].includes(action.op)) return hasTarget && /\b(open|show|view|close|press|click|add|save|send|use|select)\b/.test(text) && !/\b(write|type|append)\b/.test(text);
+    if (['click','press'].includes(action.op)) return (hasTarget || (action.id === 'save_visit' && /\b(add|save)\b.*\bvisit\b/.test(text)) || (action.id === 'create_visit' && /\b(create|send|invite|book)\b/.test(text))) && /\b(open|show|view|close|press|click|add|save|send|use|select|create|invite)\b/.test(text) && !/\b(write|type|append)\b/.test(text);
     return false;
   });
 }
@@ -45,7 +45,8 @@ function pendingActions(reply, checklist, round, currentPath) {
     if (step.fill) {
       step.fill.actionIds = {};
       for (const [control, value] of Object.entries(step.fill.fields)) {
-        const a = { op: 'fill', control, value, page: step.fill.page, name: step.fill.filled?.find(f => f.id === control)?.label || control };
+        const meta = step.fill.filled?.find(f => f.id === control);
+        const a = { op: 'fill', control, value, page: step.fill.page, name: meta?.label || control, ...(meta?.field && { field: meta.field }), ...(meta?.hash && { hash: meta.hash }) };
         add(a); step.fill.actionIds[control] = a.actionId;
       }
     }

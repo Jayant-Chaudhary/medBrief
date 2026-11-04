@@ -261,6 +261,15 @@ export default function AssistantDock({ enabled = ENABLED }) {
       const hash = await hashWrittenValue(action.value);
       if (!nextWritten.some(w => w.field === action.field && w.hash === hash)) nextWritten.push({ field: action.field, op: action.op, hash });
     }
+    for (const step of reply.steps || []) {
+      for (const item of step.fill?.filled || []) {
+        const actionId = step.fill.actionIds?.[item.id];
+        const rawVal = step.fill.fields?.[item.id] ?? item.value;
+        if (!item.field || !actionResults.some(r => r.actionId === actionId && r.result === 'ok')) continue;
+        const hash = await hashWrittenValue(rawVal);
+        if (!nextWritten.some(w => w.field === item.field && w.hash === hash)) nextWritten.push({ field: item.field, op: 'fill', hash });
+      }
+    }
     await continueAfter(reply, outcome, {
       message,
       requestId,

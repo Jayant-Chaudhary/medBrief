@@ -585,15 +585,15 @@ async function runAgentLoop({
     };
   }
 
-  let nav = await navigateRound({ message, checklist: activeChecklist, note, results, page: seen, role, provider, settings });
+  let nav = await navigateRound({ message, checklist: activeChecklist, note, results, page: seen, onPage, clock, role, provider, settings });
   if (nav.status === 'done' && !nav.actions.length) {
     // One bounded retry; the model cannot certify its own execution.
-    nav = await navigateRound({ message, checklist: activeChecklist, note: 'Pending items require verified actions.', results, page: seen, role, provider, settings });
+    nav = await navigateRound({ message, checklist: activeChecklist, note: 'Pending items require verified actions.', results, page: seen, onPage, clock, role, provider, settings });
   }
   if (nav.status === 'ask') return { type: 'clarify', message: 'Please specify the page, field, or patient.', checklist: activeChecklist, options: [], source: 'agent' };
   if (!nav.actions.length) return execution.stop(activeChecklist, nav.status === 'cannot' ? 'the model could not produce a usable action' : 'no verified action completed it');
 
-  const validated = validateAgentActions(nav.actions, seen, message, patients, role, recordContext);
+  const validated = validateAgentActions(nav.actions, seen, message, patients, role, { ...recordContext, onPage, clock });
 
   if (validated.disambiguation) {
     return {
@@ -608,7 +608,7 @@ async function runAgentLoop({
 
   // Holds actions on this page when a step leaves it, and continues on the next page
   const moreRounds = round + 1 < (settings.maxRounds || config.maxRounds);
-  if (validated.navigationSteps.length > 0 && (validated.pageActions.length > 0 || nav.status === 'continue')) {
+  if (validated.navigationSteps.length > 0 && (validated.pageActions.length > 0 || Boolean(validated.formStep) || nav.status === 'continue')) {
     const firstNav = validated.navigationSteps[0];
     return {
       type: 'navigate',
@@ -631,6 +631,9 @@ async function runAgentLoop({
   if (validated.navigationSteps.length > 0) {
     steps.push(...validated.navigationSteps);
   }
+  if (validated.formStep) {
+    steps.push(validated.formStep);
+  }
   if (validated.pageActions.length > 0 || validated.refused.length > 0) {
     steps.push({
       label: 'This page',
@@ -645,7 +648,7 @@ async function runAgentLoop({
   const shouldContinue = Boolean(
     (nav.status === 'continue' || hasPendingItems) &&
     moreRounds &&
-    (validated.cut || validated.pageActions.length > 0 || validated.navigationSteps.length > 0)
+    (validated.cut || validated.pageActions.length > 0 || Boolean(validated.formStep) || validated.navigationSteps.length > 0)
   );
 
   return {
@@ -791,10 +794,35 @@ async function handleStep({
     if (patientSpecific && !current && !namedPatient) return { type: 'clarify', message: 'Which patient?', options: [], checklist: active, source: reply.source };
     if (writtenState.length >= settings.maxWrittenEntries) return execution.stop(active, 'the write limit was reached');
     for (const step of reply.steps || []) {
-      if (!step.page) continue;
-      const guarded = writes.guard(step.page.actions, writtenState, { record: current, path: currentPath });
-      step.page.actions = guarded.actions;
-      step.page.refused = [...(step.page.refused || []), ...guarded.refused];
+      if (step.page) {
+        const guarded = writes.guard(step.page.actions, writtenState, { record: current, path: currentPath });
+        step.page.actions = guarded.actions;
+        step.page.refused = [...(step.page.refused || []), ...guarded.refused];
+      }
+      if (reply.source === 'agent' && step.fill?.fields) {
+        const fillList = Object.entries(step.fill.fields).map(([control, value]) => ({
+          op: 'fill', control, value, name: step.fill.filled?.find(f => f.id === control)?.label || control,
+        }));
+        const guarded = writes.guard(fillList, writtenState, { record: current, path: currentPath });
+        const nextFields = {};
+        const nextFilled = [];
+        for (const a of guarded.actions) {
+          nextFields[a.control] = a.value;
+          const f = step.fill.filled?.find(item => item.id === a.control) || { id: a.control, label: a.name, value: a.value };
+          nextFilled.push({ ...f, field: a.field, hash: a.hash });
+        }
+        step.fill.fields = nextFields;
+        if (step.fill.filled) step.fill.filled = nextFilled;
+        if (!Object.keys(nextFields).length) delete step.fill;
+        if (guarded.refused.length) {
+          let pageStep = reply.steps.find(s => s.page);
+          if (!pageStep) {
+            pageStep = { label: 'This page', page: { actions: [], refused: [] } };
+            reply.steps.push(pageStep);
+          }
+          pageStep.page.refused = [...(pageStep.page.refused || []), ...guarded.refused];
+        }
+      }
     }
     if (reply.type === 'run' && (reply.steps || []).some(step => step.page?.refused?.length) && !(reply.steps || []).some(step => step.path || step.recordTarget || step.fill || step.press || step.page?.actions?.length)) {
       const reasons = (reply.steps || []).flatMap(step => step.page?.refused || []).map(r => r.reason);

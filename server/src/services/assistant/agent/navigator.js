@@ -7,7 +7,7 @@
  * 2. The checklist with completion ticks ([✓] or [ ]).
  * 3. Results of the last executed actions (ok, not_found, disabled, no_change, cancelled, refused).
  * 4. Its own persistent note from the prior round (<= 200 chars).
- * 5. Current page elements and available destinations.
+ * 5. Current page elements, declared form controls/buttons, and available destinations.
  *
  * It outputs:
  * - note: concise summary of progress / next intent (<= 200 chars)
@@ -18,6 +18,8 @@
 
 const { describeElements } = require('../pageSnapshot');
 const { pagesFor } = require('../pages.registry');
+const { formFor, pressableButtons } = require('../controls.registry');
+const { nowInWords } = require('../resolvers/datetime');
 const config = require('../../../config/assistant.config');
 
 const NAVIGATOR_SCHEMA = {
@@ -32,9 +34,12 @@ const NAVIGATOR_SCHEMA = {
         properties: {
           op: {
             type: 'string',
-            enum: ['click', 'type', 'append', 'replace', 'select', 'check', 'key', 'go', 'open_record', 'open_row'],
+            enum: ['click', 'type', 'append', 'replace', 'select', 'check', 'key', 'go', 'open_record', 'open_row', 'fill', 'press'],
           },
           ref: { type: 'string' },
+          control: { type: 'string', maxLength: 100 },
+          value: { type: 'string', maxLength: 300 },
+          button: { type: 'string', maxLength: 100 },
           text: { type: 'string', maxLength: 300 },
           find: { type: 'string', maxLength: 300 },
           option: { type: 'string', maxLength: 100 },
@@ -55,6 +60,28 @@ const NAVIGATOR_SCHEMA = {
   additionalProperties: false,
 };
 
+function describeDeclaredForm(role, onPage) {
+  const form = onPage ? formFor(role, onPage) : null;
+  if (!form) return '';
+  const lines = [];
+  if (form.controls?.length) {
+    lines.push('Declared Form Controls (use fill(control, value)):');
+    for (const c of form.controls) {
+      const opts = c.options?.length ? ` [options: ${c.options.map((o) => o.label).join(', ')}]` : '';
+      const fmt = c.kind === 'datetime' ? ' (format: YYYY-MM-DDTHH:mm)' : c.kind === 'date' ? ' (format: YYYY-MM-DD)' : '';
+      lines.push(`- ${c.id}: "${c.label}" (${c.kind}${fmt})${opts}`);
+    }
+  }
+  const buttons = pressableButtons(onPage);
+  if (buttons.length) {
+    lines.push('Declared Form Buttons (use press(button)):');
+    for (const b of buttons) {
+      lines.push(`- ${b.id}: "${b.label}" (${b.effect})`);
+    }
+  }
+  return lines.join('\n');
+}
+
 function formatChecklist(checklist = []) {
   if (!checklist.length) return 'None';
   return checklist.map((item, idx) => `${idx + 1}. [${item.done ? '✓' : ' '}] ${item.text}`).join('\n');
@@ -64,7 +91,7 @@ function formatResults(results = []) {
   if (!results.length) return 'None (round 0 or no previous actions)';
   return results
     .map((r) => {
-      const target = r.ref ? ` ${r.ref}` : '';
+      const target = r.ref || r.control || r.button || r.id ? ` ${r.ref || r.control || r.button || r.id}` : '';
       const op = r.op ? ` ${r.op}` : '';
       const reason = r.reason ? `: ${r.reason}` : '';
       return `- ${op}${target} -> ${r.result}${reason}`;
@@ -78,12 +105,20 @@ function buildNavigatorMessages({
   note = '',
   results = [],
   page,
+  onPage = null,
+  clock = null,
   role = 'clinician',
 }) {
   const pages = pagesFor(role);
   const pageList = pages.map((p) => `- ${p.id}: ${p.label} (${p.description})`).join('\n');
   const elements = page?.elements?.length ? describeElements(page.elements) : 'No interactive elements read from page.';
+  const declared = describeDeclaredForm(role, onPage);
   const pageTitle = page?.title ? `Page Title: "${page.title}"` : 'Page Title: (unknown)';
+  const clockLines = role === 'clinician' && clock?.now
+    ? [
+        `- Now is ${nowInWords(clock.now, clock.timeZone)}. For date/datetime fields write the requested date and time as YYYY-MM-DDTHH:mm (or YYYY-MM-DD for date) in that time zone (24-hour clock), working out words like "tomorrow" or "kal" from now.`,
+      ]
+    : [];
 
   const system = [
     'You are the Navigator for a clinic web assistant. You help the doctor by selecting 1 to 3 actions each round.',
@@ -97,11 +132,14 @@ function buildNavigatorMessages({
     '- select(ref, option): Choose an option in a dropdown.',
     '- check(ref): Tick an unticked checkbox.',
     '- key(ref, "Enter"): Submit search box (Enter key).',
+    '- fill(control, value): Fill a declared form control on the open page by its control id (e.g. "scheduledAt", "visit.systolic", "visit.weight"). Split "BP 110/70" into fill("visit.systolic", "110") and fill("visit.diastolic", "70").',
+    '- press(button): Press a declared form button on the open page by its button id (e.g. "save_visit", "create_visit"). At most one save/send button per round.',
     '- go(page): Open a menu page by id. go("return") returns to the record this request started on; if none was open, ask which patient.',
     '- Patient-specific work requires a patient named in the request or a record already open.',
     '- Private controls cannot be clicked or filled. Use open_row with a name from the request or open_record.',
     '- open_record(kind, patient): Open a patient visit, card, or appointment directly by name (kind: "last_visit"|"next_visit"|"maternity"|"new_appointment"). Always use open_record directly when asked to view/open a patient record or visit, instead of manually searching on the patients page. Note: Consultation notes is NOT a record kind; to open consultation notes, click the "Consultation notes" button on screen.',
     '- open_row(patient): Click a patient row in the directory table matching the patient name.',
+    ...clockLines,
     '',
     'Rules:',
     '1. Grounding: Never invent doses, numbers, text, or patient names. All text and values must come verbatim from the user request.',
@@ -125,6 +163,7 @@ function buildNavigatorMessages({
     `Your Last Note: "${note || '(none)'}"`,
     '',
     `${pageTitle}`,
+    ...(declared ? [`${declared}\n`] : []),
     `Visible Page Elements:\n${elements}`,
   ].join('\n');
 
@@ -137,7 +176,7 @@ function buildNavigatorMessages({
 /**
  * Executes one Navigator reasoning step using the LLM provider.
  *
- * @param {object} params - { message, checklist, note, results, page, role, provider, settings }
+ * @param {object} params - { message, checklist, note, results, page, onPage, clock, role, provider, settings }
  * @returns {Promise<{ note: string, actions: Array<object>, status: string, question?: string, reason?: string }>}
  */
 async function navigateRound({
@@ -146,6 +185,8 @@ async function navigateRound({
   note = '',
   results = [],
   page,
+  onPage = null,
+  clock = null,
   role = 'clinician',
   provider,
   settings = config,
@@ -159,7 +200,7 @@ async function navigateRound({
     };
   }
 
-  const messages = buildNavigatorMessages({ message, checklist, note, results, page, role });
+  const messages = buildNavigatorMessages({ message, checklist, note, results, page, onPage, clock, role });
 
   const timeoutMs = settings.modelCallTimeoutMs || settings.timeoutMs || 30000;
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -169,7 +210,6 @@ async function navigateRound({
         schema: NAVIGATOR_SCHEMA,
         timeoutMs,
       });
-
 
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
       if (parsed && typeof parsed === 'object') {
@@ -201,7 +241,7 @@ async function navigateRound({
           ...(parsed.reason && { reason: String(parsed.reason).slice(0, 300) }),
         };
       }
-    } catch (err) {
+    } catch (_err) {
       if (attempt === 0) continue; // Retry once on timeout/error
       return {
         note: "Couldn't finish: the model didn't answer",
@@ -223,5 +263,6 @@ async function navigateRound({
 module.exports = {
   navigateRound,
   buildNavigatorMessages,
+  describeDeclaredForm,
   NAVIGATOR_SCHEMA,
 };
