@@ -497,6 +497,12 @@ function pageRules(message, page, { role, onPage, round, progress, settings }) {
     const press = { page: 'dashboard', id: open.id, label: open.label, effect: open.effect };
     return { type: 'run', steps: [{ label: 'Dashboard', press }], finished: false, ...(another && { continue: true }) };
   }
+  if (ruled.openAudioConsult) {
+    const open = onPage === 'dashboard' ? findButton(role, 'dashboard', 'open_audio_consult') : null;
+    if (!open) return null;
+    const press = { page: 'dashboard', id: open.id, label: open.label, effect: open.effect, ...(open.sideEffect && { sideEffect: open.sideEffect }) };
+    return { type: 'run', steps: [{ label: 'Dashboard', press }], finished: false, ...(another && { continue: true }) };
+  }
 
   const byRef = new Map(page.elements.map((el) => [el.ref, el]));
   const fresh = ruled.actions.filter((a) => byRef.has(a.ref) && !progress.includes(doneLine(a.op, byRef.get(a.ref).name)));

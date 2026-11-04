@@ -21,7 +21,7 @@ const PAGE = {
     el('r5', 'button', 'Remove', { section: 'Prescription · Medicine 1' }),
     el('r6', 'button', 'End visit and share summary', { effect: 'send' }),
     el('r7', 'select', 'Item type', { options: ['medicine', 'injection', 'vaccination'], effect: 'free' }),
-    el('r8', 'button', 'Record consultation'),
+    el('r8', 'button', 'Start recording'),
     el('r9', 'button', 'Save template'),
     el('r10', 'link', 'Schedule'),
   ],
@@ -59,7 +59,7 @@ describe('page snapshot: risk classes', () => {
     ['Remove', 'click', 'never'],
     ['Delete this entry', 'click', 'never'],
     ['Sign out', 'click', 'never'],
-    ['Record consultation', 'click', 'never'],
+    ['Start recording', 'click', 'never'],
     ['Confirm Readiness', 'click', 'never'],
     ['Browse files', 'click', 'never'],
     ['Open notes', 'click', 'free'],
@@ -261,7 +261,7 @@ describe('handleStep: acting on the open page (doctor)', () => {
     }]);
     const system = result.provider.calls[0].messages[0].content;
     expect(system).toContain('r6 button "End visit and share summary" [sends to patient]');
-    expect(system).toContain('r8 button "Record consultation" [never]');
+    expect(system).toContain('r8 button "Start recording" [never]');
     expect(result.provider.calls[0].schema.properties.pageActions.items.properties.ref.enum).toEqual(PAGE.elements.map((e) => e.ref));
   });
 

@@ -17,9 +17,9 @@ const { mentions, norm } = require('./resolvers/values');
 
 // Labels that are never pressed. Deletes stay manual by decision; recording and
 // consent must be the doctor's own act; browsers do not let code choose files.
-const NEVER = /\b(delete|remove|discard|clear|archive|untick|sign ?out|log ?out|reset|new card|record|recording|microphone|mic check|consent|readiness|start consultation|end consultation|test phrase|browse files|choose file|replace file|upload)\b/i;
+const NEVER = /\b(delete|remove|discard|clear|archive|untick|sign ?out|log ?out|reset|new card|start recording|stop recording|pause recording|resume recording|record audio|mic check|mic test|stt test|start consultation|stop consultation|end consultation|confirm ready|microphone|consent|readiness|test phrase|browse files|choose file|replace file|upload|download|export|browse)\b/i;
 // Labels that only change what is shown.
-const FREE = /^(open|view|show|hide|expand|collapse|close|back|next|previous|prev|today|search|filter|menu|more|less|details|see|go to|jump|scroll|cancel|dismiss|review|preview|edit|templates?|all|upcoming|past)\b/i;
+const FREE = /^(open|view|show|hide|expand|collapse|close|back|next|previous|prev|today|search|filter|menu|more|less|details|see|go to|jump|scroll|cancel|dismiss|review|preview|edit|templates?|all|upcoming|past|maternity record|antenatal record)\b/i;
 const FREE_KINDS = new Set(['link', 'summary', 'tab']);
 const TEXT_KINDS = new Set(['text', 'textarea', 'number', 'date', 'datetime', 'email', 'tel', 'search']);
 const CLICK_KINDS = new Set(['button', 'link', 'summary', 'tab', 'checkbox', 'radio']);
@@ -221,6 +221,7 @@ function checkPageActions(proposed, snapshot, message, { maxActions }) {
       ...(find !== undefined && { find }),
       ...(element.section && { section: element.section }),
       ...(element.effect && { effect: element.effect }),
+      ...(element.sideEffect && { sideEffect: element.sideEffect }),
       ...(confirmWith && { group: confirmWith }),
     });
   }
@@ -364,6 +365,14 @@ function matchPageCommand(message, snapshot) {
     if (notes) return { actions: [], done: true };
     const button = only(elements, NOTES_BUTTON, CLICK_KINDS);
     return button ? { actions: [{ ref: button.ref, op: 'click', value: '' }] } : { openNotes: true };
+  }
+
+  // "record consultation", "open recording", "open audio consult"
+  const AUDIO_CONSULT = /^(?:please\s+)?(?:open\s+(?:consultation\s+)?recording|record\s+consultation|open\s+audio\s+consult|audio\s+consult)$/i;
+  if (AUDIO_CONSULT.test(text)) {
+    const btn = elements.find((el) => CLICK_KINDS.has(el.kind) && /record consultation|open audio consult|open recording/i.test(el.name));
+    if (btn) return { actions: [{ ref: btn.ref, op: 'click', value: '' }] };
+    return { openAudioConsult: true };
   }
 
   // Close what is open: an open panel is read first, so its close button comes first; a

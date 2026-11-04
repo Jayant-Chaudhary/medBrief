@@ -79,7 +79,7 @@ function resolveDeclaredButton(role, onPage, rawId) {
   if (btn && !btn.internal) return btn;
   const lower = target.toLowerCase();
   btn = form.buttons.find(
-    (b) => !b.internal && (b.id.toLowerCase() === lower || b.label.toLowerCase() === lower)
+    (b) => !b.internal && (b.id.toLowerCase() === lower || b.label.toLowerCase() === lower || (Array.isArray(b.aliases) && b.aliases.some((a) => a.toLowerCase() === lower)))
   );
   return btn || null;
 }

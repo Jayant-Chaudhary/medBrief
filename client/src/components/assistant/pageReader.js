@@ -160,6 +160,7 @@ export function readPage(doc = document) {
       opensSomething: el.hasAttribute('aria-haspopup') || el.hasAttribute('aria-expanded'),
       tag,
     });
+    const sideEffect = el.closest('[data-assistant-side-effect]')?.dataset.assistantSideEffect;
     const options = kind === 'select'
       ? [...el.options].map((o) => cleanLabel(o.textContent)).filter(Boolean).slice(0, MAX_OPTIONS)
       : null;
@@ -185,6 +186,7 @@ export function readPage(doc = document) {
       ...(section && { section }),
       ...(options && { options }),
       ...(effect && { effect }),
+      ...(sideEffect && { sideEffect }),
       ...(el.required && { required: true }),
       ...((el.disabled || el.getAttribute('aria-disabled') === 'true') && { disabled: true }),
     });
