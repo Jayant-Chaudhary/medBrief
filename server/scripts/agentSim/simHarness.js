@@ -15,6 +15,7 @@ async function runAgentSim(prompt, {
   memory = [],
   sim: existingSim = null,
   maxRounds = config.maxRounds || 15,
+  clock = { now: new Date(), timeZone: 'Asia/Kolkata' },
   provider = getProvider(),
   settings = config,
 } = {}) {
@@ -46,6 +47,7 @@ async function runAgentSim(prompt, {
       message: prompt,
       role: 'clinician',
       userId: 'dr-test',
+      clock,
       currentPath: sim.getCurrentPath(),
       currentRecord: sim.currentRecord,
       originRecord: sim.originRecord,

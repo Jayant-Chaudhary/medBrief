@@ -598,6 +598,48 @@ function buildSingleStepTasks() {
       allowedKeys: ['profile'],
       verify: (sim) => sim.profile.saved === true,
     },
+    {
+      id: 'cov-single-open-new-visit',
+      item: 'new_appointment:open',
+      prompt: 'open new visit',
+      initialPage: 'dashboard',
+      allowedKeys: ['currentPage'],
+      verify: (sim) => sim.currentPage === 'new_appointment',
+    },
+    {
+      id: 'cov-single-record-consultation',
+      item: 'dashboard:open_audio_consult',
+      prompt: 'record consultation',
+      initialPage: 'dashboard',
+      needsConfirm: true,
+      allowedKeys: ['audioConsultOpen', 'audioModalOpen'],
+      verify: (sim) => sim.audioModalOpen === true,
+    },
+    {
+      id: 'cov-single-close-audio-modal',
+      item: 'audio_consult_modal:m_btn_close',
+      prompt: 'close the modal',
+      initialPage: 'dashboard',
+      audioModalOpen: true,
+      allowedKeys: ['audioModalOpen'],
+      verify: (sim) => sim.audioModalOpen === false,
+    },
+    {
+      id: 'cov-single-read-transcript-logs',
+      item: 'dashboard:transcript_logs',
+      prompt: 'read transcript logs',
+      initialPage: 'dashboard',
+      allowedKeys: ['transcriptLogsOpen', 'audioModalOpen', 'audioModalTab'],
+      verify: (sim) => sim.audioModalOpen === true || sim.transcriptLogsOpen === true,
+    },
+    {
+      id: 'cov-single-open-maternity-record',
+      item: 'visit:tab_maternity_record',
+      prompt: 'open maternity record',
+      initialPage: 'visit',
+      allowedKeys: ['currentPage'],
+      verify: (sim) => sim.currentPage === 'maternity',
+    },
   ];
 }
 
@@ -709,6 +751,22 @@ function buildMultiStepTasks(seed = Date.now()) {
       needsConfirm: true,
       allowedKeys: ['checklist', 'notes'],
       verify: (sim) => sim.checklist.has('Iron advice') && sim.notes.includes('diet counseling given'),
+    },
+    {
+      id: 'multi-11-new-visit-return',
+      prompt: 'new visit for Asha Example tomorrow at 5 pm and then back to dashboard',
+      initialPage: 'dashboard',
+      initialPatient: 'Asha Example',
+      allowedKeys: ['currentPage', 'activePatientId', 'newAppointment'],
+      verify: (sim) => sim.currentPage === 'dashboard',
+    },
+    {
+      id: 'multi-12-open-recording-transcript',
+      prompt: 'open recording and check transcript logs',
+      initialPage: 'dashboard',
+      needsConfirm: true,
+      allowedKeys: ['audioConsultOpen', 'audioModalOpen', 'audioModalTab', 'transcriptLogsOpen'],
+      verify: (sim) => sim.audioModalOpen === true,
     },
   ];
 }
@@ -854,6 +912,7 @@ async function runCoverageEval({ provider, settings }) {
         initialPatient: t.initialPatient !== undefined ? t.initialPatient : 'Asha Example',
         notesOpen: t.notesOpen !== undefined ? t.notesOpen : null,
         originRecord: t.originRecord,
+        audioModalOpen: Boolean(t.audioModalOpen),
       });
       if (t.setup) t.setup(sim);
       const before = sim.cloneStateSummary();

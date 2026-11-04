@@ -11,6 +11,7 @@ class ClinicSimulator {
     notesOpen = null,
     originRecord = undefined,
     confirmCancel = false,
+    audioModalOpen = false,
   } = {}) {
     this.patients = [
       {
@@ -63,7 +64,9 @@ class ClinicSimulator {
     this.notesOpen = notesOpen !== null ? Boolean(notesOpen) : (initialPage === 'visit');
     this.notes = '';
     this.notesSaved = false;
-    this.audioConsultOpen = false;
+    this.audioConsultOpen = Boolean(audioModalOpen);
+    this.audioModalOpen = Boolean(audioModalOpen);
+    this.audioModalTab = 'RECORD';
     this.medicines = [];
     this.bundlesAdded = [];
     this.allergies = '';
@@ -210,12 +213,35 @@ class ClinicSimulator {
       { ref: 'nav_dash', kind: 'link', name: 'Dashboard', section: 'Menu' },
       { ref: 'nav_sched', kind: 'link', name: 'Schedule', section: 'Menu' },
       { ref: 'nav_pat', kind: 'link', name: 'Patients', section: 'Menu' },
-      { ref: 'nav_new', kind: 'link', name: 'New appointment', section: 'Menu' },
+      { ref: 'nav_new', kind: 'link', name: 'New visit', section: 'Menu' },
       { ref: 'nav_mat', kind: 'link', name: 'Maternity card', section: 'Menu' },
       { ref: 'nav_chk', kind: 'link', name: 'Checklists', section: 'Menu' },
       { ref: 'nav_tpl', kind: 'link', name: 'Medication templates', section: 'Menu' },
       { ref: 'nav_prof', kind: 'link', name: 'Profile', section: 'Menu' },
     ];
+
+    if (this.audioModalOpen) {
+      return {
+        title: 'Consultation Audio & Transcript',
+        headings: ['Consultation Audio', 'Live STT Transcript'],
+        elements: [
+          ...menu,
+          { ref: 'm_tab_record', kind: 'tab', name: 'Record Audio', section: 'Modal tabs', effect: 'free' },
+          { ref: 'm_tab_transcript', kind: 'tab', name: 'Transcript & Processing Logs', section: 'Modal tabs', effect: 'free' },
+          { ref: 'm_btn_close', kind: 'button', name: 'Close modal', section: 'Header', effect: 'free' },
+          { ref: 'm_btn_copy_code', kind: 'button', name: 'Copy room code', section: 'Room Code', effect: 'free' },
+          { ref: 'm_btn_mic_check', kind: 'button', name: 'Proceed to Mic Check', section: 'Lobby', effect: 'never' },
+          { ref: 'm_btn_stt_test', kind: 'button', name: 'Speak Test Phrase (3s)', section: 'Mic Check', effect: 'never' },
+          { ref: 'm_chk_consent', kind: 'checkbox', name: 'Informed Consent Confirmation', section: 'Mic Check', effect: 'never' },
+          { ref: 'm_btn_ready', kind: 'button', name: 'Confirm Readiness', section: 'Mic Check', effect: 'never' },
+          { ref: 'm_btn_start_rec', kind: 'button', name: 'Start Consultation', section: 'Mic Check', effect: 'never' },
+          { ref: 'm_btn_stop_rec', kind: 'button', name: 'End Consultation & Generate Notes', section: 'Active Recording', effect: 'never' },
+          { ref: 'm_btn_refresh', kind: 'button', name: 'Refresh transcript', section: 'Transcript Logs', effect: 'free' },
+          { ref: 'm_btn_download', kind: 'button', name: 'Download', section: 'Transcript Logs', effect: 'never' },
+          { ref: 'm_transcript_feed', kind: 'text', name: '[transcript feed]', section: 'Transcript Logs', private: true },
+        ],
+      };
+    }
 
     if (this.currentPage === 'dashboard') {
       title = 'Dashboard';
@@ -224,6 +250,8 @@ class ClinicSimulator {
         ...menu,
         { ref: 'btn_open_visit', kind: 'button', name: '[patient row]', section: "Today's visits", private: true, patient: this.activePatient?.fullName || 'Asha Example', effect: 'free' },
         { ref: 'btn_new_app', kind: 'button', name: 'New visit', section: "Today's visits", effect: 'free' },
+        { ref: 'btn_rec_audio', kind: 'button', name: 'Record Consultation', section: "Ambient Audio", effect: 'send', sideEffect: 'This will open the consultation recording window. Recording stays manual.' },
+        { ref: 'btn_transcript_logs', kind: 'button', name: 'Transcript Logs', section: "Ambient Audio", effect: 'free' },
       ];
     } else if (this.currentPage === 'patients') {
       title = 'Patients';
@@ -232,6 +260,7 @@ class ClinicSimulator {
         ...menu,
         { ref: 'inp_search_patients', kind: 'search', name: 'Search patients', effect: 'free' },
         { ref: 'p_new_visit', kind: 'button', name: 'New Visit', section: 'Patient directory', effect: 'free' },
+        { ref: 'btn_schedule_new_visit', kind: 'button', name: 'Schedule New Visit', section: 'Patient directory', effect: 'free' },
         ...this.patients.map((p, idx) => ({
           ref: `row_pat_${idx + 1}`,
           kind: 'button',
@@ -302,12 +331,13 @@ class ClinicSimulator {
         ...menu,
         { ref: 'r_notes_btn', kind: 'button', name: 'Consultation notes', section: 'Consultation', effect: 'free' },
         { ref: 'r_mat_link', kind: 'link', name: 'Maternity card', section: 'Consultation', effect: 'free' },
+        { ref: 'tab_maternity_record', kind: 'tab', name: 'Maternity record', section: 'Consultation', effect: 'free' },
         { ref: 'r_end_visit', kind: 'button', name: 'End visit', section: 'Consultation', effect: 'send' },
         { ref: 'r_filter_all', kind: 'button', name: 'All', section: 'Flowsheet', effect: 'free' },
         { ref: 'r_filter_changed', kind: 'button', name: 'Changed since last report 0', section: 'Flowsheet', effect: 'free' },
         { ref: 'r_filter_review', kind: 'button', name: 'Needs review 0', section: 'Flowsheet', effect: 'free' },
         { ref: 'r_transcript_logs', kind: 'button', name: 'Transcript Logs', section: 'Consultation', effect: 'free' },
-        { ref: 'r_record_mic', kind: 'button', name: 'Record Consultation', section: 'Consultation', effect: 'never' },
+        { ref: 'r_record_mic', kind: 'button', name: 'Record Consultation', section: 'Consultation', effect: 'send', sideEffect: 'This will open the consultation recording window. Recording stays manual.' },
       ];
 
       if (this.notesOpen) {
@@ -517,6 +547,7 @@ class ClinicSimulator {
       }
       if (btnId === 'open_audio_consult') {
         this.audioConsultOpen = true;
+        this.audioModalOpen = true;
         return withId({ op: 'press', id: btnId, result: 'ok' });
       }
       if (btnId === 'close_visit') {
@@ -610,8 +641,35 @@ class ClinicSimulator {
         this.notesOpen = false;
         return withId({ op, ref, result: 'ok' });
       }
-      if (ref === 'r_mat_link') {
+      if (ref === 'btn_rec_audio' || ref === 'r_record_mic') {
+        this.audioConsultOpen = true;
+        this.audioModalOpen = true;
+        return withId({ op, ref, result: 'ok' });
+      }
+      if (ref === 'btn_transcript_logs' || ref === 'r_transcript_logs') {
+        this.transcriptLogsOpen = true;
+        this.audioModalOpen = true;
+        this.audioModalTab = 'TRANSCRIPT';
+        return withId({ op, ref, result: 'ok' });
+      }
+      if (ref === 'tab_maternity_record' || ref === 'r_mat_link') {
         this.currentPage = 'maternity';
+        return withId({ op, ref, result: 'ok' });
+      }
+      if (ref === 'btn_schedule_new_visit' || ref === 'p_new_visit' || ref === 'btn_new_app') {
+        this.currentPage = 'new_appointment';
+        return withId({ op, ref, result: 'ok' });
+      }
+      if (ref === 'm_btn_close') {
+        this.audioModalOpen = false;
+        return withId({ op, ref, result: 'ok' });
+      }
+      if (ref === 'm_tab_record') {
+        this.audioModalTab = 'RECORD';
+        return withId({ op, ref, result: 'ok' });
+      }
+      if (ref === 'm_tab_transcript') {
+        this.audioModalTab = 'TRANSCRIPT';
         return withId({ op, ref, result: 'ok' });
       }
       if (ref === 'r_filter_all') {

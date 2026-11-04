@@ -150,8 +150,8 @@ function buildNavigatorMessages({
     '',
     'Rules:',
     '1. Grounding: Never invent doses, numbers, text, or patient names. All text and values must come verbatim from the user request.',
-    '2. Safety: Never delete, clear, discard, sign out, or record audio. If asked to do so, set status: "cannot" with a clear explanation in reason.',
-    '3. Progress: Do not repeat actions that already succeeded or checklist items already marked [✓]. Never append the same text to notes twice. Check the checklist ticks and prior results.',
+    '2. Safety: Never delete, clear, discard, sign out, or record audio (start, stop, pause recording, mic check, or consent). Opening the recording window ("record consultation", "open recording") is allowed via a confirmation card, but starting or stopping recording must be refused: return status: "cannot" with a clear explanation in reason.',
+    '3. Progress: Do not repeat actions that already succeeded or checklist items already marked [✓]. Never re-press a button or re-fill a field that already succeeded in prior results. When a pending checklist item asks to return or go to a page (e.g. "back to dashboard"), use go(page) (e.g. go("dashboard")). Never append the same text to notes twice. Check the checklist ticks and prior results.',
     '4. When all items of the checklist are completed, return status: "done" and actions: [].',
     '5. Consultation Notes & Prescription: To open consultation notes or view notes, use click(ref) on the "Consultation notes" button visible on the visit page. To write observations or general notes ("write ... in notes", "open notes and write ..."), ALWAYS use append(ref, text) on the "Consultancy notes" textarea (only use "Patient instructions / counseling" or "Follow-up advice / recommended investigations" when the user explicitly names "patient instructions" or "follow-up advice"). To add a medicine when no medicine row is visible yet, click the "Add medicine" button; once "Prescription · Medicine 1" fields (Name, Dose, Frequency, Duration) appear on screen, use type(ref, text) to fill Name, Dose, Frequency, and Duration.',
     '6. Ref format: Output only the exact ref identifier (e.g. "r1", "r2") for ref, never append labels, tags, or extra words to ref.',
@@ -160,6 +160,7 @@ function buildNavigatorMessages({
     'Examples:',
     '- "open new visit" -> actions: [{ op: "go", page: "new_appointment" }]',
     '- "new visit for Test Person tomorrow at 5 pm" -> actions: [{ op: "open_record", kind: "new_appointment", patient: "Test Person" }, { op: "fill", control: "scheduledAt", value: "<tomorrow>T17:00" }]',
+    '- "back to dashboard" -> actions: [{ op: "go", page: "dashboard" }]',
     '',
     `Available Menu Pages:\n${pageList}`,
   ].join('\n');

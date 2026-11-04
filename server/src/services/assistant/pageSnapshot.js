@@ -230,7 +230,7 @@ function checkPageActions(proposed, snapshot, message, { maxActions }) {
 
 // Page phrase rules: plain commands that name an element exactly are matched without the model.
 const FILLER = new Set(['the', 'a', 'an', 'my', 'this', 'please', 'button', 'on', 'for', 'me']);
-const VERBS = /^(press|click|tap|hit|open|show|select)\s+/;
+const VERBS = /^(press|click|tap|hit|open|show|select|read|view|check|see)\s+/;
 const TICK = /^(?:please\s+)?(?:tick|check|mark)\s+(.+)$/i;
 const FIELD_VALUE = /^([^:]{3,60}):\s*(.+)$/;
 const TYPED_IN_FIELD = /^(?:please\s+)?(?:type|search(?:\s+for)?)\s+["“']?(.+?)["”']?\s+(?:in|into)\s+(?:the\s+)?(.+?)(?:\s+(?:field|box|input|bar))?$/i;

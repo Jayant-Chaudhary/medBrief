@@ -12,7 +12,7 @@
         { "id": "open_notes", "label": "Open consultation notes", "effect": "ui" },
         { "id": "close_notes", "label": "Close consultation notes", "effect": "ui" },
         { "id": "save_notes", "label": "Save consultation notes", "effect": "save" },
-        { "id": "open_audio_consult", "label": "Open audio consult", "effect": "save" },
+        { "id": "open_audio_consult", "label": "Record Consultation", "effect": "send", "sideEffect": "This will open the consultation recording window. Recording stays manual." },
         { "id": "close_visit", "label": "Back to today's visits", "effect": "ui" }
       ],
       "pageElements": [
@@ -20,12 +20,13 @@
         { "ref": "btn_new_app", "kind": "button", "name": "New visit", "section": "Today's visits", "effect": "free" },
         { "ref": "r_notes_btn", "kind": "button", "name": "Consultation notes", "section": "Consultation", "effect": "free" },
         { "ref": "r_mat_link", "kind": "link", "name": "Maternity card", "section": "Consultation", "effect": "free" },
+        { "ref": "r_mat_tab", "kind": "tab", "name": "Maternity record", "section": "Consultation", "effect": "free" },
         { "ref": "r_end_visit", "kind": "button", "name": "End visit", "section": "Consultation", "effect": "send" },
         { "ref": "r_filter_all", "kind": "button", "name": "All", "section": "Flowsheet", "effect": "free" },
         { "ref": "r_filter_changed", "kind": "button", "name": "Changed since last report 0", "section": "Flowsheet", "effect": "free" },
         { "ref": "r_filter_review", "kind": "button", "name": "Needs review 0", "section": "Flowsheet", "effect": "free" },
         { "ref": "r_transcript_logs", "kind": "button", "name": "Transcript Logs", "section": "Consultation", "effect": "free" },
-        { "ref": "r_record_mic", "kind": "button", "name": "Record Consultation", "section": "Consultation", "effect": "never" }
+        { "ref": "r_record_mic", "kind": "button", "name": "Record Consultation", "section": "Consultation", "effect": "send", "sideEffect": "This will open the consultation recording window. Recording stays manual." }
       ],
       "panelElements": [
         { "ref": "r_close_panel", "kind": "button", "name": "Close panel", "section": "Consultation notes", "effect": "free" },
@@ -97,6 +98,7 @@
       ],
       "pageElements": [
         { "ref": "p_new_visit", "kind": "button", "name": "New Visit", "section": "Patient directory", "effect": "free" },
+        { "ref": "btn_schedule_new_visit", "kind": "button", "name": "Schedule New Visit", "section": "Patient directory", "effect": "free" },
         { "ref": "row_pat_1", "kind": "button", "name": "[patient row]", "section": "Patients list", "private": true, "effect": "free" },
         { "ref": "row_pat_2", "kind": "button", "name": "[patient row]", "section": "Patients list", "private": true, "effect": "free" },
         { "ref": "row_pat_3", "kind": "button", "name": "[patient row]", "section": "Patients list", "private": true, "effect": "free" },
@@ -106,7 +108,7 @@
     {
       "id": "new_appointment",
       "path": "/clinician/appointments/new",
-      "label": "New appointment",
+      "label": "New visit",
       "declaredControls": [
         { "id": "scheduledAt", "label": "Date and time", "kind": "datetime", "future": true },
         { "id": "patientFullName", "label": "New patient name", "kind": "text" },
@@ -236,6 +238,28 @@
         { "ref": "prof_council", "kind": "text", "name": "State medical council", "section": "Profile", "effect": "free" },
         { "ref": "prof_save", "kind": "button", "name": "Save changes", "section": "Profile", "effect": "save" },
         { "ref": "prof_signout", "kind": "button", "name": "Sign out", "section": "Profile", "effect": "never" }
+      ]
+    },
+    {
+      "id": "audio_consult_modal",
+      "path": "/clinician#audio-consult",
+      "label": "Consultation Audio & Transcript",
+      "declaredControls": [],
+      "declaredButtons": [],
+      "pageElements": [
+        { "ref": "m_tab_record", "kind": "tab", "name": "Record Audio", "section": "Modal tabs", "effect": "free" },
+        { "ref": "m_tab_transcript", "kind": "tab", "name": "Transcript & Processing Logs", "section": "Modal tabs", "effect": "free" },
+        { "ref": "m_btn_close", "kind": "button", "name": "Close modal", "section": "Header", "effect": "free" },
+        { "ref": "m_btn_copy_code", "kind": "button", "name": "Copy room code", "section": "Room Code", "effect": "free" },
+        { "ref": "m_btn_mic_check", "kind": "button", "name": "Proceed to Mic Check", "section": "Lobby", "effect": "never" },
+        { "ref": "m_btn_stt_test", "kind": "button", "name": "Speak Test Phrase (3s)", "section": "Mic Check", "effect": "never" },
+        { "ref": "m_chk_consent", "kind": "checkbox", "name": "Informed Consent Confirmation", "section": "Mic Check", "effect": "never" },
+        { "ref": "m_btn_ready", "kind": "button", "name": "Confirm Readiness", "section": "Mic Check", "effect": "never" },
+        { "ref": "m_btn_start_rec", "kind": "button", "name": "Start Consultation", "section": "Mic Check", "effect": "never" },
+        { "ref": "m_btn_stop_rec", "kind": "button", "name": "End Consultation & Generate Notes", "section": "Active Recording", "effect": "never" },
+        { "ref": "m_btn_refresh", "kind": "button", "name": "Refresh transcript", "section": "Transcript Logs", "effect": "free" },
+        { "ref": "m_btn_download", "kind": "button", "name": "Download", "section": "Transcript Logs", "effect": "never" },
+        { "ref": "m_transcript_feed", "kind": "text", "name": "[transcript feed]", "section": "Transcript Logs", "private": true }
       ]
     }
   ]

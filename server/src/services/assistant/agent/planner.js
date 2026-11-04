@@ -90,6 +90,20 @@ const PLANNER_EXAMPLES = [
       ],
     }),
   },
+,
+  {
+    role: 'user',
+    content: 'open recording and check transcript logs',
+  },
+  {
+    role: 'assistant',
+    content: JSON.stringify({
+      checklist: [
+        'Open recording',
+        'Check transcript logs',
+      ],
+    }),
+  },
 ];
 
 const LEADING_FILLER = /^(?:and\s+then|then|after\s+that|afterwards|lastly|finally|also|aur|phir)\b,?\s*/i;

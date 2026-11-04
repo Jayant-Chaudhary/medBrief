@@ -1,7 +1,7 @@
 const { digest } = require('./continuation');
 const { findPage } = require('./pages.registry');
 const canonical = s => String(s || '').toLowerCase().replace(/consultancy|consultation/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-const words = s => canonical(s).split(' ').filter(w => (w.length > 2 || w === 'bp' || w === 'hb') && !['the','please','open','show','write','add','with','into','then','and','check','tick','mark','done','set','box'].includes(w));
+const words = s => canonical(s).split(' ').filter(w => w.length > 2 && !['the', 'please', 'open', 'show', 'write', 'add', 'with', 'into', 'then', 'and', 'check', 'tick', 'mark', 'done', 'set'].includes(w));
 function matchingItem(checklist, action) {
   return checklist.findIndex(item => {
     if (item.done) return false;
@@ -11,7 +11,7 @@ function matchingItem(checklist, action) {
     if (action.op === 'return_record') return Boolean(action.recordId) && /\b(return|back)\b/.test(text);
     if (action.op === 'go') {
       const page = findPage('clinician', action.pageId || action.page);
-      return /\b(open|go|show|view|find|search|look|kholo|return|back)\b/i.test(item.text) &&
+      return /\b(open|go|show|view|kholo|return|back)\b/i.test(item.text) &&
         [page?.label, ...(page?.aliases || [])].filter(Boolean).some(s => text.includes(canonical(s)));
     }
     if (action.op === 'open_record') {
@@ -30,16 +30,12 @@ function matchingItem(checklist, action) {
     }
     const target = words(action.name || action.label || action.control || action.id || action.ref);
     const hasTarget = target.length && target.every(w => text.includes(w));
-    if (['type','append','replace','fill','select'].includes(action.op)) {
-      const isSearch = /search|query|find|patients/i.test((action.name || '') + ' ' + (action.control || ''));
-      if (isSearch && /\b(find|search|look)\b/.test(text) && (hasTarget || (action.value && text.includes(canonical(action.value))))) {
-        return true;
-      }
+    if (['type', 'append', 'replace', 'fill', 'select'].includes(action.op)) {
       return /\b(write|add|append|type|replace|change|fill|set|notes|likho|record|bp|weight|date|time|appointment|schedule|book)\b/.test(text) &&
         (hasTarget || (action.value && text.includes(canonical(action.value))) || (action.control === 'scheduledAt' && /\b(time|date|tomorrow|today|kal|aaj|\d+)\b/.test(text))) && !/\b(open|go|find)\b/.test(text);
     }
     if (action.op === 'check') return hasTarget && /\b(tick|check|mark)\b/.test(text);
-    if (['click','press'].includes(action.op)) return (hasTarget || (action.id === 'save_visit' && /\b(add|save)\b.*\bvisit\b/.test(text)) || (action.id === 'create_visit' && /\b(create|send|invite|book)\b/.test(text))) && /\b(open|show|view|find|search|close|press|click|add|save|send|use|select|create|invite)\b/.test(text) && !/\b(write|type|append)\b/.test(text);
+    if (['click','press'].includes(action.op)) return (hasTarget || (action.id === 'save_visit' && /\b(add|save)\b.*\bvisit\b/.test(text)) || (action.id === 'create_visit' && /\b(create|send|invite|book)\b/.test(text)) || ((action.id === 'open_audio_consult' || /record consultation/i.test(action.name || '')) && /\b(record|recording|audio)\b/.test(text))) && /\b(open|show|view|find|search|close|press|click|add|save|send|use|select|create|invite|check|read)\b/.test(text) && !/\b(write|type|append)\b/.test(text);
     return false;
   });
 }
@@ -49,7 +45,7 @@ function pendingActions(reply, checklist, round, currentPath) {
     action.actionId = `${round}:${pending.length}`;
     const itemIndex = matchingItem(checklist, action);
     const { value, find } = action;
-    const safe = Object.fromEntries(['actionId','op','ref','name','section','control','page','pageId','path','kind','recordId','field','hash'].filter(k => action[k] !== undefined).map(k => [k, action[k]]));
+    const safe = Object.fromEntries(['actionId', 'op', 'ref', 'name', 'section', 'control', 'page', 'pageId', 'path', 'kind', 'recordId', 'field', 'hash'].filter(k => action[k] !== undefined).map(k => [k, action[k]]));
     pending.push({ ...safe, itemIndex, fingerprint: digest(JSON.stringify([currentPath, action.op, action.pageId || action.path || action.section, action.name || action.control || action.ref, value, find])) });
   }
   if (reply.type === 'navigate') add(reply);
@@ -87,19 +83,23 @@ function applyResults(checklist, results) {
   });
 }
 function stop(checklist, reason, source = 'agent') {
-  return { type: 'unsupported', source, steps: [], checklist: checklist.map(c => c.done ? c : { ...c, reason }),
-    message: checklist.map(c => c.done ? `✓ ${c.text}` : `Couldn't: ${c.text} because ${reason}`).join('\n') || `Couldn't complete this request because ${reason}` };
+  return {
+    type: 'unsupported', source, steps: [], checklist: checklist.map(c => c.done ? c : { ...c, reason }),
+    message: checklist.map(c => c.done ? `✓ ${c.text}` : `Couldn't: ${c.text} because ${reason}`).join('\n') || `Couldn't complete this request because ${reason}`
+  };
 }
 function boundProvider(provider, deadline, settings, clock = Date.now) {
-  return { complete: async options => {
-    const timeoutMs = Math.min(options.timeoutMs || settings.modelCallTimeoutMs, settings.modelCallTimeoutMs, deadline - clock());
-    if (timeoutMs <= 0) throw Object.assign(new Error('REQUEST_TIMEOUT'), { code: 'REQUEST_TIMEOUT' });
-    let timer;
-    try {
-      return await Promise.race([provider.complete({ ...options, timeoutMs }), new Promise((_, reject) => {
-        timer = setTimeout(() => reject(Object.assign(new Error('MODEL_TIMEOUT'), { code: 'MODEL_TIMEOUT' })), timeoutMs);
-      })]);
-    } finally { clearTimeout(timer); }
-  } };
+  return {
+    complete: async options => {
+      const timeoutMs = Math.min(options.timeoutMs || settings.modelCallTimeoutMs, settings.modelCallTimeoutMs, deadline - clock());
+      if (timeoutMs <= 0) throw Object.assign(new Error('REQUEST_TIMEOUT'), { code: 'REQUEST_TIMEOUT' });
+      let timer;
+      try {
+        return await Promise.race([provider.complete({ ...options, timeoutMs }), new Promise((_, reject) => {
+          timer = setTimeout(() => reject(Object.assign(new Error('MODEL_TIMEOUT'), { code: 'MODEL_TIMEOUT' })), timeoutMs);
+        })]);
+      } finally { clearTimeout(timer); }
+    }
+  };
 }
 module.exports = { matchingItem, pendingActions, acceptResults, applyResults, stop, boundProvider };
