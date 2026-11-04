@@ -3,8 +3,9 @@
  * generated clinical recommendations. Numeric ranges are fitted on references,
  * never on the current patient. See SIMILARITY_MODEL.md for the scoring contract.
  */
+import { GHOST_POLICY } from './prescriptionConfig.js';
+export { GHOST_POLICY } from './prescriptionConfig.js';
 export const SIMILARITY_MODEL_VERSION = 'gower-coverage-v1';
-export const GHOST_POLICY = Object.freeze({ minCompared: 3, minCoverage: 0.6, minScore: 70, minMargin: 5 });
 const norm = value => String(value ?? '').normalize('NFKC').trim().toLowerCase();
 export const normalizeSimilarityUnit = value => norm(value).replaceAll('μ','u').replaceAll('µ','u').replaceAll(' ','').replace(/^miu\/l$/, 'uiu/ml');
 const UNKNOWN_LABELS = new Set(['unknown','not tested','not assessed','not recorded','not available']);

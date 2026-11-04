@@ -1,6 +1,7 @@
 const db = require('../config/supabaseAdminClient');
 const { assertAppointmentAccess } = require('../services/access.service');
 const { isDeepStrictEqual } = require('node:util');
+const { maxDisplayedCandidates } = require('../config/medicationDecision.config');
 
 const bad = (res, message, status = 400) => res.status(status).json({ error: message });
 const includeDemoMedicationData = process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEMO_MEDICATION_DATA === 'true';
@@ -219,7 +220,7 @@ async function saveDisplayedCandidates(req, res, next) {
     const { data: event, error } = await db.from('medication_recommendation_events').select('id,candidates').eq('id', req.params.eventId).eq('appointment_id', access.appointment.id).eq('clinician_id', req.user.id).maybeSingle(); if (error) throw error;
     if (!event) return bad(res, 'Recommendation event not found', 404);
     const displayed = req.body?.displayed;
-    if (!Array.isArray(displayed) || displayed.length > 3) return bad(res, 'Displayed candidate list is invalid');
+    if (!Array.isArray(displayed) || displayed.length > maxDisplayedCandidates) return bad(res, 'Displayed candidate list is invalid');
     const allowed = new Map((event.candidates || []).map(candidate => [candidate.id, candidate])); const seen = new Set(); const candidates = [];
     for (const row of displayed) {
       if (!row || !allowed.has(row.id) || seen.has(row.id) || !Number.isFinite(row.score) || row.score < 0 || row.score > 100 || !['gower', 'rules'].includes(row.method) || !Number.isInteger(row.compared) || row.compared < 0 || !Number.isInteger(row.featureCount) || row.featureCount < 0) return bad(res, 'Displayed candidate does not match the evaluated visit');
