@@ -85,6 +85,9 @@ module.exports = {
   snapshotTokenBudget: positiveInteger('ASSISTANT_SNAPSHOT_TOKEN_BUDGET', 1500),
   // App-help replies are short and never about health.
   maxAnswerChars: positiveInteger('ASSISTANT_MAX_ANSWER_CHARS', 300),
+  // The patient apps save one home BP reading as two rows (systolic, diastolic)
+  // a moment apart; rows this close together are read back as one reading.
+  homeBpPairWindowMs: positiveInteger('ASSISTANT_HOME_BP_PAIR_WINDOW_MS', 5 * 60 * 1000),
 
   // Shown instead of any model-written text. Deliberately gives no health
   // guidance: wording about urgent care needs clinician sign-off first.

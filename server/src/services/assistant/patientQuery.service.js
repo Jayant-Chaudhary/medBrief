@@ -15,10 +15,15 @@ const assistantConfig = require('../../config/assistant.config');
 const { safeTimeZone } = require('./resolvers/datetime');
 
 // Phrases that ask for medical opinion, diagnosis, or normality interpretation
-const DIAGNOSTIC_PATTERN = /\b(?:is\s+.*?\b(?:normal|abnormal|high|low|safe|dangerous|concerning|okay)\b|diagnos\w*|does\s+(?:she|he)\s+have|what\s+should\s+i\s+(?:prescribe|give)|treatment\s+for|medicine\s+for|cure)\b/i;
+// "Does she have a report uploaded?" asks about the app's records, not about a condition.
+const DIAGNOSTIC_PATTERN = /\b(?:is\s+.*?\b(?:normal|abnormal|high|low|safe|dangerous|concerning|okay)\b|diagnos\w*|does\s+(?:she|he)\s+have(?!\s+(?:an?\s+|any\s+|another\s+|the\s+)?(?:lab\s+)?(?:reports?|appointments?|visits?|follow[\s-]?ups?|uploads?|files?|records?)\b)|what\s+should\s+i\s+(?:prescribe|give)|treatment\s+for|medicine\s+for|cure)\b/i;
 
-// Action commands (opening, filling, adding, booking, searching) are never Q&A requests
-const ACTION_COMMANDS = /\b(?:add|save|open|book|prepare|schedule|append|replace|set|change|update|type|click|fill|write|create|new\s+(?:visit|appointment)|go\s+to|press|enter|submit|tick|untick|finish|mark|find|search)\b/i;
+// Action commands (opening, filling, adding, booking, searching) are never Q&A requests.
+// "Blood type" and "Rh type" name a result, not the "type into a field" command.
+const ACTION_COMMANDS = /\b(?:add|save|open|book|prepare|schedule|append|replace|set|change|update|(?<!\b(?:blood|rh)\s+)type|click|fill|write|create|new\s+(?:visit|appointment)|go\s+to|press|enter|submit|tick|untick|finish|mark|find|search)\b/i;
+
+// Phrased as a question rather than an instruction.
+const ASKS_A_QUESTION = /\?\s*$|^\s*(?:is|are|was|were|does|do|did|should|shall|can|could|would|will|what|why|how)\b/i;
 
 // Regex patterns to identify question phrases
 const QUESTION_INDICATOR = /\b(?:what(?:'?s|\s+is|\s+was)?|how\s+much\s+is|show\s+me|tell\s+me|give\s+me)\b|^(?:check|get)\b/i;
@@ -48,6 +53,7 @@ const ALIASES = {
   'blood type': 'blood group',
   'bloog group': 'blood group',
   'rh': 'blood group',
+  'rh type': 'blood group',
   'edd': 'due date',
   'expected date': 'due date',
   'gestation': 'gestational age',
@@ -189,6 +195,14 @@ function detectClinicalQuery(message, patients = []) {
   const text = String(message || '').trim();
   if (!text) return { isQuery: false };
 
+  // An instruction ("Add to notes: BP is normal") carries the clinician's own
+  // words for a form; it asks the assistant for no opinion. Questions still
+  // reach the diagnostic refusal below, even when they mention an action.
+  const isInstruction = ACTION_COMMANDS.test(text) && !ASKS_A_QUESTION.test(text);
+  if (isInstruction) {
+    return { isQuery: false };
+  }
+
   // Diagnostic requests must be flagged and safely refused
   if (DIAGNOSTIC_PATTERN.test(text)) {
     return { isQuery: true, isDiagnostic: true };
@@ -233,6 +247,36 @@ function detectClinicalQuery(message, patients = []) {
     rawTerm,
     candidateName: parsed.candidateName,
     matchedPatients: parsed.matchedPatients,
+  };
+}
+
+/**
+ * The newest home blood pressure as one "systolic/diastolic" reading. The
+ * patient apps save each side as its own vitals row, a moment apart; a side
+ * with no partner within the window is shown with a dash for the other.
+ */
+function latestHomeBloodPressure(vitals, pairWindowMs) {
+  const time = (row) => Date.parse(row.recorded_at);
+  const sideOf = (row) => (matchesMetricName(row.metric_key, row.metric_key, 'blood pressure systolic') ? 'systolic'
+    : matchesMetricName(row.metric_key, row.metric_key, 'blood pressure diastolic') ? 'diastolic' : null);
+  const sides = vitals.filter((row) => sideOf(row) && Number.isFinite(time(row)) && row.value != null);
+  if (!sides.length) return null;
+
+  const newest = sides.reduce((a, b) => (time(b) > time(a) ? b : a));
+  const otherSide = sideOf(newest) === 'systolic' ? 'diastolic' : 'systolic';
+  const partner = sides
+    .filter((row) => sideOf(row) === otherSide && Math.abs(time(row) - time(newest)) <= pairWindowMs)
+    .sort((a, b) => Math.abs(time(a) - time(newest)) - Math.abs(time(b) - time(newest)))[0];
+  const systolic = sideOf(newest) === 'systolic' ? newest : partner;
+  const diastolic = sideOf(newest) === 'diastolic' ? newest : partner;
+
+  return {
+    name: 'Blood Pressure',
+    value: `${systolic?.value ?? '—'}/${diastolic?.value ?? '—'}`,
+    unit: 'mmHg',
+    date: newest.recorded_at,
+    source: 'Vitals Log',
+    sourceType: 'vitals',
   };
 }
 
@@ -492,6 +536,10 @@ async function queryPatientMetric(clinicianId, patientId, targetTerm, options = 
     if (vitalsError) throw lookupFailure();
 
     if (vitals?.length) {
+      if (canonical === 'blood pressure') {
+        const homeBp = latestHomeBloodPressure(vitals, options.homeBpPairWindowMs || assistantConfig.homeBpPairWindowMs);
+        if (homeBp) candidates.push(homeBp);
+      }
       for (const v of vitals) {
         if (matchesMetricName(v.metric_key, v.metric_key, canonical)) {
           candidates.push({

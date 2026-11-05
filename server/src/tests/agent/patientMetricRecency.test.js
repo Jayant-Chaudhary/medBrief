@@ -58,3 +58,41 @@ test('date-only measurements keep their calendar date in a different time zone',
     date: '2026-11-04', sourceType: 'lab_report' }, 'synthetic-p', { timeZone: 'America/Los_Angeles' });
   expect(answer.text).toContain('4 Nov 2026');
 });
+
+const homeBp = (systolic, diastolic, at, gapMs = 60) => [
+  ...(systolic == null ? [] : [{ metric_key: 'blood_pressure_systolic', value: systolic, recorded_at: at }]),
+  ...(diastolic == null ? [] : [{ metric_key: 'blood_pressure_diastolic', value: diastolic,
+    recorded_at: new Date(Date.parse(at) + gapMs).toISOString() }]),
+];
+
+test('a BP question reads home readings, saved as separate systolic and diastolic rows', async () => {
+  const result = await read({ vitals_logs: homeBp(150, 100, '2026-11-05T08:00:00.000Z') }, 'blood pressure');
+  expect(result).toMatchObject({ name: 'Blood Pressure', value: '150/100', unit: 'mmHg', source: 'Vitals Log' });
+});
+
+test('a newer home BP reading is not hidden behind an older clinic reading', async () => {
+  const result = await read({ pregnancy_episodes: [{ id: 'synthetic-episode' }],
+    antenatal_visits: [{ visit_date: '2026-09-01', bp_systolic: 110, bp_diastolic: 70 }],
+    vitals_logs: homeBp(150, 100, '2026-11-05T08:00:00.000Z') }, 'blood pressure');
+  expect(result.value).toBe('150/100');
+  expect(result.source).toBe('Vitals Log');
+});
+
+test('a newer clinic BP reading still wins over an older home reading', async () => {
+  const result = await read({ pregnancy_episodes: [{ id: 'synthetic-episode' }],
+    antenatal_visits: [{ visit_date: '2026-11-06', bp_systolic: 118, bp_diastolic: 76 }],
+    vitals_logs: homeBp(150, 100, '2026-11-05T08:00:00.000Z') }, 'blood pressure');
+  expect(result.value).toBe('118/76');
+});
+
+test('home BP pairs only the newest reading, never sides from different readings', async () => {
+  const vitals = [...homeBp(150, null, '2026-11-05T08:00:00.000Z'), ...homeBp(120, 80, '2026-11-01T08:00:00.000Z')];
+  const result = await read({ vitals_logs: vitals }, 'blood pressure');
+  expect(result.value).toBe('150/—');
+  expect(result.date).toBe('2026-11-05T08:00:00.000Z');
+});
+
+test('home BP sides further apart than the pairing window are not combined', async () => {
+  const result = await read({ vitals_logs: homeBp(150, 100, '2026-11-05T08:00:00.000Z', 60 * 60 * 1000) }, 'blood pressure');
+  expect(result.value).toBe('—/100');
+});

@@ -902,6 +902,24 @@ async function handleStep({
               attempts: 0,
             };
           }
+      } else {
+        // No name typed ("what is her Hb?"). The patient last asked about and
+        // the record on screen can differ; never guess between the two.
+        const lastSubject = cleanMemory[cleanMemory.length - 1]?.patient;
+        const remembered = lastSubject ? patients.find(p => p.id === lastSubject.id) : null;
+        const onScreen = current?.patientId ? patients.find(p => p.id === current.patientId) : null;
+        if (patientChoice) {
+          targetPatient = choiceState.clinicalChoice.metric === clinicalQuery.metricTerm
+            ? patients.find(p => p.id === patientChoice.id) || null : null;
+        } else if (remembered && onScreen && remembered.id !== onScreen.id) {
+          const choices = [remembered, onScreen];
+          const token = continuation.issue(userId, message, { startedAt: initialTime,
+            clinicalChoice: { ids: choices.map(p => p.id), metric: clinicalQuery.metricTerm } });
+          return { type: 'choose', prompt: 'Which patient do you mean?', source: 'clinical_record', attempts: 0,
+            options: choices.map(p => ({ label: p.fullName, detail: describePatient(p), patientChoice: { id: p.id, token } })) };
+        } else if (remembered && !current?.patientId) {
+          targetPatient = remembered;
+        }
       }
       if (patientChoice && !targetPatient) return unsupported('none', 'This patient choice has expired. Please ask again.');
 

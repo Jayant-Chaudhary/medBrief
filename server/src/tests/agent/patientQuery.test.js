@@ -120,6 +120,35 @@ describe('Clinical Patient Q&A Query Engine', () => {
       expect(detectClinicalQuery('book an appointment tomorrow').isQuery).toBe(false);
       expect(detectClinicalQuery('open consultation notes').isQuery).toBe(false);
     });
+
+    it('answers blood type questions as blood group, but keeps "type" as a command', () => {
+      const patients = [{ id: 'synthetic-asha', fullName: 'Asha Example' }];
+      for (const message of ['What is her blood type?', 'what is her rh type', 'Asha blood type']) {
+        expect(detectClinicalQuery(message, patients)).toMatchObject({ isQuery: true, isDiagnostic: false, metricTerm: 'blood group' });
+      }
+      expect(detectClinicalQuery('Type B positive in the blood group field').isQuery).toBe(false);
+    });
+
+    it('lets dictated notes through even when they state a finding', () => {
+      for (const message of [
+        'Add to notes: BP is normal, review in 2 weeks',
+        'Write in consultation notes that the scan is normal',
+        'Open Asha maternity card, her BP is high',
+      ]) {
+        expect(detectClinicalQuery(message)).toEqual({ isQuery: false });
+      }
+    });
+
+    it('still refuses interpretation when an action word appears in a question', () => {
+      expect(detectClinicalQuery('Should I add iron, is her Hb low?').isDiagnostic).toBe(true);
+      expect(detectClinicalQuery('Open her card, is her BP high?').isDiagnostic).toBe(true);
+    });
+
+    it('treats questions about uploaded records as record questions, not diagnosis', () => {
+      expect(detectClinicalQuery('Does she have a lab report uploaded?').isDiagnostic).not.toBe(true);
+      expect(detectClinicalQuery('does she have any appointments?').isDiagnostic).not.toBe(true);
+      expect(detectClinicalQuery('does she have anaemia?').isDiagnostic).toBe(true);
+    });
   });
 
   describe('queryPatientMetric', () => {

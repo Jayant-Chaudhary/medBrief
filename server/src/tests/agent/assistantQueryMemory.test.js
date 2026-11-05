@@ -75,3 +75,53 @@ test('a remembered visit belonging to another patient cannot override the rememb
   expect(reply.type).toBe('clarify');
   expect(reply.recordTarget).toBeUndefined();
 });
+
+test('a pronoun follow-up asks which patient when the last subject differs from the open record', async () => {
+  const { memory } = await queryMemory();
+  const metricLookup = jest.fn(async () => null);
+  const message = 'What is her haemoglobin?';
+  const choice = await assistant.handleStep({ ...base, message, memory, metricLookup });
+  expect(choice.type).toBe('choose');
+  expect(choice.options.map(option => option.patientChoice.id)).toEqual(['synthetic-b', 'synthetic-a']);
+  expect(metricLookup).not.toHaveBeenCalled();
+
+  const reply = await assistant.handleStep({ ...base, message, memory, metricLookup,
+    patientChoice: choice.options[0].patientChoice });
+  expect(reply.type).toBe('answer');
+  expect(metricLookup).toHaveBeenCalledWith('synthetic-doctor', 'synthetic-b', 'haemoglobin');
+  expect(reply.text).toContain('Asha Example');
+});
+
+test('a pronoun follow-up uses the open record when it is the patient last asked about', async () => {
+  const { memory } = await queryMemory({ currentRecord: { kind: 'visit', id: 'synthetic-visit-b' } });
+  const metricLookup = jest.fn(async () => null);
+  const reply = await assistant.handleStep({ ...base, currentRecord: { kind: 'visit', id: 'synthetic-visit-b' },
+    message: 'What is her haemoglobin?', memory, metricLookup });
+  expect(reply.type).toBe('answer');
+  expect(metricLookup).toHaveBeenCalledWith('synthetic-doctor', 'synthetic-b', 'haemoglobin');
+});
+
+test('a pronoun follow-up with no open record uses the patient last asked about', async () => {
+  const { memory } = await queryMemory();
+  const metricLookup = jest.fn(async () => null);
+  const reply = await assistant.handleStep({ ...base, currentRecord: null,
+    message: 'What is her haemoglobin?', memory, metricLookup });
+  expect(reply.type).toBe('answer');
+  expect(metricLookup).toHaveBeenCalledWith('synthetic-doctor', 'synthetic-b', 'haemoglobin');
+});
+
+test('a pronoun follow-up choice cannot be replayed for a patient that was not offered', async () => {
+  const { memory } = await queryMemory();
+  const message = 'What is her haemoglobin?';
+  const choice = await assistant.handleStep({ ...base, message, memory });
+  const reply = await assistant.handleStep({ ...base, message, memory,
+    patientChoice: { ...choice.options[0].patientChoice, id: 'not-offered' } });
+  expect(reply.type).toBe('unsupported');
+});
+
+test('a dictated note that states a finding is not refused as a diagnosis request', async () => {
+  const provider = { complete: jest.fn(async () => JSON.stringify({ status: 'continue', note: '', actions: [] })) };
+  const reply = await assistant.handleStep({ ...base, provider, message: 'Add to notes: BP is normal, review in 2 weeks' });
+  expect(reply.source).not.toBe('clinical_record');
+  expect(reply.message || '').not.toContain('do not diagnose');
+});
