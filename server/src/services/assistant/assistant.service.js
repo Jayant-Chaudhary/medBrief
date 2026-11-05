@@ -857,7 +857,7 @@ async function handleStep({
   }
 
   // Clinical Factual Q&A: answer questions about any patient's recorded metrics/labs
-  if (role === 'clinician' && round === 0) {
+  if (role === 'clinician' && round === 0 && !followUp && detectClinicalQuery(message, patients).isQuery) {
     if (!patients.length) {
       patients = await Promise.resolve(directory(userId)).catch(() => []);
     }

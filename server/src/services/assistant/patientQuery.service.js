@@ -18,7 +18,7 @@ const { safeTimeZone } = require('./resolvers/datetime');
 const DIAGNOSTIC_PATTERN = /\b(?:is\s+.*?\b(?:normal|abnormal|high|low|safe|dangerous|concerning|okay)\b|diagnos\w*|does\s+(?:she|he)\s+have|what\s+should\s+i\s+(?:prescribe|give)|treatment\s+for|medicine\s+for|cure)\b/i;
 
 // Action commands (opening, filling, adding, booking, searching) are never Q&A requests
-const ACTION_COMMANDS = /\b(?:add|save|open|book|type|click|fill|write|create|go\s+to|press|enter|submit|tick|untick|finish|mark|find|search)\b/i;
+const ACTION_COMMANDS = /\b(?:add|save|open|book|prepare|schedule|append|replace|set|change|update|type|click|fill|write|create|new\s+(?:visit|appointment)|go\s+to|press|enter|submit|tick|untick|finish|mark|find|search)\b/i;
 
 // Regex patterns to identify question phrases
 const QUESTION_INDICATOR = /\b(?:what(?:'?s|\s+is|\s+was)?|how\s+much\s+is|show\s+me|tell\s+me|give\s+me)\b|^(?:check|get)\b/i;
@@ -207,11 +207,14 @@ function detectClinicalQuery(message, patients = []) {
   const hasQuestion = QUESTION_INDICATOR.test(text) || text.endsWith('?');
   const isKnownMetric = KNOWN_METRIC_KEYWORDS.has(rawTerm) || KNOWN_METRIC_KEYWORDS.has(canonicalTerm);
 
-  // It's a query if:
-  // 1. It explicitly asks a question (has question indicator or ends with '?')
-  // 2. OR the metric is a recognized clinical nutrient/test (e.g. "pramit hemoglobin", "pramit bp")
-  // 3. OR a patient name and a potential analyte were extracted
-  const isClinicalQuery = hasQuestion || isKnownMetric || (parsed.candidateName && rawTerm.length >= 2);
+  // Before loading the directory, recognize shorthand ending in a known
+  // metric. An arbitrary patient name plus arbitrary leftover words is not
+  // evidence of a clinical question (e.g. "Asha's card" or "next visit Asha").
+  const knownSuffix = !patients?.length && [...KNOWN_METRIC_KEYWORDS, ...Object.keys(ALIASES)].some(metric => {
+    const escaped = metric.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(?:^|\\s)${escaped}$`, 'i').test(rawTerm);
+  });
+  const isClinicalQuery = hasQuestion || isKnownMetric || knownSuffix;
 
   if (!isClinicalQuery || !rawTerm || rawTerm.length < 2) {
     return { isQuery: false };
