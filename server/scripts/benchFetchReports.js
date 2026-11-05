@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const supabaseAdmin = require('../src/config/supabaseAdminClient');
 const { LAB_REPORTS_BUCKET } = require('../src/services/storage.service');
+const storageEncryption = require('../src/services/crypto/storageEncryption.service');
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);
@@ -41,7 +42,9 @@ async function main() {
       continue;
     }
     const file = path.join(outDir, `${report.id}${path.extname(report.storage_path) || '.bin'}`);
-    fs.writeFileSync(file, Buffer.from(await blob.arrayBuffer()));
+    const rawBuffer = Buffer.from(await blob.arrayBuffer());
+    const decryptedBuffer = storageEncryption.decrypt(rawBuffer);
+    fs.writeFileSync(file, decryptedBuffer);
     saved += 1;
     console.log(`saved ${path.basename(file)} (${report.uploaded_at})`);
   }

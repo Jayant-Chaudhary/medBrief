@@ -25,6 +25,7 @@ const assistantRoutes = require('./routes/assistant.routes');
 const medicationDecisionRoutes = require('./routes/medicationDecision.routes');
 const checkinRoutes = require('./routes/checkin.routes');
 const patientSimilarityRoutes = require('./routes/patientSimilarity.routes');
+const storageRoutes = require('./routes/storage.routes');
 
 const app = express();
 const server = http.createServer(app);
@@ -96,6 +97,7 @@ app.use('/api/assistant', assistantRoutes);
 app.use('/api/decision-support', medicationDecisionRoutes);
 app.use('/api/checkin', checkinRoutes);
 app.use('/api/patient-similarity', patientSimilarityRoutes);
+app.use('/api/storage', storageRoutes);
 
 app.use((req, res) => res.status(404).json({ error: 'Endpoint not found', requestId: req.id }));
 app.use(errorHandler);

@@ -16,6 +16,7 @@ const supabaseAdmin = require('../../config/supabaseAdminClient');
 const { convertTo16kHzMonoWav } = require('../../utils/audioConverter');
 const audioCache = require('../../services/consultAudio/audioCache.service');
 const logger = require('../../utils/logger');
+const storageEncryption = require('../../services/crypto/storageEncryption.service');
 
 jest.mock('../../services/consultAudio/audioCache.service', () => ({
   get: jest.fn().mockResolvedValue(null),
@@ -471,6 +472,21 @@ describe('Consult Audio — Transcription Worker', () => {
     test.each(['miss', 'outage'])('%s falls back to the durable bytes', async (condition) => {
       const { download } = setup();
       if (condition === 'outage') audioCache.get.mockRejectedValueOnce(new Error('synthetic Redis error'));
+      const result = await processJob(job, new FakeProvider());
+      expect(result.ok).toBe(true);
+      expect(result.audioSource).toBe('storage');
+      expect(download).toHaveBeenCalledTimes(1);
+      expect(convertTo16kHzMonoWav).toHaveBeenCalledWith(bytes);
+    });
+
+    test('decrypts encrypted storage envelope before calling audio converter and STT', async () => {
+      const encryptedEnvelope = storageEncryption.encrypt(bytes);
+      const { download } = setup();
+      download.mockResolvedValue({
+        data: { arrayBuffer: async () => encryptedEnvelope }, error: null,
+      });
+      audioCache.get.mockResolvedValue(null);
+
       const result = await processJob(job, new FakeProvider());
       expect(result.ok).toBe(true);
       expect(result.audioSource).toBe('storage');

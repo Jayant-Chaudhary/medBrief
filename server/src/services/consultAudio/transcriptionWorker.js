@@ -16,6 +16,7 @@ const { convertTo16kHzMonoWav } = require('../../utils/audioConverter');
 const logger = require('../../utils/logger');
 const audioCache = require('./audioCache.service');
 const orchestratorService = require('./orchestrator.service');
+const storageEncryption = require('../crypto/storageEncryption.service');
 
 const STORAGE_BUCKET = 'consult-audio';
 const SAFE_ERROR_CODES = new Set([
@@ -237,7 +238,12 @@ async function processJob(job, overrideProvider = null) {
         .from(STORAGE_BUCKET)
         .download(chunk.storage_path);
       if (downloadErr || !fileData) throw workerError('ERR_CHUNK_STORAGE_READ');
-      rawBuffer = Buffer.from(await fileData.arrayBuffer());
+      const downloadedBytes = Buffer.from(await fileData.arrayBuffer());
+      try {
+        rawBuffer = storageEncryption.decrypt(downloadedBytes);
+      } catch (_decryptErr) {
+        throw workerError('ERR_CHUNK_STORAGE_READ');
+      }
     }
     const retrievalMs = Date.now() - retrievalStart;
 

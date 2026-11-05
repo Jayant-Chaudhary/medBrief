@@ -11,6 +11,7 @@ const { STATES } = require('./stateMachine');
 const orchestratorService = require('./orchestrator.service');
 const logger = require('../../utils/logger');
 const audioCache = require('./audioCache.service');
+const storageEncryption = require('../crypto/storageEncryption.service');
 
 const STORAGE_BUCKET = 'consult-audio';
 
@@ -158,11 +159,15 @@ async function ingestChunk({
     const ext = getExtensionFromCodec(codec);
     storagePath = `consults/${sessionId}/${device}/${parsedSeq}.${ext}`;
 
+    const payloadToStore = storageEncryption.isEncrypted(audioBuffer)
+      ? audioBuffer
+      : storageEncryption.encrypt(audioBuffer);
+
     try {
       const { error: uploadErr } = await supabaseAdmin.storage
         .from(STORAGE_BUCKET)
-        .upload(storagePath, audioBuffer, {
-          contentType: codec,
+        .upload(storagePath, payloadToStore, {
+          contentType: codec || 'application/octet-stream',
           upsert: true,
         });
       if (uploadErr) throw ingestError('ERR_CHUNK_STORAGE');

@@ -37,3 +37,8 @@ __pycache__/
 ocr/bench/reports/
 ocr/bench/out/
 ocr/bench/.venv-docling/
+
+
+presentation-output
+scratch_export
+.codex-finalizer/

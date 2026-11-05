@@ -10,7 +10,8 @@
     "test": "jest",
     "test:e2e": "cross-env RUN_E2E=true jest --runInBand",
     "verify-clinician": "node scripts/verifyClinician.js",
-    "restandardize-metrics": "node scripts/restandardizeMetrics.js"
+    "restandardize-metrics": "node scripts/restandardizeMetrics.js",
+    "generate-keys": "node scripts/generateEncryptionKeys.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
