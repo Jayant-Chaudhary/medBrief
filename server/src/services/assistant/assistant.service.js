@@ -920,7 +920,13 @@ async function handleStep({
       }
 
       // 4. Query all sources (visits, investigations, uploaded lab reports, vitals)
-      const record = await metricLookup(userId, targetPatient.id, clinicalQuery.metricTerm);
+      let record;
+      try {
+        record = await execution.boundProvider({ complete: () => metricLookup(userId, targetPatient.id, clinicalQuery.metricTerm) }, deadline, settings, now).complete({});
+      } catch (err) {
+        return { type: 'unavailable', message: 'I could not read the patient records. Please try again.',
+          source: 'clinical_record', attempts: 0, errorCode: err.code === 'MODEL_TIMEOUT' ? 'PATIENT_QUERY_TIMEOUT' : 'PATIENT_QUERY_FAILED' };
+      }
       const answer = formatMetricAnswer(targetPatient.fullName, clinicalQuery.metricTerm, record, targetPatient.id, { timeZone: clock.timeZone });
 
       return {

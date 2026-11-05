@@ -238,10 +238,11 @@ async function queryPatientMetric(clinicianId, patientId, targetTerm, options = 
   const term = String(targetTerm || '').toLowerCase().trim();
   const canonical = ALIASES[term] || term;
   const candidates = [];
+  const lookupFailure = () => Object.assign(new Error('Patient record lookup failed'), { code: 'PATIENT_METRIC_LOOKUP_FAILED' });
 
   // 1. Check Pregnancy Episode (Blood Group, Due Date, Gestation, History)
   try {
-    const { data: episode } = await supabase
+    const { data: episode, error: episodeError } = await supabase
       .from('pregnancy_episodes')
       .select('id, blood_group, due_date, last_menstrual_period, created_at')
       .eq('patient_id', patientId)
@@ -250,6 +251,7 @@ async function queryPatientMetric(clinicianId, patientId, targetTerm, options = 
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (episodeError) throw lookupFailure();
 
     if (episode) {
       if (canonical === 'blood group' && episode.blood_group) {
@@ -284,11 +286,12 @@ async function queryPatientMetric(clinicianId, patientId, targetTerm, options = 
       }
 
       // Check Antenatal Visits for this episode
-      const { data: visits } = await supabase
+      const { data: visits, error: visitsError } = await supabase
         .from('antenatal_visits')
         .select('*')
         .eq('pregnancy_episode_id', episode.id)
         .order('visit_date', { ascending: false });
+      if (visitsError) throw lookupFailure();
 
       if (visits?.length) {
         for (const v of visits) {
@@ -404,11 +407,12 @@ async function queryPatientMetric(clinicianId, patientId, targetTerm, options = 
       }
 
       // Check Pregnancy Investigations for this episode
-      const { data: investigations } = await supabase
+      const { data: investigations, error: investigationsError } = await supabase
         .from('pregnancy_investigations')
         .select('investigation_name, investigation_key, result_value, result_text, result_unit, performed_on')
         .eq('pregnancy_episode_id', episode.id)
         .order('performed_on', { ascending: false, nullsFirst: false });
+      if (investigationsError) throw lookupFailure();
 
       if (investigations?.length) {
         for (const inv of investigations) {
@@ -429,18 +433,19 @@ async function queryPatientMetric(clinicianId, patientId, targetTerm, options = 
       }
     }
   } catch (_) {
-    // Non-fatal if maternity lookup encounters missing fields
+    throw lookupFailure();
   }
 
   // 2. Check Uploaded Lab Reports (lab_report_metrics)
   try {
     const sharedIds = await getSharedReports(clinicianId, patientId);
     if (sharedIds?.length) {
-      const { data: metrics } = await supabase
+      const { data: metrics, error: metricsError } = await supabase
         .from('lab_report_metrics')
         .select('raw_key, standard_key, parsed_value, raw_value, reviewed_value, unit_standard, unit_raw, created_at, lab_reports ( id, report_date, uploaded_at )')
         .in('lab_report_id', sharedIds)
         .order('created_at', { ascending: false });
+      if (metricsError) throw lookupFailure();
 
       if (metrics?.length) {
         for (const m of metrics) {
@@ -465,16 +470,17 @@ async function queryPatientMetric(clinicianId, patientId, targetTerm, options = 
       }
     }
   } catch (_) {
-    // Non-fatal if lab report sharing query fails
+    throw lookupFailure();
   }
 
   // 3. Check Vitals Logs
   try {
-    const { data: vitals } = await supabase
+    const { data: vitals, error: vitalsError } = await supabase
       .from('vitals_logs')
       .select('metric_key, value, unit, recorded_at')
       .eq('patient_id', patientId)
       .order('recorded_at', { ascending: false });
+    if (vitalsError) throw lookupFailure();
 
     if (vitals?.length) {
       for (const v of vitals) {
@@ -491,7 +497,7 @@ async function queryPatientMetric(clinicianId, patientId, targetTerm, options = 
       }
     }
   } catch (_) {
-    // Non-fatal
+    throw lookupFailure();
   }
 
   if (!candidates.length) return null;
