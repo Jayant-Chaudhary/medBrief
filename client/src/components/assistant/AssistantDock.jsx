@@ -12,7 +12,7 @@ import { runPlan } from './planRunner';
 import { readPage } from './pageReader';
 import { executeAction } from './pageActions';
 import { readRecord, rememberRecord, recordPath, hashWrittenValue } from './recordContext';
-import { pruneMemory, buildMemoryEntry, appendMemory } from './memoryState';
+import { pruneMemory, memoryEntryForReply, appendMemory } from './memoryState';
 import { capturePage, observeAction } from './actionEvidence';
 import ConfirmCard from './ConfirmCard.jsx';
 import AssistantMark from './AssistantMark.jsx';
@@ -487,12 +487,10 @@ export default function AssistantDock({ enabled = ENABLED }) {
       setSteps(current => current.map(entry => entry.requestId === requestId ? { ...entry, waiting: false } : entry));
       if (role === 'clinician' && reply && reply.type !== 'unavailable') {
         const endContext = rememberRecord(window.location, bridge, memoryContexts.current.get(requestId));
-        const entry = buildMemoryEntry({
-          message,
-          patient: endContext?.patient || null,
-          record: endContext?.record || null,
+        const entry = memoryEntryForReply({
+          reply: { ...reply, checklist: reply.checklist || checklist }, message,
+          observedContext: endContext,
           page: pageIdOf(pathRef.current),
-          checklist: reply.checklist || checklist,
         });
         setMemory((prev) => appendMemory(prev, entry));
       }

@@ -193,7 +193,7 @@ function resolveMemoryFollowUp(message, memory = [], patients = []) {
         kind: 'return_patient',
         patient: lastWithPatient.patient,
         record: lastWithPatient.record,
-        checklist: [{ text: `Open ${lastWithPatient.patient.fullName}'s record`, done: false }],
+        checklist: [{ text: `Return to ${lastWithPatient.patient.fullName}'s record`, done: false }],
       };
     }
     if (lastWithPatient?.patient) {

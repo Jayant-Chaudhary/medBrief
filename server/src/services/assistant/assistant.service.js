@@ -852,8 +852,11 @@ async function handleStep({
   const lookup = id => execution.boundProvider({ complete: () => recordLookup(id, userId) }, deadline, settings, now).complete({});
   let origin = await resolveRecord(saved ? saved.originRecord : originRecord, patients, userId, lookup);
   let current = await resolveRecord(currentRecord, patients, userId, lookup);
-  if (!current && followUp?.record) {
-    current = await resolveRecord(followUp.record, patients, userId, lookup);
+  let remembered = null;
+  if (followUp?.record) {
+    const resolved = await resolveRecord(followUp.record, patients, userId, lookup);
+    if (resolved?.patientId === followUp.patient?.id) remembered = resolved;
+    if (!current) current = remembered;
   }
 
   // Clinical Factual Q&A: answer questions about any patient's recorded metrics/labs
@@ -936,6 +939,14 @@ async function handleStep({
         text: answer.text,
         recordPath: answer.recordPath,
         recordLabel: answer.recordLabel,
+        // The query subject can differ from the record currently on screen.
+        // Return only identity/context, never the retrieved value, for tab memory.
+        memoryContext: {
+          patient: { id: targetPatient.id, name: clinicalQuery.candidateName || targetPatient.fullName },
+          record: current?.patientId === targetPatient.id
+            ? { kind: current.kind, id: current.id }
+            : appointmentId ? { kind: 'visit', id: appointmentId } : null,
+        },
         source: 'clinical_record',
         attempts: 0,
       };
@@ -945,15 +956,18 @@ async function handleStep({
   for (const result of verifiedResults) {
     if (result.result === 'ok' && result.field && result.hash && !writtenState.some(w => w.field === result.field && w.hash === result.hash)) writtenState.push({ field: result.field, op: result.op, hash: result.hash });
   }
-  if (followUp?.kind === 'return_patient' && current) {
+  const returnToMemory = followUp?.kind === 'return_patient';
+  const inheritOtherPatient = followUp?.kind === 'inherit_context' && current?.patientId !== followUp.patient?.id;
+  if (returnToMemory || inheritOtherPatient) {
+    if (!remembered) return { type: 'clarify', message: 'Please open the remembered patient\'s record before continuing.', options: [], source: 'memory', attempts: 0 };
     return finish({
       type: 'navigate',
-      path: current.kind === 'maternity' ? '/clinician/maternity?patientId=' + encodeURIComponent(current.id) : current.kind === 'new_appointment' ? '/clinician/appointments/new?patient=' + encodeURIComponent(current.id) : '/clinician?appointment=' + encodeURIComponent(current.id),
+      path: remembered.kind === 'maternity' ? '/clinician/maternity?patientId=' + encodeURIComponent(remembered.id) : remembered.kind === 'new_appointment' ? '/clinician/appointments/new?patient=' + encodeURIComponent(remembered.id) : '/clinician?appointment=' + encodeURIComponent(remembered.id),
       label: "Open " + (followUp.patient?.fullName || 'patient') + "'s record",
-      op: 'open_record',
-      kind: current.kind === 'visit' ? 'last_visit' : current.kind,
-      recordId: current.id,
-      recordTarget: current,
+      op: returnToMemory ? 'return_record' : 'open_record',
+      kind: remembered.kind === 'visit' ? 'last_visit' : remembered.kind,
+      recordId: remembered.id,
+      recordTarget: remembered,
       checklist: followUp.checklist,
       source: 'agent',
       attempts: 0,
