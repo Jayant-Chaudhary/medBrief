@@ -1,3 +1,13 @@
+// Integration cases below use synthetic directory rows and empty local data,
+// never the configured Supabase service or a real patient's records.
+jest.mock('../../config/supabaseAdminClient', () => ({ from: jest.fn(() => {
+  const query = {};
+  for (const method of ['select', 'eq', 'in', 'order', 'limit']) query[method] = () => query;
+  query.maybeSingle = async () => ({ data: null });
+  query.then = (resolve, reject) => Promise.resolve({ data: [] }).then(resolve, reject);
+  return query;
+}) }));
+
 const {
   detectClinicalQuery,
   queryPatientMetric,

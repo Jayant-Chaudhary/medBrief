@@ -109,8 +109,8 @@ function extractPatientAndMetric(message, patients = []) {
     const escFull = fullName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const escFirst = firstName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-    const fullRegex = new RegExp(`\\b${escFull}\\b`, 'i');
-    const firstRegex = firstName.length >= 3 ? new RegExp(`\\b${escFirst}\\b`, 'i') : null;
+    const fullRegex = new RegExp(`\\b${escFull}\\b(?:['’]s\\b)?`, 'i');
+    const firstRegex = firstName.length >= 3 ? new RegExp(`\\b${escFirst}\\b(?:['’]s\\b)?`, 'i') : null;
 
     if (fullRegex.test(text)) {
       matchedPatients.push(p);

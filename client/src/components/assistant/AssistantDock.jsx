@@ -393,7 +393,7 @@ export default function AssistantDock({ enabled = ENABLED }) {
    * run what comes back. If the server says the request isn't finished (a
    * panel had to open, a page had to load), read the page again and go on.
    */
-  async function runRound({ message, requestId, round, progress, mode, continuationToken, startedAt = Date.now(), originRecord = null, written = [], checklist = [], note = '', results = [] }) {
+  async function runRound({ message, requestId, round, progress, mode, continuationToken, patientChoice, startedAt = Date.now(), originRecord = null, written = [], checklist = [], note = '', results = [] }) {
     const control = requestControl(requestId);
     if (control.stopped()) return;
     const requestPath = pathRef.current;
@@ -407,7 +407,7 @@ export default function AssistantDock({ enabled = ENABLED }) {
     try {
       const activeMemory = pruneMemory(memory);
       if (activeMemory.length !== memory.length) setMemory(activeMemory);
-      reply = await assistantService.ask(message, pathRef.current, { page, signal: control.signal, currentRecord: readRecord(window.location, bridge), round, progress, mode, continuationToken, startedAt, originRecord, written, memory: activeMemory, checklist, note, results });
+      reply = await assistantService.ask(message, pathRef.current, { page, signal: control.signal, currentRecord: readRecord(window.location, bridge), patientChoice, round, progress, mode, continuationToken, startedAt, originRecord, written, memory: activeMemory, checklist, note, results });
     } catch (err) {
       if (control.stopped()) return;
       const errNote = err?.status === 429 ? 'Too many requests. Please wait a moment.' : UNAVAILABLE;
@@ -567,6 +567,12 @@ export default function AssistantDock({ enabled = ENABLED }) {
   async function choose(option, entry) {
     if (requestControl(entry.requestId).stopped() || choosing.current.has(entry.id)) return;
     choosing.current.add(entry.id);
+    if (option.patientChoice) {
+      update(entry.id, { chosen: true });
+      await runRound({ message: entry.message, requestId: entry.requestId, round: 0, progress: [],
+        startedAt: entry.startedAt, originRecord: entry.originRecord, patientChoice: option.patientChoice });
+      return;
+    }
     const reply = { ...entry.reply, type: 'run', steps: option.steps };
     update(entry.id, { reply, progress: 0, chosen: true });
     const { outcome, actionResults } = await execute(option.steps, entry.id, entry.requestId, entry.names);

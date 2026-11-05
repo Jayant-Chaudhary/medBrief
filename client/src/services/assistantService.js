@@ -2,7 +2,7 @@ import { request } from './apiClient';
 
 export const assistantService = {
   /** One typed request: returns navigate, clarify, unsupported or unavailable. */
-  async ask(message, currentPath, { page, round, progress, mode, continuationToken, acknowledgeOnly, startedAt, originRecord, currentRecord, written, memory, checklist, note, results, pageHash, signal } = {}) {
+  async ask(message, currentPath, { page, round, progress, mode, continuationToken, acknowledgeOnly, startedAt, originRecord, currentRecord, patientChoice, written, memory, checklist, note, results, pageHash, signal } = {}) {
     // The browser's time zone, so "tomorrow at 10" means 10:00 on the user's clock.
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     // `page`: the open page's labels (doctors); `round`/`progress`/`mode, continuationToken`: later rounds of the same request.
@@ -16,6 +16,7 @@ export const assistantService = {
         includeExecutionMetadata: true,
         startedAt,
         originRecord, currentRecord, written,
+        ...(patientChoice && { patientChoice }),
         ...(memory && { memory }),
         ...(page && { page }),
         ...(round !== undefined && { round }),

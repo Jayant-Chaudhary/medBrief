@@ -32,6 +32,7 @@ async function step(req, res, next) {
       startedAt: req.validated.startedAt,
       originRecord: req.validated.originRecord,
       currentRecord: req.validated.currentRecord,
+      patientChoice: req.validated.patientChoice,
       written: req.validated.written,
       memory: req.validated.memory,
       mode: req.validated.mode,
@@ -71,7 +72,7 @@ async function step(req, res, next) {
       errorCode,
       durationMs: Date.now() - started,
     });
-    const state = continuation.read(req.validated.continuationToken, req.user.id, req.validated.message);
+    const state = continuation.read(req.validated.continuationToken || req.validated.patientChoice?.token, req.user.id, req.validated.message);
     const requestStart = Math.min(state?.startedAt ?? req.validated.startedAt ?? started, started);
     const executionMetadata = req.validated.includeExecutionMetadata ? {
       expiresAt: requestStart + config.requestTimeoutMs,

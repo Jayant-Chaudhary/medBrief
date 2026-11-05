@@ -80,6 +80,7 @@ const assistantStepSchema = z.object({
   // Verify the preceding action without asking the model for another action.
   acknowledgeOnly: z.boolean().optional(),
   includeExecutionMetadata: z.boolean().optional(),
+  patientChoice: z.object({ id: label(100), token: label(config.continuationMaxChars) }).optional(),
   // Follow-up rounds of the same request: which round, and what was done so far.
   round: z.number().int().min(0).max(config.maxRounds).optional(),
   progress: z.array(label(160)).max(40).optional(),
