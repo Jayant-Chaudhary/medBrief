@@ -90,6 +90,7 @@ export default function AssistantDock({ enabled = ENABLED }) {
     return null;
   });
   const dragRef = useRef(null);
+  const dialogDragRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef(null);
   const buttonRef = useRef(null);
@@ -204,8 +205,6 @@ export default function AssistantDock({ enabled = ENABLED }) {
   function close() {
     setOpen(false);
   }
-
-  const dialogDragRef = useRef(null);
 
   const handleDialogPointerDown = (e) => {
     if (e.target.closest('button, input, textarea, a')) return;
