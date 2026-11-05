@@ -551,8 +551,10 @@ function formatMetricAnswer(patientName, metricTerm, record, patientId, options 
     recordPath = `/clinician/maternity?patientId=${encodeURIComponent(patientId)}`;
     recordLabel = 'Open Maternity Card';
   } else if (record.sourceType === 'lab_report') {
-    recordPath = '/clinician/reports';
-    recordLabel = 'Open Lab Reports';
+    // Reports live in the owned appointment's history tab; there is no
+    // clinician/reports route. Without a verified visit, omit the link.
+    recordPath = options.appointmentId ? `/clinician?appointment=${encodeURIComponent(options.appointmentId)}&tab=flowsheet` : null;
+    recordLabel = 'Open Report History';
   } else if (patientId) {
     recordPath = `/clinician/maternity?patientId=${encodeURIComponent(patientId)}`;
     recordLabel = 'View Patient Record';

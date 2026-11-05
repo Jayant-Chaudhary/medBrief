@@ -927,7 +927,9 @@ async function handleStep({
         return { type: 'unavailable', message: 'I could not read the patient records. Please try again.',
           source: 'clinical_record', attempts: 0, errorCode: err.code === 'MODEL_TIMEOUT' ? 'PATIENT_QUERY_TIMEOUT' : 'PATIENT_QUERY_FAILED' };
       }
-      const answer = formatMetricAnswer(targetPatient.fullName, clinicalQuery.metricTerm, record, targetPatient.id, { timeZone: clock.timeZone });
+      const appointmentId = current?.kind === 'visit' && current.patientId === targetPatient.id
+        ? current.id : targetPatient.lastVisit?.appointmentId || targetPatient.nextVisit?.appointmentId;
+      const answer = formatMetricAnswer(targetPatient.fullName, clinicalQuery.metricTerm, record, targetPatient.id, { timeZone: clock.timeZone, appointmentId });
 
       return {
         type: 'answer',
