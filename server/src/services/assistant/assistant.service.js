@@ -884,11 +884,34 @@ async function handleStep({
             if (onScreenMatch) {
               targetPatient = onScreenMatch;
             } else {
+              // If neither is open on screen, check if exactly one candidate has a recorded entry for this metric
+              const candidateRecords = await Promise.all(
+                resolved.matches.map(async (p) => ({
+                  patient: p,
+                  record: await queryPatientMetric(userId, p.id, clinicalQuery.metricTerm).catch(() => null),
+                }))
+              );
+              const candidatesWithData = candidateRecords.filter(c => c.record);
+
+              if (candidatesWithData.length === 1) {
+                const single = candidatesWithData[0];
+                const displayName = single.patient.email ? `${single.patient.fullName} (${single.patient.email})` : single.patient.fullName;
+                const answer = formatMetricAnswer(displayName, clinicalQuery.metricTerm, single.record, single.patient.id);
+                return {
+                  type: 'answer',
+                  text: answer.text,
+                  recordPath: answer.recordPath,
+                  recordLabel: answer.recordLabel,
+                  source: 'clinical_record',
+                  attempts: 0,
+                };
+              }
+
               return {
                 type: 'choose',
                 message: 'Which patient did you mean?',
                 options: resolved.matches.map(p => ({
-                  label: p.fullName,
+                  label: p.email ? `${p.fullName} (${p.email})` : p.fullName,
                   steps: [{ do: 'open_maternity_card', page: 'maternity', patient: p.fullName, which: 'none', when: '', fields: [], press: 'none' }],
                 })),
                 source: 'clinical_record',
