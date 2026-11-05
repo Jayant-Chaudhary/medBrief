@@ -1,0 +1,221 @@
+{
+  "seed": 42,
+  "batchIndex": 1,
+  "stepCount": 5,
+  "prompt": "show patient list, phir folic acid 400 mcg add karo, phir open antenatal card, phir write review in 2 weeks in notes, phir switch to dashboard",
+  "goals": [
+    "view patients",
+    "add folic acid 400 mcg",
+    "go to maternity card",
+    "notes: review in 2 weeks",
+    "switch to dashboard"
+  ],
+  "isUnsafe": false,
+  "plannerChecklist": [
+    {
+      "text": "Show patient list",
+      "done": true
+    },
+    {
+      "text": "Add folic acid 400 mcg",
+      "done": false
+    },
+    {
+      "text": "Open antenatal card",
+      "done": false
+    },
+    {
+      "text": "Write review in 2 weeks in notes",
+      "done": false
+    },
+    {
+      "text": "Switch to dashboard",
+      "done": false
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "pageElementsCount": 13,
+      "navigatorReply": {
+        "type": "run",
+        "steps": [
+          {
+            "label": "This page",
+            "page": {
+              "actions": [
+                {
+                  "ref": "nav_pat",
+                  "op": "click",
+                  "name": "Patients",
+                  "kind": "link",
+                  "risk": "free",
+                  "section": "Menu"
+                }
+              ],
+              "refused": []
+            }
+          }
+        ],
+        "checklist": [
+          {
+            "text": "Show patient list",
+            "done": false
+          },
+          {
+            "text": "Add folic acid 400 mcg",
+            "done": false
+          },
+          {
+            "text": "Open antenatal card",
+            "done": false
+          },
+          {
+            "text": "Write review in 2 weeks in notes",
+            "done": false
+          },
+          {
+            "text": "Switch to dashboard",
+            "done": false
+          }
+        ],
+        "note": "The user wants to perform a sequence of actions: show patient list, add folic acid 400 mcg, open antenatal card, write a note, and finally go to the dashboard. The current page is a consultation page,",
+        "continue": true,
+        "source": "agent",
+        "attempts": 1
+      },
+      "serverChecks": {
+        "accepted": [
+          {
+            "ref": "nav_pat",
+            "op": "click",
+            "name": "Patients",
+            "kind": "link",
+            "risk": "free",
+            "section": "Menu"
+          }
+        ],
+        "refused": []
+      },
+      "actionResults": [
+        {
+          "op": "click",
+          "ref": "nav_pat",
+          "result": "ok"
+        }
+      ],
+      "simState": {
+        "page": "patients",
+        "notes": "",
+        "medicines": [],
+        "checklist": []
+      }
+    },
+    {
+      "round": 1,
+      "pageElementsCount": 9,
+      "navigatorReply": {
+        "type": "run",
+        "steps": [
+          {
+            "label": "This page",
+            "page": {
+              "actions": [],
+              "refused": [
+                {
+                  "name": "last_visit",
+                  "reason": "could not find a matching patient in your directory"
+                }
+              ]
+            }
+          }
+        ],
+        "checklist": [
+          {
+            "text": "Show patient list",
+            "done": true
+          },
+          {
+            "text": "Add folic acid 400 mcg",
+            "done": false
+          },
+          {
+            "text": "Open antenatal card",
+            "done": false
+          },
+          {
+            "text": "Write review in 2 weeks in notes",
+            "done": false
+          },
+          {
+            "text": "Switch to dashboard",
+            "done": false
+          }
+        ],
+        "note": "The user wants to add folic acid 400 mcg, open the antenatal card, write a review in 2 weeks in notes, and then switch to the dashboard. The current page is the Patients list.",
+        "source": "agent",
+        "attempts": 1
+      },
+      "serverChecks": {
+        "accepted": [],
+        "refused": [
+          {
+            "name": "last_visit",
+            "reason": "could not find a matching patient in your directory"
+          }
+        ]
+      },
+      "actionResults": [],
+      "simState": {
+        "page": "patients",
+        "notes": "",
+        "medicines": [],
+        "checklist": []
+      }
+    }
+  ],
+  "lastReply": {
+    "type": "run",
+    "steps": [
+      {
+        "label": "This page",
+        "page": {
+          "actions": [],
+          "refused": [
+            {
+              "name": "last_visit",
+              "reason": "could not find a matching patient in your directory"
+            }
+          ]
+        }
+      }
+    ],
+    "checklist": [
+      {
+        "text": "Show patient list",
+        "done": true
+      },
+      {
+        "text": "Add folic acid 400 mcg",
+        "done": false
+      },
+      {
+        "text": "Open antenatal card",
+        "done": false
+      },
+      {
+        "text": "Write review in 2 weeks in notes",
+        "done": false
+      },
+      {
+        "text": "Switch to dashboard",
+        "done": false
+      }
+    ],
+    "note": "The user wants to add folic acid 400 mcg, open the antenatal card, write a review in 2 weeks in notes, and then switch to the dashboard. The current page is the Patients list.",
+    "source": "agent",
+    "attempts": 1
+  },
+  "firstWrongStep": "Failed at round 2 with note \"The user wants to add folic acid 400 mcg, open the antenatal card, write a review in 2 weeks in notes, and then switch to the dashboard. The current page is the Patients list.\"",
+  "causeCategory": "navigator-choice"
+}

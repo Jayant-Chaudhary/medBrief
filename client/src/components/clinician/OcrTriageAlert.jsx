@@ -100,7 +100,8 @@ function AlertItem({ alert, onResolve }) {
   }
 
   return (
-    <li className="rounded-xl border border-terracotta-border bg-surface p-3">
+    // Shows scanned values: the assistant reads only the labelled controls here.
+    <li className="rounded-xl border border-terracotta-border bg-surface p-3" data-assistant-private="">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-display text-label-lg text-ink">{alert.label}</p>
         <div className="flex items-center gap-2">
@@ -139,6 +140,7 @@ function AlertItem({ alert, onResolve }) {
             size="sm"
             onClick={handleKeepScanned}
             disabled={saving}
+            data-assistant-label={`Keep scanned value for ${alert.label}`}
             title={`Keep scanned value (${scannedValue}) without re-typing`}
           >
             {saving ? 'Saving…' : `Keep scanned (${scannedValue})`}
@@ -149,12 +151,13 @@ function AlertItem({ alert, onResolve }) {
             type="button"
             onClick={() => setShowSource(true)}
             aria-haspopup="dialog"
+            data-assistant-label={`View ${alert.label} on report`}
             className="shrink-0 rounded-xl border border-line px-3 py-1.5 text-label-md text-cypress hover:bg-subcanvas"
           >
             View on report
           </button>
         )}
-        <Button type="submit" size="sm" disabled={saving || !value.trim()}>
+        <Button type="submit" size="sm" disabled={saving || !value.trim()} data-assistant-label={`Save corrected value for ${alert.label}`}>
           {saving ? 'Saving…' : 'Resolve'}
         </Button>
       </form>

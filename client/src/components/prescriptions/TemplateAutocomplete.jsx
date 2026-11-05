@@ -45,6 +45,8 @@ export function TemplateAutocomplete({ query, onQueryChange, onStart, matches, l
           aria-controls={`${id}-results`} aria-activedescendant={open && active ? `${id}-${active.template.id}` : undefined}
           aria-describedby={`${id}-help`} autoComplete="off" spellCheck={false} disabled={disabled}
           placeholder={completion ? '' : 'Search template, tag or medicine…'} value={query}
+          // For the assistant: opening the list only shows templates (best patient match first).
+          data-assistant-label="Search templates (best match first)" data-assistant-effect="free"
           onFocus={start} onClick={start} onKeyDown={keyDown}
           onSelect={event => setAtEnd(event.currentTarget.selectionStart === query.length && event.currentTarget.selectionEnd === query.length)}
           onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}
@@ -63,6 +65,8 @@ export function TemplateAutocomplete({ query, onQueryChange, onStart, matches, l
     <div id={`${id}-results`} role="listbox" aria-label="Templates ranked by patient similarity" hidden={!open} aria-busy={loading}>
       {matches.map(({ template, match, reviewOnly }, index) => <div key={template.id}
         id={`${id}-${template.id}`} role="option" aria-selected={index === activeIndex}
+        // The list is ranked by patient similarity, so the first is the best match.
+        data-assistant-label={index === 0 ? `Best matching template: ${template.name}` : `Template: ${template.name}`}
         className="rx-autocomplete-option" onMouseEnter={() => setActiveIndex(index)}
         onMouseDown={event => event.preventDefault()} onClick={() => select(template)}>
         <div className="rx-autocomplete-title"><strong>{template.name}</strong><span>{templateMatchLabel(match)}</span></div>

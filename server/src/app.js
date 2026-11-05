@@ -21,6 +21,7 @@ const patientsRoutes = require('./routes/patients.routes');
 const templatesRoutes = require('./routes/templates.routes');
 const { consultRouter, timeRouter } = require('./routes/consultAudio.routes');
 const maternityRoutes = require('./routes/maternity.routes');
+const assistantRoutes = require('./routes/assistant.routes');
 const medicationDecisionRoutes = require('./routes/medicationDecision.routes');
 const checkinRoutes = require('./routes/checkin.routes');
 const patientSimilarityRoutes = require('./routes/patientSimilarity.routes');
@@ -91,6 +92,7 @@ app.use('/api/templates', templatesRoutes);
 app.use('/api/time', timeRouter);
 app.use('/api/consults', consultRouter);
 app.use('/api/maternity', maternityRoutes);
+app.use('/api/assistant', assistantRoutes);
 app.use('/api/decision-support', medicationDecisionRoutes);
 app.use('/api/checkin', checkinRoutes);
 app.use('/api/patient-similarity', patientSimilarityRoutes);
@@ -136,6 +138,11 @@ if (process.env.NODE_ENV !== 'test') {
 
     // Check ffmpeg availability
     await checkFfmpegInstalled();
+
+    const assistantConfig = require('./config/assistant.config');
+    logger.info(`Assistant agent loop is ${assistantConfig.agentLoop ? 'on' : 'off'}`, {
+      agentLoop: assistantConfig.agentLoop,
+    });
 
     // Start background transcription worker and orchestrator
     void audioCache.start();

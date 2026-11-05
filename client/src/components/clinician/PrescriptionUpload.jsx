@@ -113,7 +113,7 @@ export function PrescriptionUpload({ prescriptions = [], onUpload, children }) {
             placeholder="Instructions for the patient (optional)"
             className="field w-full resize-y py-2"
           />
-          <Button type="button" onClick={save} disabled={saving} className="w-full">
+          <Button type="button" onClick={save} disabled={saving} className="w-full" data-assistant-effect="send">
             {saving ? 'Saving…' : 'Save prescription'}
           </Button>
         </div>

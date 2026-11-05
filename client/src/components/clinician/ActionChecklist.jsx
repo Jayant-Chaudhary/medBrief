@@ -33,6 +33,8 @@ export function ActionChecklist({ templates = [], items = [], onAdd, onRemove })
         onRemove={onRemove}
         placeholder="Write an action for this patient…"
         emptyHint="Save your usual actions under Checklists to tick them here."
+        section="Next steps for the patient"
+        effect="send"
       />
     </SectionCard>
   );

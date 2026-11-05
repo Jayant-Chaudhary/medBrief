@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Users, Calendar, Stethoscope, Search, Plus, Heart, X, ChevronRight, Phone, Mail, Clock } from 'lucide-react';
 import { Sidebar } from '../../components/layout/Sidebar.jsx';
 import { Avatar } from '../../components/common/Avatar.jsx';
 import { Spinner } from '../../components/common/Spinner.jsx';
 import { fetchMyPatients } from '../../services/clinicianService.js';
 import { formatDate } from '../../utils/format.js';
+import { useAssistantControls } from '../../components/assistant/AssistantBridge.jsx';
 
 /** Everyone who has accepted a visit with this clinician. */
 export function ClinicianPatients() {
@@ -13,8 +14,48 @@ export function ClinicianPatients() {
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [query, setQuery] = useState('');
+  const navigate = useNavigate();
+  // The assistant passes a name to search for as navigation state, never in the URL.
+  const assistantQuery = useLocation().state?.assistantQuery;
+  const [query, setQuery] = useState(assistantQuery ?? '');
   const [filterTab, setFilterTab] = useState('all'); // 'all', 'upcoming', 'past'
+
+  useEffect(() => {
+    if (assistantQuery) setQuery(assistantQuery);
+  }, [assistantQuery]);
+
+  useAssistantControls(
+    'patients',
+    {
+      controls: {
+        query: {
+          get: () => query,
+          set: (val) => setQuery(val ?? ''),
+        },
+        filterTab: {
+          get: () => filterTab,
+          set: (val) => setFilterTab(val || 'all'),
+        },
+      },
+      buttons: {
+        clear_search: {
+          run: () => {
+            setQuery('');
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Clear search query' }],
+        },
+        new_patient: {
+          run: () => {
+            navigate('/clinician/appointments/new');
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Open New Visit form' }],
+        },
+      },
+    },
+    { ready: !loading }
+  );
 
   useEffect(() => {
     fetchMyPatients()
@@ -61,6 +102,7 @@ export function ClinicianPatients() {
           <div className="flex items-center gap-2">
             <Link
               to="/clinician/appointments/new"
+              data-assistant-id="patients.new_patient"
               className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-xl bg-cypress text-surface hover:bg-cypress-deep shadow-sm transition"
             >
               <Plus size={16} /> New Visit
@@ -104,7 +146,7 @@ export function ClinicianPatients() {
           {/* Filter tabs and search */}
           <div className="p-3.5 border-b border-line flex flex-wrap items-center justify-between gap-3 bg-surface">
             {/* Filter Pills */}
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div data-assistant-id="patients.filterTab" className="flex flex-wrap items-center gap-1.5">
               {[
                 { id: 'all', label: 'All Patients', count: patients.length },
                 { id: 'upcoming', label: 'Upcoming Visits', count: upcomingCount },
@@ -137,6 +179,7 @@ export function ClinicianPatients() {
               <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" />
               <input
                 type="search"
+                data-assistant-id="patients.query"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search patient, email, phone…"
@@ -146,6 +189,7 @@ export function ClinicianPatients() {
               {query && (
                 <button
                   type="button"
+                  data-assistant-id="patients.clear_search"
                   onClick={() => setQuery('')}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-3 hover:text-ink text-xs font-bold"
                 >
@@ -194,11 +238,12 @@ export function ClinicianPatients() {
                     <th scope="col" className="px-5 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-line">
+                {/* Patient rows: the assistant reaches a patient by the name you type, not by reading these. */}
+                <tbody className="divide-y divide-line" data-assistant-private="">
                   {shown.map((patient) => {
                     const latest = patient.nextVisit ?? patient.lastVisit;
                     return (
-                      <tr key={patient.id} className="hover:bg-subcanvas/30 transition-colors">
+                      <tr key={patient.id} data-assistant-row={patient.fullName || ''} className="hover:bg-subcanvas/30 transition-colors">
                         <td className="px-5 py-3.5">
                           <div className="flex items-center gap-3">
                             <div className="relative">

@@ -28,6 +28,7 @@ export function Modal({ isOpen, onClose, title, children, className }) {
           <button
             onClick={onClose}
             className="p-2 text-ink-3 hover:text-ink-2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary min-h-[48px] min-w-[48px] flex items-center justify-center -mr-2"
+            data-assistant-effect="free"
             aria-label="Close modal"
           >
             <X className="h-5 w-5" />

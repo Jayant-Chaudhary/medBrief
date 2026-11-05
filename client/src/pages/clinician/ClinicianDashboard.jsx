@@ -27,6 +27,7 @@ import {
   isPatientSimilarityEnabled,
   isSimilaritySyntheticDataAllowed,
 } from '../../services/patientSimilarityClient.js';
+import { useAssistantControls } from '../../components/assistant/AssistantBridge.jsx';
 import {
   fetchPatients,
   saveConsultancyNotes,
@@ -132,6 +133,76 @@ export function ClinicianDashboard() {
   const { data, loading, error, patch } = usePatientDashboard(selected?.id, selected?.appointmentId);
   const appointmentId = data?.appointment?.id;
   const consultDraft = useConsultDraft(appointmentId, Boolean(selected));
+  // The previous visit's data stays on screen while the next one loads; nothing is
+  // filled until the open visit's own data has arrived.
+  const visitLoaded = Boolean(selected) && appointmentId === selectedAppointmentId;
+
+  // Notes typed but not yet autosaved belong to the visit they were typed in: save them
+  // before another visit opens, so the debounce cannot land them on the next one.
+  useEffect(() => () => flushNotesRef.current?.(), [selectedAppointmentId]);
+
+  useAssistantControls(
+    'dashboard',
+    {
+      context: () => ({ patientId: visitLoaded ? selected.id : null, appointmentId: visitLoaded ? selectedAppointmentId : null }),
+      // The notes box itself is read and edited by the assistant's page reader, through its own
+      // onChange (so autosave runs as if typed), after the doctor confirms.
+      buttons: {
+        open_notes: {
+          run: () => {
+            setNotesOpen(true);
+            setActiveDashboardTab('consultation');
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Open consultation notes' }],
+          available: () => Boolean(selected),
+        },
+        close_notes: {
+          run: () => {
+            setNotesOpen(false);
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Close consultation notes' }],
+          available: () => Boolean(notesOpen),
+        },
+        save_notes: {
+          run: async () => {
+            if (flushNotesRef.current) await flushNotesRef.current();
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Save consultation notes' }],
+          available: () => Boolean(selected),
+        },
+        open_transcript_logs: {
+          run: () => {
+            setAudioConsultTab('TRANSCRIPT');
+            setAudioConsultOpen(true);
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Open transcript logs' }],
+          available: () => Boolean(selected),
+        },
+        open_audio_consult: {
+          run: () => {
+            setAudioConsultTab('RECORD');
+            setAudioConsultOpen(true);
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Open audio consultation' }],
+          available: () => Boolean(selected),
+        },
+        close_visit: {
+          run: () => {
+            close();
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Return to dashboard cards' }],
+          available: () => Boolean(selected),
+        },
+      },
+    },
+    { ready: !queueLoading && (!selected || visitLoaded) }
+  );
 
   const [activeDashboardTab, setActiveDashboardTab] = useState('overview'); // 'overview' | 'flowsheet' | 'consultation'
   const [consultationSubView, setConsultationSubView] = useState('both'); // 'both' | 'notes' | 'rx'
@@ -391,7 +462,8 @@ export function ClinicianDashboard() {
             {todays.filter((a) => a.status === 'completed').length} of {todays.length} completed
           </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Patient cards: the assistant reaches a visit by the name you type, never by reading these. */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-assistant-private="">
           {todays.map((appointment, idx) => {
             const isPending = appointment.isPending;
             const isCompleted = !isPending && appointment.status === 'completed';
@@ -500,7 +572,29 @@ export function ClinicianDashboard() {
         </div>
       );
     }
-    if (!selected) return renderTodaysCards();
+    if (selectedAppointmentId) {
+      if (queueLoading || (loading && !data)) {
+        return (
+          <div className="flex flex-1 items-center justify-center gap-3 text-ink-3" role="status" aria-label="Loading" aria-busy="true">
+            <Spinner /> Loading patient record…
+          </div>
+        );
+      }
+      if (queueError || error || !selected) {
+        return (
+          <div className="card flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+            <p className="font-display text-head-sm text-terracotta">Error loading patient details</p>
+            <p className="max-w-md text-body-md text-ink-2">{(queueError || error)?.message || 'Patient record could not be found.'}</p>
+            <button onClick={close} className="mt-4 text-primary font-medium">
+              Back to Dashboard
+            </button>
+          </div>
+        );
+      }
+      if (!data) return null;
+    } else if (!selected) {
+      return renderTodaysCards();
+    }
     if (loading && !data) {
       return (
         <div className="flex flex-1 items-center justify-center gap-3 text-ink-3">
@@ -527,6 +621,7 @@ export function ClinicianDashboard() {
           <div className="flex items-center gap-3">
             <button
               onClick={close}
+              data-assistant-id="dashboard.close_visit"
               aria-label="Back to dashboard"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-line bg-surface hover:bg-subcanvas text-ink font-medium text-sm transition-all shadow-xs active:scale-95"
             >
@@ -555,7 +650,14 @@ export function ClinicianDashboard() {
 
             <button
               type="button"
-              onClick={() => setActiveDashboardTab('consultation')}
+data-assistant-id="dashboard.open_notes"
+              data-assistant-effect="free"
+              onClick={() => {
+                setNotesOpen(true);
+                setActiveDashboardTab('consultation');
+              }}
+              aria-haspopup="dialog"
+              aria-expanded={notesOpen || activeDashboardTab === 'consultation'}
               className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-label-lg font-semibold transition-all ${
                 activeDashboardTab === 'consultation'
                   ? 'border-emerald-500 bg-emerald-100 text-emerald-950 dark:border-emerald-500 dark:bg-emerald-900/60 dark:text-emerald-100 shadow-xs ring-1 ring-emerald-300'
@@ -881,6 +983,7 @@ export function ClinicianDashboard() {
               type="button"
               onClick={handleEndVisit}
               disabled={ending}
+              data-assistant-effect="send"
               className="rounded-xl bg-cypress px-4 py-2 text-label-lg text-white hover:bg-cypress-deep disabled:opacity-60"
             >
               {ending ? 'Ending…' : 'End visit and share summary'}
@@ -942,6 +1045,9 @@ export function ClinicianDashboard() {
               setAudioConsultOpen(true);
             }}
             className="flex items-center gap-2 rounded-full bg-rose-600 px-4 py-2 text-label-md font-semibold text-white shadow-sm transition-all hover:bg-rose-700 hover:shadow active:scale-95"
+            data-assistant-id="dashboard.open_audio_consult"
+            data-assistant-effect="save"
+            data-assistant-side-effect="Opens the recording window and starts a consultation session for this visit. You start the recording yourself."
             title="Record consultation audio with ambient speech-to-text"
           >
             <Mic className="h-4 w-4 shrink-0 text-white" />
@@ -954,6 +1060,9 @@ export function ClinicianDashboard() {
               setAudioConsultTab('TRANSCRIPT');
               setAudioConsultOpen(true);
             }}
+data-assistant-id="dashboard.open_transcript_logs"
+            data-assistant-effect="save"
+            data-assistant-side-effect="Opens the consultation window and starts a consultation session for this visit if none exists."
             className="flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 dark:border-indigo-800/60 dark:bg-indigo-950/50 dark:text-indigo-200 dark:hover:bg-indigo-900/50 px-4 py-2 text-label-md font-semibold text-indigo-800 transition-all hover:bg-indigo-100 hover:border-indigo-300 active:scale-95"
             title="View consultation audio transcript and speech-to-text processing logs"
           >

@@ -540,6 +540,7 @@ export function DoctorConsultationModal({
           <div className="flex border-b border-line pb-1 gap-2">
             <button
               type="button"
+              data-assistant-effect="free"
               onClick={() => setActiveTab('RECORD')}
               className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
                 activeTab === 'RECORD'
@@ -552,6 +553,7 @@ export function DoctorConsultationModal({
             </button>
             <button
               type="button"
+              data-assistant-effect="free"
               onClick={() => {
                 setActiveTab('TRANSCRIPT');
                 loadTranscript();
@@ -619,7 +621,8 @@ export function DoctorConsultationModal({
                     <button
                       type="button"
                       onClick={copyRoomCode}
-                      className="p-2 bg-surface hover:bg-subcanvas border border-line rounded-lg shadow-sm text-ink-2 transition"
+className="p-2 bg-surface hover:bg-subcanvas border border-line rounded-lg shadow-sm text-ink-2 transition"
+                      data-assistant-effect="free"
                       title="Copy room code"
                     >
                       {copiedCode ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
@@ -646,6 +649,7 @@ export function DoctorConsultationModal({
                 <div className="pt-2 flex justify-end gap-3">
                   <button
                     type="button"
+                    data-assistant-effect="free"
                     onClick={onClose}
                     className="px-4 py-2 border border-line rounded-lg text-sm text-ink-2 hover:bg-subcanvas"
                   >
@@ -653,6 +657,7 @@ export function DoctorConsultationModal({
                   </button>
                   <button
                     type="button"
+                    data-assistant-effect="never"
                     onClick={handleProceedToMicCheck}
                     disabled={loading || !session}
                     className="px-5 py-2 bg-primary text-white font-medium rounded-lg text-sm hover:bg-primary-dark transition flex items-center gap-2 shadow-sm disabled:opacity-50"
@@ -770,6 +775,7 @@ export function DoctorConsultationModal({
                   <div className="flex items-center justify-between pt-1">
                     <button
                       type="button"
+                      data-assistant-effect="never"
                       onClick={handleRunSttTest}
                       disabled={sttTesting}
                       className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 shadow-sm transition ${
@@ -820,6 +826,7 @@ export function DoctorConsultationModal({
                 <label className="flex items-start gap-3 p-3.5 bg-subcanvas border border-line rounded-xl cursor-pointer select-none">
                   <input
                     type="checkbox"
+                    data-assistant-effect="never"
                     checked={consentAccepted}
                     onChange={(e) => setConsentAccepted(e.target.checked)}
                     className="mt-0.5 h-4 w-4 rounded text-primary focus:ring-primary border-slate-300"
@@ -843,6 +850,7 @@ export function DoctorConsultationModal({
                       {!doctorReady ? (
                         <button
                           type="button"
+                          data-assistant-effect="never"
                           onClick={handleConfirmReady}
                           disabled={!consentAccepted || loading || (!hasCompletedSttTest && !sttTestResult)}
                           className="px-4 py-2 bg-emerald-600 text-white font-medium rounded-lg text-sm hover:bg-emerald-700 transition flex items-center gap-2 shadow-sm disabled:opacity-50"
@@ -853,6 +861,7 @@ export function DoctorConsultationModal({
                       ) : (
                         <button
                           type="button"
+                          data-assistant-effect="never"
                           onClick={handleStartRecording}
                           disabled={loading || (!hasCompletedSttTest && !sttTestResult)}
                           className="px-5 py-2 bg-rose-600 text-white font-semibold rounded-lg text-sm hover:bg-rose-700 transition flex items-center gap-2 shadow-sm animate-pulse disabled:opacity-50"
@@ -902,6 +911,7 @@ export function DoctorConsultationModal({
                 <div className="pt-2">
                   <button
                     type="button"
+                    data-assistant-effect="never"
                     onClick={handleStopConsultation}
                     className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-lg transition flex items-center justify-center gap-2 text-base"
                   >
@@ -947,6 +957,7 @@ export function DoctorConsultationModal({
                   </button>
                   <button
                     type="button"
+                    data-assistant-effect="free"
                     onClick={onClose}
                     className="px-5 py-2 border border-line rounded-lg text-sm text-ink-2 hover:bg-subcanvas transition"
                   >
@@ -988,7 +999,8 @@ export function DoctorConsultationModal({
                     type="button"
                     onClick={() => loadTranscript()}
                     disabled={loadingTranscript}
-                    className="p-1.5 hover:bg-subcanvas border border-line rounded-lg text-ink-2 text-xs transition"
+className="p-1.5 hover:bg-subcanvas border border-line rounded-lg text-ink-2 text-xs transition"
+                    data-assistant-effect="free"
                     title="Refresh transcript"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${loadingTranscript ? 'animate-spin' : ''}`} />
@@ -1005,6 +1017,7 @@ export function DoctorConsultationModal({
                   </button>
                   <button
                     type="button"
+                    data-assistant-effect="never"
                     onClick={handleDownloadTranscript}
                     disabled={!transcriptData?.segments?.length}
                     className="flex items-center gap-1 px-2.5 py-1.5 bg-surface hover:bg-subcanvas border border-line rounded-lg text-ink-2 text-xs transition shadow-sm disabled:opacity-40"
@@ -1045,7 +1058,7 @@ export function DoctorConsultationModal({
             </div>
 
             {/* Segments Stream / Transcript Feed */}
-            <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+            <div data-assistant-private className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
               {loadingTranscript && !transcriptData ? (
                 <div className="py-12 text-center text-ink-3 text-xs space-y-2">
                   <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" />

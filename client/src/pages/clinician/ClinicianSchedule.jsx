@@ -16,6 +16,7 @@ import { Sidebar } from '../../components/layout/Sidebar.jsx';
 import { Avatar } from '../../components/common/Avatar.jsx';
 import { Spinner } from '../../components/common/Spinner.jsx';
 import { fetchPatients } from '../../services/clinicianService.js';
+import { useAssistantControls } from '../../components/assistant/AssistantBridge.jsx';
 
 /** At least two weeks are always shown, so an empty diary still reads as a calendar. */
 const MIN_DAYS = 14;
@@ -58,6 +59,7 @@ export function ClinicianSchedule() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
+  const [statusFilter, setStatusFilter] = useState('all');
   const stripRef = useRef(null);
   const navigate = useNavigate();
 
@@ -70,6 +72,57 @@ export function ClinicianSchedule() {
 
   // Fixed for the life of the page, so the memos below have a stable input.
   const today = useMemo(() => startOfDay(new Date()), []);
+
+  useAssistantControls(
+    'schedule',
+    {
+      controls: {
+        date: {
+          get: () => format(selectedDay, 'yyyy-MM-dd'),
+          set: (val) => {
+            if (!val) return;
+            const parsed = startOfDay(new Date(val));
+            if (!isNaN(parsed.getTime())) setSelectedDay(parsed);
+          },
+        },
+        statusFilter: {
+          get: () => statusFilter,
+          set: (val) => setStatusFilter(val || 'all'),
+        },
+      },
+      buttons: {
+        jump_today: {
+          run: () => {
+            setSelectedDay(today);
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Jump to today' }],
+        },
+        next_day: {
+          run: () => {
+            setSelectedDay((d) => addDays(d, 1));
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'View next day' }],
+        },
+        prev_day: {
+          run: () => {
+            setSelectedDay((d) => addDays(d, -1));
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'View previous day' }],
+        },
+        new_appointment: {
+          run: () => {
+            navigate('/clinician/appointments/new');
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Open New Appointment form' }],
+        },
+      },
+    },
+    { ready: !loading }
+  );
 
   const upcoming = useMemo(
     () =>
@@ -135,6 +188,7 @@ export function ClinicianSchedule() {
           </div>
           <Link
             to="/clinician/appointments/new"
+            data-assistant-id="schedule.new_appointment"
             className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-xl bg-cypress text-surface hover:bg-cypress-deep shadow-sm transition"
           >
             <Plus size={16} /> Schedule Visit
@@ -181,7 +235,7 @@ export function ClinicianSchedule() {
             </div>
 
             {/* Calendar Day Strip */}
-            <div className="card mb-4 flex items-center gap-2 p-2.5">
+            <div data-assistant-id="schedule.date" className="card mb-4 flex items-center gap-2 p-2.5">
               <button
                 type="button"
                 onClick={() => scrollStrip(-1)}
@@ -262,6 +316,7 @@ export function ClinicianSchedule() {
                 {!isSameDay(selectedDay, today) && (
                   <button
                     type="button"
+                    data-assistant-id="schedule.jump_today"
                     onClick={() => setSelectedDay(today)}
                     className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 dark:text-indigo-300 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/50 dark:border-indigo-800/60 px-2.5 py-1 rounded-lg transition"
                   >
@@ -286,7 +341,7 @@ export function ClinicianSchedule() {
                     </Link>
                   </div>
                 ) : (
-                  <ul className="divide-y divide-line">
+                  <ul className="divide-y divide-line" data-assistant-private="">
                     {dayAppointments.map((appointment) => {
                       const cfg = STATUS_CONFIG[appointment.status] ?? STATUS_CONFIG.active;
                       const openable = !appointment.isPending && appointment.status !== 'cancelled';
