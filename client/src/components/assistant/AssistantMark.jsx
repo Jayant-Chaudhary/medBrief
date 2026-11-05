@@ -1,107 +1,118 @@
 /**
- * The MedBrief Assistant Mark:
- * Features a cute expressive face in the center, encircled by MedBrief's
- * teal, emerald, and warm gold brand contour and subtle logo emblem.
+ * Chatbot Face encircled by MedBrief's signature blue and green rounded rectangles.
  */
 import React from 'react';
 
-export default function AssistantMark({ size = 32, sparkle = true }) {
+export default function AssistantMark({ size = 34 }) {
   return (
     <span
-      className="assistant-mark relative inline-flex items-center justify-center select-none"
+      className="assistant-mark relative inline-flex items-center justify-center select-none pointer-events-none"
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
-      {/* Background MedBrief logo watermark */}
-      <img
-        src="/logo-mark.png"
-        alt=""
-        draggable="false"
-        className="assistant-mark__silver absolute inset-0 h-full w-full object-contain opacity-20 filter blur-[0.3px]"
-      />
-
-      {/* SVG Cute Face & MedBrief-Styled Badge */}
       <svg
-        viewBox="0 0 48 48"
-        className="relative z-10 h-full w-full drop-shadow-sm transition-transform duration-200"
+        viewBox="0 0 54 54"
+        className="h-full w-full drop-shadow-md transition-transform duration-200"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
       >
         <defs>
-          <linearGradient id="medbriefFaceBg" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#14b8a6" />
-            <stop offset="55%" stopColor="#0f766e" />
-            <stop offset="100%" stopColor="#042f2e" />
+          {/* MedBrief Blue Gradient Rectangle */}
+          <linearGradient id="mbBlueCard" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#38bdf8" />
+            <stop offset="100%" stopColor="#0284c7" />
           </linearGradient>
-          <linearGradient id="medbriefRing" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#fef08a" />
-            <stop offset="45%" stopColor="#2dd4bf" />
-            <stop offset="100%" stopColor="#38bdf8" />
+
+          {/* MedBrief Green Gradient Rectangle */}
+          <linearGradient id="mbGreenCard" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#34d399" />
+            <stop offset="100%" stopColor="#059669" />
           </linearGradient>
-          <linearGradient id="eyePupil" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#0f172a" />
-            <stop offset="100%" stopColor="#022c22" />
+
+          {/* Chatbot Screen Gradient */}
+          <linearGradient id="botFaceBg" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#ffffff" />
+            <stop offset="100%" stopColor="#f8fafc" />
           </linearGradient>
         </defs>
 
-        {/* Outer badge contour matching MedBrief colors */}
-        <circle
-          cx="24"
-          cy="24"
-          r="21.5"
-          fill="url(#medbriefFaceBg)"
-          stroke="url(#medbriefRing)"
-          strokeWidth="2"
-        />
-
-        {/* Golden medical cross / star accent at top */}
-        <path
-          d="M24 6.5 L24 9.5 M22.5 8 L25.5 8"
-          stroke="#fef08a"
-          strokeWidth="1.5"
-          strokeLinecap="round"
+        {/* MedBrief Blue Rounded Rectangle (Back Layer, tilted) */}
+        <rect
+          x="6.5"
+          y="6.5"
+          width="37"
+          height="37"
+          rx="11"
+          transform="rotate(-7 25 25)"
+          fill="url(#mbBlueCard)"
           opacity="0.95"
         />
 
-        {/* Cute Face in Center */}
-        {/* Left Eye with Catchlights */}
-        <g>
-          <ellipse cx="17.5" cy="22.5" rx="3.3" ry="4.2" fill="#ffffff" />
-          <ellipse cx="17.5" cy="22.5" rx="2.6" ry="3.4" fill="url(#eyePupil)" />
-          {/* Main sparkle catchlight */}
-          <circle cx="16.3" cy="20.8" r="1.3" fill="#ffffff" />
-          <circle cx="18.6" cy="23.9" r="0.65" fill="#ffffff" />
-        </g>
+        {/* MedBrief Green/Teal Rounded Rectangle (Mid Layer, tilted opposite) */}
+        <rect
+          x="10.5"
+          y="7.5"
+          width="37"
+          height="37"
+          rx="11"
+          transform="rotate(7 29 26)"
+          fill="url(#mbGreenCard)"
+          opacity="0.95"
+        />
 
-        {/* Right Eye with Catchlights */}
-        <g>
-          <ellipse cx="30.5" cy="22.5" rx="3.3" ry="4.2" fill="#ffffff" />
-          <ellipse cx="30.5" cy="22.5" rx="2.6" ry="3.4" fill="url(#eyePupil)" />
-          {/* Main sparkle catchlight */}
-          <circle cx="29.3" cy="20.8" r="1.3" fill="#ffffff" />
-          <circle cx="31.6" cy="23.9" r="0.65" fill="#ffffff" />
-        </g>
+        {/* Central Bot Container Housing */}
+        <rect
+          x="9"
+          y="9"
+          width="36"
+          height="36"
+          rx="12"
+          fill="#091427"
+          stroke="#38bdf8"
+          strokeWidth="1.5"
+        />
 
-        {/* Rosy Blush Cheeks */}
-        <ellipse cx="13" cy="27" rx="3.2" ry="1.6" fill="#fda4af" opacity="0.85" />
-        <ellipse cx="35" cy="27" rx="3.2" ry="1.6" fill="#fda4af" opacity="0.85" />
-
-        {/* Cute Smile */}
+        {/* Top Antenna */}
         <path
-          d="M20.5 27.2 Q24 32.2 27.5 27.2"
-          stroke="#ffffff"
+          d="M27 12.5 L27 15"
+          stroke="#38bdf8"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+        <circle cx="27" cy="11.5" r="2.2" fill="#38bdf8" />
+
+        {/* Chatbot Side Ears / Headphones */}
+        <rect x="11.5" y="21" width="3" height="7.5" rx="1.5" fill="#38bdf8" />
+        <rect x="39.5" y="21" width="3" height="7.5" rx="1.5" fill="#34d399" />
+
+        {/* Normal Chatbot Face Screen */}
+        <rect
+          x="14.5"
+          y="15.5"
+          width="25"
+          height="21.5"
+          rx="6"
+          fill="url(#botFaceBg)"
+          stroke="#cbd5e1"
+          strokeWidth="1"
+        />
+
+        {/* Normal Chatbot Eyes */}
+        <ellipse cx="21" cy="24.5" rx="2.4" ry="3" fill="#0f172a" />
+        <ellipse cx="33" cy="24.5" rx="2.4" ry="3" fill="#0f172a" />
+
+        {/* Eye Catchlights (Friendly sparkle) */}
+        <circle cx="20.3" cy="23.4" r="0.8" fill="#38bdf8" />
+        <circle cx="32.3" cy="23.4" r="0.8" fill="#38bdf8" />
+
+        {/* Normal Chatbot Smile */}
+        <path
+          d="M22.5 29.5 Q27 33.5 31.5 29.5"
+          stroke="#0f172a"
           strokeWidth="2.2"
           strokeLinecap="round"
           fill="none"
         />
-
-        {/* Ambient sparkle stars if sparkle is enabled */}
-        {sparkle && (
-          <>
-            <circle cx="9" cy="13" r="1" fill="#fef08a" opacity="0.8" />
-            <circle cx="39" cy="14" r="1.2" fill="#fef08a" opacity="0.8" />
-          </>
-        )}
       </svg>
     </span>
   );

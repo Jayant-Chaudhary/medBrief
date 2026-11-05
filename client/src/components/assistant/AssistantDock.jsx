@@ -198,6 +198,70 @@ export default function AssistantDock({ enabled = ENABLED }) {
     setOpen(false);
   }
 
+  const dialogDragRef = useRef(null);
+
+  const handleDialogPointerDown = (e) => {
+    if (e.target.closest('button, input, textarea, a')) return;
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    const dialog = e.currentTarget.closest('section');
+    if (!dialog) return;
+    const rect = dialog.getBoundingClientRect();
+    dialogDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: rect.left,
+      originY: rect.top,
+    };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (_) {}
+  };
+
+  const handleDialogPointerMove = (e) => {
+    if (!dialogDragRef.current) return;
+    const dx = e.clientX - dialogDragRef.current.startX;
+    const dy = e.clientY - dialogDragRef.current.startY;
+    const maxX = Math.max(12, window.innerWidth - 372);
+    const maxY = Math.max(12, window.innerHeight - 492);
+    const newX = Math.min(Math.max(12, dialogDragRef.current.originX + dx), maxX);
+    const newY = Math.min(Math.max(12, dialogDragRef.current.originY + dy), maxY);
+    // Align button position with the bottom-right of the dialog
+    setDockPos({ x: newX + 360 - 56, y: newY + 480 - 56 });
+  };
+
+  const handleDialogPointerUp = (e) => {
+    if (!dialogDragRef.current) return;
+    dialogDragRef.current = null;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch (_) {}
+    setDockPos((curr) => {
+      if (curr) {
+        try {
+          localStorage.setItem('assistant_dock_pos', JSON.stringify(curr));
+        } catch (_) {}
+      }
+      return curr;
+    });
+  };
+
+  function getDialogStyle() {
+    if (!dockPos || typeof window === 'undefined' || window.innerWidth < 640) return undefined;
+    const DIALOG_W = 360;
+    const DIALOG_H = 480;
+    let left = dockPos.x + 56 > window.innerWidth / 2 ? dockPos.x + 56 - DIALOG_W : dockPos.x;
+    let top = dockPos.y + 56 > window.innerHeight / 2 ? dockPos.y + 56 - DIALOG_H : dockPos.y;
+    left = Math.max(12, Math.min(window.innerWidth - DIALOG_W - 12, left));
+    top = Math.max(12, Math.min(window.innerHeight - DIALOG_H - 12, top));
+    return {
+      position: 'fixed',
+      left: `${left}px`,
+      top: `${top}px`,
+      bottom: 'auto',
+      right: 'auto',
+    };
+  }
+
   function forgetMemory() {
     setMemory([]);
   }
@@ -545,12 +609,18 @@ export default function AssistantDock({ enabled = ENABLED }) {
         <section
           role="dialog"
           aria-label="Assistant"
+          style={getDialogStyle()}
           // The page reader never reads or acts on the assistant itself.
           data-assistant-panel=""
           onKeyDown={(event) => event.key === 'Escape' && close()}
-          className="fixed inset-0 z-50 flex flex-col border border-line bg-raised text-ink shadow-card sm:inset-auto sm:bottom-5 sm:right-5 sm:h-[480px] sm:w-[360px] sm:rounded-card"
+          className={`fixed inset-0 z-50 flex flex-col border border-line bg-raised text-ink shadow-card ${dockPos ? '' : 'sm:bottom-5 sm:right-5'} sm:inset-auto sm:h-[480px] sm:w-[360px] sm:rounded-card`}
         >
-          <header className="flex items-center justify-between border-b border-line px-4 py-3">
+          <header
+            onPointerDown={handleDialogPointerDown}
+            onPointerMove={handleDialogPointerMove}
+            onPointerUp={handleDialogPointerUp}
+            className="flex cursor-grab items-center justify-between border-b border-line px-4 py-3 active:cursor-grabbing touch-none select-none"
+          >
             <div className="flex items-center gap-2.5">
               <span className="assistant-button flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
                 <AssistantMark size={20} sparkle={false} />
