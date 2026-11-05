@@ -150,7 +150,6 @@ export function ClinicianDashboard() {
       buttons: {
         open_notes: {
           run: () => {
-            setNotesOpen(true);
             setActiveDashboardTab('consultation');
             return true;
           },
@@ -159,11 +158,11 @@ export function ClinicianDashboard() {
         },
         close_notes: {
           run: () => {
-            setNotesOpen(false);
+            setActiveDashboardTab('overview');
             return true;
           },
-          summary: () => [{ label: 'Action', value: 'Close consultation notes' }],
-          available: () => Boolean(notesOpen),
+          summary: () => [{ label: 'Action', value: 'Return to patient overview' }],
+          available: () => Boolean(selected) && activeDashboardTab === 'consultation',
         },
         save_notes: {
           run: async () => {
@@ -572,32 +571,10 @@ export function ClinicianDashboard() {
         </div>
       );
     }
-    if (selectedAppointmentId) {
-      if (queueLoading || (loading && !data)) {
-        return (
-          <div className="flex flex-1 items-center justify-center gap-3 text-ink-3" role="status" aria-label="Loading" aria-busy="true">
-            <Spinner /> Loading patient record…
-          </div>
-        );
-      }
-      if (queueError || error || !selected) {
-        return (
-          <div className="card flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
-            <p className="font-display text-head-sm text-terracotta">Error loading patient details</p>
-            <p className="max-w-md text-body-md text-ink-2">{(queueError || error)?.message || 'Patient record could not be found.'}</p>
-            <button onClick={close} className="mt-4 text-primary font-medium">
-              Back to Dashboard
-            </button>
-          </div>
-        );
-      }
-      if (!data) return null;
-    } else if (!selected) {
-      return renderTodaysCards();
-    }
+    if (!selected) return renderTodaysCards();
     if (loading && !data) {
       return (
-        <div className="flex flex-1 items-center justify-center gap-3 text-ink-3">
+        <div className="flex flex-1 items-center justify-center gap-3 text-ink-3" role="status" aria-label="Loading" aria-busy="true">
           <Spinner /> Loading patient record…
         </div>
       );
@@ -650,14 +627,9 @@ export function ClinicianDashboard() {
 
             <button
               type="button"
-data-assistant-id="dashboard.open_notes"
+              data-assistant-id="dashboard.open_notes"
               data-assistant-effect="free"
-              onClick={() => {
-                setNotesOpen(true);
-                setActiveDashboardTab('consultation');
-              }}
-              aria-haspopup="dialog"
-              aria-expanded={notesOpen || activeDashboardTab === 'consultation'}
+              onClick={() => setActiveDashboardTab('consultation')}
               className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-label-lg font-semibold transition-all ${
                 activeDashboardTab === 'consultation'
                   ? 'border-emerald-500 bg-emerald-100 text-emerald-950 dark:border-emerald-500 dark:bg-emerald-900/60 dark:text-emerald-100 shadow-xs ring-1 ring-emerald-300'
@@ -667,7 +639,7 @@ data-assistant-id="dashboard.open_notes"
             >
               <NotebookPen className="h-4 w-4 text-emerald-700 shrink-0" />
               <span>Consultation notes</span>
-              {(data.notes.text.trim() || data.actionItems.length > 0 || data.prescriptions.length > 0) && (
+              {(data.notes?.text?.trim() || data.actionItems?.length > 0 || data.prescriptions?.length > 0) && (
                 <span className="h-2 w-2 rounded-full bg-emerald-600 animate-pulse" aria-label="has content" />
               )}
             </button>
@@ -953,17 +925,17 @@ data-assistant-id="dashboard.open_notes"
           <ul className="mt-3 space-y-1.5 text-body-md text-ink">
             <li>
               <span className="font-semibold">Doctor's notes:</span>{' '}
-              {data.notes.text.trim() ? 'included' : <span className="text-ink-3">none written</span>}
+              {data.notes?.text?.trim() ? 'included' : <span className="text-ink-3">none written</span>}
             </li>
             <li>
-              <span className="font-semibold">Covered in the consultation:</span> {data.consultationItems.length} item
-              {data.consultationItems.length === 1 ? '' : 's'}
+              <span className="font-semibold">Covered in the consultation:</span> {data.consultationItems?.length || 0} item
+              {(data.consultationItems?.length || 0) === 1 ? '' : 's'}
             </li>
             <li>
-              <span className="font-semibold">Next steps for the patient:</span> {data.actionItems.length}
+              <span className="font-semibold">Next steps for the patient:</span> {data.actionItems?.length || 0}
             </li>
             <li>
-              <span className="font-semibold">Prescriptions:</span> {data.prescriptions.length}
+              <span className="font-semibold">Prescriptions:</span> {data.prescriptions?.length || 0}
             </li>
           </ul>
           <p className="mt-3 text-body-sm text-ink-3">
