@@ -6,10 +6,11 @@ import { AlertTriangle } from 'lucide-react';
  * the page will submit, as the page itself reports it, and what happens next
  * (for example an invite email). Nothing runs until Confirm is clicked.
  */
-export default function ConfirmCard({ label, rows, sideEffect, changed, onConfirm, onCancel }) {
+export default function ConfirmCard({ label, rows = [], sideEffect, changed, onConfirm, onCancel }) {
   const headingRef = useRef(null);
   // Focus the card, not the Confirm button, so Enter in the panel cannot confirm by accident.
   useEffect(() => headingRef.current?.focus(), []);
+  const rowList = Array.isArray(rows) ? rows : [];
 
   return (
     <div className="space-y-2 rounded-xl border border-primary/40 bg-canvas p-3 text-sm">
@@ -17,9 +18,9 @@ export default function ConfirmCard({ label, rows, sideEffect, changed, onConfir
         Confirm: {label}
       </p>
       {changed && <p className="text-ink-soft">The form changed after you looked. Please check it again.</p>}
-      {rows.length > 0 && (
+      {rowList.length > 0 && (
         <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1">
-          {rows.map((row) => (
+          {rowList.map((row) => (
             <div key={row.label} className="contents">
               <dt className="text-ink-soft">{row.label}</dt>
               <dd className="break-words text-ink">{row.value}</dd>

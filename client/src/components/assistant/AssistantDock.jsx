@@ -12,7 +12,7 @@ import { runPlan } from './planRunner';
 import { readPage } from './pageReader';
 import { executeAction } from './pageActions';
 import { readRecord, rememberRecord, recordPath, hashWrittenValue } from './recordContext';
-import { pruneMemory, buildMemoryEntry, appendMemory } from './memoryState';
+import { pruneMemory, memoryEntryForReply, appendMemory } from './memoryState';
 import { capturePage, observeAction } from './actionEvidence';
 import ConfirmCard from './ConfirmCard.jsx';
 import AssistantMark from './AssistantMark.jsx';
@@ -48,7 +48,8 @@ function doneLines(reply) {
 const pageIdOf = (pathname) => pathname.replace(/^\/+|\/+$/g, '').replace(/[^a-z]+/gi, '_').toLowerCase().slice(0, 40) || 'home';
 
 /** Outlines the fields the assistant just filled (pages mark them with data-assistant-id) and scrolls to the first. */
-function highlight(ids) {
+function highlight(ids = []) {
+  if (!Array.isArray(ids)) return;
   const elements = ids.map((id) => document.querySelector(`[data-assistant-id="${CSS.escape(id)}"]`)).filter(Boolean);
   elements[0]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   elements.forEach((element) => {
@@ -72,6 +73,26 @@ export default function AssistantDock({ enabled = ENABLED }) {
   const [steps, setSteps] = useState([]);
   const [memory, setMemory] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [dockPos, setDockPos] = useState(() => {
+    try {
+      const saved = localStorage.getItem('assistant_dock_pos');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (
+          typeof parsed?.x === 'number' &&
+          typeof parsed?.y === 'number' &&
+          Number.isFinite(parsed.x) &&
+          Number.isFinite(parsed.y)
+        ) {
+          return parsed;
+        }
+      }
+    } catch (_) {}
+    return null;
+  });
+  const dragRef = useRef(null);
+  const dialogDragRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef(null);
   const buttonRef = useRef(null);
   const listRef = useRef(null);
@@ -121,8 +142,135 @@ export default function AssistantDock({ enabled = ENABLED }) {
 
   if (!visible) return null;
 
+  const handlePointerDown = (e) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    const btn = buttonRef.current;
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: rect.left,
+      originY: rect.top,
+      hasMoved: false,
+    };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (_) {}
+  };
+
+  const handlePointerMove = (e) => {
+    if (!dragRef.current) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    if (!dragRef.current.hasMoved && Math.hypot(dx, dy) > 4) {
+      dragRef.current.hasMoved = true;
+      setIsDragging(true);
+    }
+    if (dragRef.current.hasMoved) {
+      const maxX = Math.max(12, window.innerWidth - 68);
+      const maxY = Math.max(12, window.innerHeight - 68);
+      const newX = Math.min(Math.max(12, dragRef.current.originX + dx), maxX);
+      const newY = Math.min(Math.max(12, dragRef.current.originY + dy), maxY);
+      setDockPos({ x: newX, y: newY });
+    }
+  };
+
+  const handlePointerUp = (e) => {
+    if (!dragRef.current) return;
+    const moved = dragRef.current.hasMoved;
+    dragRef.current = null;
+    setIsDragging(false);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch (_) {}
+    if (moved) {
+      setDockPos((curr) => {
+        if (curr) {
+          try {
+            localStorage.setItem('assistant_dock_pos', JSON.stringify(curr));
+          } catch (_) {}
+        }
+        return curr;
+      });
+    } else {
+      setOpen(true);
+    }
+  };
+
+  const handlePointerCancel = () => {
+    dragRef.current = null;
+    setIsDragging(false);
+  };
+
   function close() {
     setOpen(false);
+  }
+
+  const handleDialogPointerDown = (e) => {
+    if (e.target.closest('button, input, textarea, a')) return;
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    const dialog = e.currentTarget.closest('section');
+    if (!dialog) return;
+    const rect = dialog.getBoundingClientRect();
+    dialogDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: rect.left,
+      originY: rect.top,
+    };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (_) {}
+  };
+
+  const handleDialogPointerMove = (e) => {
+    if (!dialogDragRef.current) return;
+    const dx = e.clientX - dialogDragRef.current.startX;
+    const dy = e.clientY - dialogDragRef.current.startY;
+    const maxX = Math.max(12, window.innerWidth - 372);
+    const maxY = Math.max(12, window.innerHeight - 492);
+    const newX = Math.min(Math.max(12, dialogDragRef.current.originX + dx), maxX);
+    const newY = Math.min(Math.max(12, dialogDragRef.current.originY + dy), maxY);
+    // Align button position with the bottom-right of the dialog
+    setDockPos({ x: newX + 360 - 56, y: newY + 480 - 56 });
+  };
+
+  const handleDialogPointerUp = (e) => {
+    if (!dialogDragRef.current) return;
+    dialogDragRef.current = null;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch (_) {}
+    setDockPos((curr) => {
+      if (curr) {
+        try {
+          localStorage.setItem('assistant_dock_pos', JSON.stringify(curr));
+        } catch (_) {}
+      }
+      return curr;
+    });
+  };
+
+  function getDialogStyle() {
+    if (!dockPos || typeof window === 'undefined' || window.innerWidth < 640) return undefined;
+    if (typeof dockPos.x !== 'number' || typeof dockPos.y !== 'number' || !Number.isFinite(dockPos.x) || !Number.isFinite(dockPos.y)) {
+      return undefined;
+    }
+    const DIALOG_W = 360;
+    const DIALOG_H = 480;
+    let left = dockPos.x + 56 > window.innerWidth / 2 ? dockPos.x + 56 - DIALOG_W : dockPos.x;
+    let top = dockPos.y + 56 > window.innerHeight / 2 ? dockPos.y + 56 - DIALOG_H : dockPos.y;
+    left = Math.max(12, Math.min(window.innerWidth - DIALOG_W - 12, left));
+    top = Math.max(12, Math.min(window.innerHeight - DIALOG_H - 12, top));
+    if (!Number.isFinite(left) || !Number.isFinite(top)) return undefined;
+    return {
+      position: 'fixed',
+      left: `${left}px`,
+      top: `${top}px`,
+      bottom: 'auto',
+      right: 'auto',
+    };
   }
 
   function forgetMemory() {
@@ -245,7 +393,7 @@ export default function AssistantDock({ enabled = ENABLED }) {
    * run what comes back. If the server says the request isn't finished (a
    * panel had to open, a page had to load), read the page again and go on.
    */
-  async function runRound({ message, requestId, round, progress, mode, continuationToken, startedAt = Date.now(), originRecord = null, written = [], checklist = [], note = '', results = [] }) {
+  async function runRound({ message, requestId, round, progress, mode, continuationToken, patientChoice, startedAt = Date.now(), originRecord = null, written = [], checklist = [], note = '', results = [] }) {
     const control = requestControl(requestId);
     if (control.stopped()) return;
     const requestPath = pathRef.current;
@@ -259,7 +407,7 @@ export default function AssistantDock({ enabled = ENABLED }) {
     try {
       const activeMemory = pruneMemory(memory);
       if (activeMemory.length !== memory.length) setMemory(activeMemory);
-      reply = await assistantService.ask(message, pathRef.current, { page, signal: control.signal, currentRecord: readRecord(window.location, bridge), round, progress, mode, continuationToken, startedAt, originRecord, written, memory: activeMemory, checklist, note, results });
+      reply = await assistantService.ask(message, pathRef.current, { page, signal: control.signal, currentRecord: readRecord(window.location, bridge), patientChoice, round, progress, mode, continuationToken, startedAt, originRecord, written, memory: activeMemory, checklist, note, results });
     } catch (err) {
       if (control.stopped()) return;
       const errNote = err?.status === 429 ? 'Too many requests. Please wait a moment.' : UNAVAILABLE;
@@ -339,12 +487,10 @@ export default function AssistantDock({ enabled = ENABLED }) {
       setSteps(current => current.map(entry => entry.requestId === requestId ? { ...entry, waiting: false } : entry));
       if (role === 'clinician' && reply && reply.type !== 'unavailable') {
         const endContext = rememberRecord(window.location, bridge, memoryContexts.current.get(requestId));
-        const entry = buildMemoryEntry({
-          message,
-          patient: endContext?.patient || null,
-          record: endContext?.record || null,
+        const entry = memoryEntryForReply({
+          reply: { ...reply, checklist: reply.checklist || checklist }, message,
+          observedContext: endContext,
           page: pageIdOf(pathRef.current),
-          checklist: reply.checklist || checklist,
         });
         setMemory((prev) => appendMemory(prev, entry));
       }
@@ -419,6 +565,12 @@ export default function AssistantDock({ enabled = ENABLED }) {
   async function choose(option, entry) {
     if (requestControl(entry.requestId).stopped() || choosing.current.has(entry.id)) return;
     choosing.current.add(entry.id);
+    if (option.patientChoice) {
+      update(entry.id, { chosen: true });
+      await runRound({ message: entry.message, requestId: entry.requestId, round: 0, progress: [],
+        startedAt: entry.startedAt, originRecord: entry.originRecord, patientChoice: option.patientChoice });
+      return;
+    }
     const reply = { ...entry.reply, type: 'run', steps: option.steps };
     update(entry.id, { reply, progress: 0, chosen: true });
     const { outcome, actionResults } = await execute(option.steps, entry.id, entry.requestId, entry.names);
@@ -438,28 +590,56 @@ export default function AssistantDock({ enabled = ENABLED }) {
   return (
     <>
       {!open && (
-        <button
-          ref={buttonRef}
-          type="button"
-          onClick={() => setOpen(true)}
-          aria-label="Open assistant"
-          data-assistant-panel=""
-          className="assistant-button fixed bottom-5 right-5 z-40 flex h-12 w-12 items-center justify-center rounded-full shadow-card transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+        <div
+          style={
+            dockPos && Number.isFinite(dockPos.x) && Number.isFinite(dockPos.y)
+              ? { left: `${dockPos.x}px`, top: `${dockPos.y}px`, bottom: 'auto', right: 'auto' }
+              : undefined
+          }
+          className={`${dockPos && Number.isFinite(dockPos.x) ? 'fixed' : 'fixed bottom-5 right-5'} z-40 touch-none select-none`}
         >
-          <AssistantMark size={30} />
-        </button>
+          {/* Animated Glow Highlight Ring */}
+          <span
+            className="assistant-highlight-ring absolute -inset-1.5 rounded-full pointer-events-none"
+            aria-hidden="true"
+          />
+          {/* Subtle Outer Highlight Ring */}
+          <span
+            className="absolute -inset-0.5 rounded-full border border-teal-300/80 pointer-events-none"
+            aria-hidden="true"
+          />
+          <button
+            ref={buttonRef}
+            type="button"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
+            aria-label="Open assistant"
+            data-assistant-panel=""
+            className={`assistant-button relative flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${isDragging ? 'cursor-grabbing scale-105' : 'cursor-grab hover:scale-105'}`}
+          >
+            <AssistantMark size={36} />
+          </button>
+        </div>
       )}
 
       {open && (
         <section
           role="dialog"
           aria-label="Assistant"
+          style={getDialogStyle()}
           // The page reader never reads or acts on the assistant itself.
           data-assistant-panel=""
           onKeyDown={(event) => event.key === 'Escape' && close()}
-          className="fixed inset-0 z-50 flex flex-col border border-line bg-raised text-ink shadow-card sm:inset-auto sm:bottom-5 sm:right-5 sm:h-[480px] sm:w-[360px] sm:rounded-card"
+          className={`fixed inset-0 z-50 flex flex-col border border-line bg-raised text-ink shadow-card ${dockPos ? '' : 'sm:bottom-5 sm:right-5'} sm:inset-auto sm:h-[480px] sm:w-[360px] sm:rounded-card`}
         >
-          <header className="flex items-center justify-between border-b border-line px-4 py-3">
+          <header
+            onPointerDown={handleDialogPointerDown}
+            onPointerMove={handleDialogPointerMove}
+            onPointerUp={handleDialogPointerUp}
+            className="flex cursor-grab items-center justify-between border-b border-line px-4 py-3 active:cursor-grabbing touch-none select-none"
+          >
             <div className="flex items-center gap-2.5">
               <span className="assistant-button flex h-8 w-8 shrink-0 items-center justify-center rounded-full">
                 <AssistantMark size={20} sparkle={false} />
@@ -551,10 +731,11 @@ const CHECK_NOTE = 'Check the highlighted fields before you save.';
 const FILL_FAILED_NOTE = 'I could not fill in the form, so please enter the details yourself.';
 
 function RequestChecklist({ items }) {
-  if (!items.length) return null;
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return null;
   return (
     <ul aria-label="Request progress" className="mb-2 space-y-1 rounded-lg border border-line bg-canvas p-2 text-xs">
-      {items.map((item, i) => (
+      {list.map((item, i) => (
         <li key={item.id || i} className={`flex items-start gap-1.5 ${item.done ? 'text-primary' : 'text-ink-soft'}`}>
           {item.done ? <Check size={13} className="mt-0.5 shrink-0" /> : <span className="inline-block w-[13px] shrink-0 text-center">·</span>}
           <span className={item.done ? 'line-through opacity-70' : ''}>{item.text || item.item}</span>
@@ -588,9 +769,11 @@ const PENDING_VERB = { click: 'press', type: 'type in', append: 'add to', replac
 
 /** Actions on elements read from the page: done, waiting, refused. */
 function PageLines({ page, states = [], confirm, onAnswer }) {
+  const actions = Array.isArray(page?.actions) ? page.actions : [];
+  const refused = Array.isArray(page?.refused) ? page.refused : [];
   return (
     <>
-      {page.actions.map((action, j) => {
+      {actions.map((action, j) => {
         const state = states[j];
         const label = action.op === 'replace'
           ? `"${action.name}": “${action.find}” → “${action.value}”`
@@ -609,7 +792,7 @@ function PageLines({ page, states = [], confirm, onAnswer }) {
           </span>
         );
       })}
-      {page.refused.map((item) => <Note key={item.name}>Didn’t touch “{item.name}”: {item.reason}.</Note>)}
+      {refused.map((item) => <Note key={item.name}>Didn’t touch “{item.name}”: {item.reason}.</Note>)}
     </>
   );
 }
@@ -621,37 +804,57 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
   if (reply.type === 'unsupported') {
     return (
       <div className="space-y-1 text-sm text-ink-soft">
-        <p>{reply.message || 'Couldn’t complete this request.'}</p>
+        <p>{typeof reply.message === 'string' ? reply.message : 'Couldn’t complete this request.'}</p>
       </div>
     );
   }
 
   if (reply.type === 'answer') {
+    const answerText = typeof reply.text === 'string' ? reply.text : (reply.text ? String(reply.text) : (reply.message || ''));
     return (
-      <div className="space-y-0.5 text-sm">
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Assistant tip</p>
-        <p className="text-ink">{reply.text}</p>
+      <div className="space-y-1.5 text-sm">
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
+          {reply.source === 'clinical_record' ? 'Patient Record' : 'Assistant tip'}
+        </p>
+        <p className="text-ink leading-relaxed">{answerText}</p>
+        {reply.recordPath && (
+          <button
+            type="button"
+            onClick={() => onChoose?.(reply.recordPath)}
+            className="mt-1 inline-flex items-center gap-1 rounded-full border border-teal-500/30 bg-teal-500/10 px-3 py-1 text-xs font-medium text-teal-700 hover:bg-teal-500/20 dark:text-teal-300"
+          >
+            {reply.recordLabel || 'View Record'} →
+          </button>
+        )}
       </div>
     );
   }
 
-  if (reply.type === 'done') return <p style={{ whiteSpace: 'pre-line' }} className="flex items-center gap-1.5 text-sm text-primary"><Check size={15} aria-hidden="true" />{reply.message || 'Completed.'}</p>;
+  if (reply.type === 'done') {
+    return (
+      <p style={{ whiteSpace: 'pre-line' }} className="flex items-center gap-1.5 text-sm text-primary">
+        <Check size={15} aria-hidden="true" />
+        {typeof reply.message === 'string' ? reply.message : 'Completed.'}
+      </p>
+    );
+  }
 
   if (reply.type === 'run') {
-    const finished = !running && progress >= reply.steps.length;
-    const filledFields = reply.steps.some((item, index) => item.fill?.filled && results[index]?.fill === 'filled');
-    const saves = reply.steps.some((item) => item.press && item.press.effect !== 'ui');
+    const stepsList = Array.isArray(reply.steps) ? reply.steps : [];
+    const finished = !running && progress >= stepsList.length;
+    const filledFields = stepsList.some((item, index) => item.fill?.filled && results[index]?.fill === 'filled');
+    const saves = stepsList.some((item) => item.press && item.press.effect !== 'ui');
     return (
       <div className="space-y-1 text-sm">
         <ol className="space-y-1">
-          {reply.steps.map((item, index) => {
+          {stepsList.map((item, index) => {
             const started = index < progress;
             const result = results[index] || {};
             return (
               <li key={`${item.path ?? 'here'}-${index}`} className="space-y-1">
                 {(item.path || (!started && !item.page)) && <Line done={started}>{started ? 'Opened' : 'Next:'} {item.label}</Line>}
                 {item.page && <PageLines page={item.page} states={result.page} confirm={confirm} onAnswer={onAnswer} />}
-                {result.fill === 'filled' && (item.fill.filled
+                {result.fill === 'filled' && (Array.isArray(item.fill?.filled)
                   ? item.fill.filled.map((field) => <Line key={field.id} done>{field.label}: {field.value}</Line>)
                   : <Note>{FILLED_NOTE}</Note>)}
                 {result.fill === 'failed' && <Note>{FILL_FAILED_NOTE}</Note>}
@@ -659,9 +862,11 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
                 {confirm && result.fill === 'confirming' && (
                   <ConfirmCard {...confirm} onConfirm={() => onAnswer(true)} onCancel={() => onAnswer(false)} />
                 )}
-                {started && item.skipped?.map((skip) => <Note key={skip.label}>Didn’t fill {skip.label}: {skip.reason}.</Note>)}
+                {started && Array.isArray(item.skipped) && item.skipped.map((skip) => <Note key={skip.label}>Didn’t fill {skip.label}: {skip.reason}.</Note>)}
                 {started && item.notice && <Note>{item.notice}</Note>}
-                {item.press && <PressLine press={item.press} state={result.press} />}
+                {item.press && item.press.id && item.press.id !== 'none' && item.press.label && (
+                  <PressLine press={item.press} state={result.press} />
+                )}
                 {confirm && result.press === 'confirming' && (
                   <ConfirmCard {...confirm} onConfirm={() => onAnswer(true)} onCancel={() => onAnswer(false)} />
                 )}
@@ -683,13 +888,14 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
   }
 
   if (reply.type === 'choose') {
+    const options = Array.isArray(reply.options) ? reply.options : [];
     return (
       <div className="space-y-1.5 text-sm">
         <p className="text-ink-soft">{reply.prompt}</p>
         <div className="flex flex-col gap-2">
-          {reply.options.map((option) => (
+          {options.map((option, optIdx) => (
             <button
-              key={option.steps[0]?.path ?? option.label}
+              key={option.steps?.[0]?.path ?? option.label ?? optIdx}
               type="button"
               onClick={() => onPickPatient(option)}
               disabled={running || step.chosen}
@@ -716,16 +922,16 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
   }
 
   if (reply.type === 'clarify') {
-    const options = reply.options || [];
+    const options = Array.isArray(reply.options) ? reply.options : [];
     return (
       <div className="space-y-1.5 text-sm">
         <p className="text-ink-soft">{reply.message || (options.length ? 'Did you mean:' : 'Please clarify what you want to do.')}</p>
         {options.length > 0 && <div className="flex flex-wrap gap-2">
-          {options.map((option) => (
+          {options.map((option, optIdx) => (
             <button
-              key={option.path}
+              key={option.path ?? option.label ?? optIdx}
               type="button"
-              onClick={() => onChoose(option.path)}
+              onClick={() => onChoose?.(option.path)}
               aria-pressed={chosen === option.path}
               className="rounded-full border border-line px-3 py-1 hover:border-primary hover:text-primary aria-pressed:border-primary aria-pressed:text-primary"
             >

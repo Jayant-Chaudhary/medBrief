@@ -46,3 +46,15 @@ export function appendMemory(entries = [], newEntry, options = {}) {
   return pruneMemory([...pruned, newEntry], options);
 }
 
+/** The server-resolved Q&A subject takes precedence over the page behind it. */
+export function memoryEntryForReply({ reply, message, observedContext = null, page = null, now = Date.now() }) {
+  if (reply?.type === 'answer' && reply.source !== 'clinical_record') return null;
+  let context = observedContext;
+  if (reply?.source === 'clinical_record') {
+    if (reply.type !== 'answer' || !reply.memoryContext?.patient?.id) return null;
+    context = reply.memoryContext;
+  }
+  return buildMemoryEntry({ message, patient: context?.patient || null,
+    record: context?.record || null, page, checklist: reply?.checklist || [], now });
+}
+
