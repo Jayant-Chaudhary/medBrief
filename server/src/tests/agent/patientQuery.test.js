@@ -23,6 +23,44 @@ describe('Clinical Patient Q&A Query Engine', () => {
       expect(q3.metricTerm).toBe('haemoglobin');
     });
 
+    it('differentiates patient name and nutrient/analyte in direct shorthand prompts', () => {
+      const mockPatients = [
+        { id: 'p-1', fullName: 'Pramit' },
+        { id: 'p-2', fullName: 'Sarthak' },
+        { id: 'p-3', fullName: 'Jayant Chaudhary' },
+      ];
+
+      const q1 = detectClinicalQuery('pramit hemoglobin', mockPatients);
+      expect(q1.isQuery).toBe(true);
+      expect(q1.candidateName).toBe('Pramit');
+      expect(q1.metricTerm).toBe('haemoglobin');
+
+      const q2 = detectClinicalQuery('pramit calcium', mockPatients);
+      expect(q2.isQuery).toBe(true);
+      expect(q2.candidateName).toBe('Pramit');
+      expect(q2.metricTerm).toBe('calcium');
+
+      const q3 = detectClinicalQuery('pramit bp', mockPatients);
+      expect(q3.isQuery).toBe(true);
+      expect(q3.candidateName).toBe('Pramit');
+      expect(q3.metricTerm).toBe('blood pressure');
+
+      const q4 = detectClinicalQuery('hemoglobin of pramit', mockPatients);
+      expect(q4.isQuery).toBe(true);
+      expect(q4.candidateName).toBe('Pramit');
+      expect(q4.metricTerm).toBe('haemoglobin');
+
+      const q5 = detectClinicalQuery('pramit ka hemoglobin kya hai', mockPatients);
+      expect(q5.isQuery).toBe(true);
+      expect(q5.candidateName).toBe('Pramit');
+      expect(q5.metricTerm).toBe('haemoglobin');
+
+      const q6 = detectClinicalQuery('sarthak uric acid', mockPatients);
+      expect(q6.isQuery).toBe(true);
+      expect(q6.candidateName).toBe('Sarthak');
+      expect(q6.metricTerm).toBe('uric acid');
+    });
+
     it('detects any uploaded lab test or analyte universally', () => {
       const q1 = detectClinicalQuery('what is her ferritin?');
       expect(q1.isQuery).toBe(true);
@@ -260,6 +298,20 @@ describe('Clinical Patient Q&A Query Engine', () => {
 
       expect(reply.type).toBe('unsupported');
       expect(reply.message).toContain('do not diagnose');
+    });
+
+    it('handles direct shorthand questions like "pramit hemoglobin" without opening screen', async () => {
+      const reply = await assistant.handleStep({
+        message: 'pramit hemoglobin',
+        role: 'clinician',
+        userId: 'doc-1',
+        currentPath: '/clinician',
+        directory: async () => [{ id: 'pat-99', fullName: 'Pramit', email: 'test@example.com' }],
+        recordLookup: async () => null,
+      });
+
+      expect(reply.type).toBe('answer');
+      expect(reply.source).toBe('clinical_record');
     });
   });
 });

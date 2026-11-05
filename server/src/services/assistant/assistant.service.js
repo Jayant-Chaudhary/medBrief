@@ -850,7 +850,10 @@ async function handleStep({
 
   // Clinical Factual Q&A: answer questions about any patient's recorded metrics/labs
   if (role === 'clinician' && round === 0) {
-    const clinicalQuery = detectClinicalQuery(message);
+    if (!patients.length) {
+      patients = await Promise.resolve(directory(userId)).catch(() => []);
+    }
+    const clinicalQuery = detectClinicalQuery(message, patients);
     if (clinicalQuery.isQuery) {
       if (clinicalQuery.isDiagnostic) {
         return {
@@ -859,10 +862,6 @@ async function handleStep({
           source: 'clinical_record',
           attempts: 0,
         };
-      }
-
-      if (!patients.length) {
-        patients = await Promise.resolve(directory(userId)).catch(() => []);
       }
 
       let targetPatient = null;
@@ -884,7 +883,7 @@ async function handleStep({
             if (onScreenMatch) {
               targetPatient = onScreenMatch;
             } else {
-              // If neither is open on screen, check if exactly one candidate has a recorded entry for this metric
+              // Check matching candidates for recorded metrics
               const candidateRecords = await Promise.all(
                 resolved.matches.map(async (p) => ({
                   patient: p,
@@ -907,13 +906,31 @@ async function handleStep({
                 };
               }
 
+              if (candidatesWithData.length > 1) {
+                const lines = candidatesWithData.map(c => {
+                  const pName = c.patient.email ? `${c.patient.fullName} (${c.patient.email})` : c.patient.fullName;
+                  const rec = c.record;
+                  const dateStr = rec.date ? ` on ${new Date(rec.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : '';
+                  const unitStr = rec.unit ? ` ${rec.unit}` : '';
+                  return `• **${pName}**: ${rec.name} is **${rec.value}${unitStr}**${dateStr} (${rec.source})`;
+                });
+                return {
+                  type: 'answer',
+                  text: `Found records for ${candidatesWithData.length} patients matching "${clinicalQuery.candidateName}":\n\n${lines.join('\n')}`,
+                  recordPath: candidatesWithData[0].record.reportId
+                    ? `/clinician/reports/${candidatesWithData[0].record.reportId}`
+                    : `/clinician/maternity?patientId=${candidatesWithData[0].patient.id}`,
+                  recordLabel: 'Open Patient Record',
+                  source: 'clinical_record',
+                  attempts: 0,
+                };
+              }
+
               return {
-                type: 'choose',
-                message: 'Which patient did you mean?',
-                options: resolved.matches.map(p => ({
-                  label: p.email ? `${p.fullName} (${p.email})` : p.fullName,
-                  steps: [{ do: 'open_maternity_card', page: 'maternity', patient: p.fullName, which: 'none', when: '', fields: [], press: 'none' }],
-                })),
+                type: 'answer',
+                text: `No recorded ${clinicalQuery.metricTerm} found for patients matching "${clinicalQuery.candidateName}".`,
+                recordPath: resolved.matches[0] ? `/clinician/maternity?patientId=${resolved.matches[0].id}` : undefined,
+                recordLabel: 'Open Maternity Card',
                 source: 'clinical_record',
                 attempts: 0,
               };

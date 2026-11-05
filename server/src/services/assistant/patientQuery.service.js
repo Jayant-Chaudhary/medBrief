@@ -18,12 +18,8 @@ const DIAGNOSTIC_PATTERN = /\b(?:is\s+.*?\b(?:normal|abnormal|high|low|safe|dang
 // Action commands (opening, filling, adding, booking, searching) are never Q&A requests
 const ACTION_COMMANDS = /\b(?:add|save|open|book|type|click|fill|write|create|go\s+to|press|enter|submit|tick|untick|finish|mark|find|search)\b/i;
 
-// Regex patterns to identify a clinical metric question and extract the test/vital name
-const QUESTION_INDICATOR = /\b(?:what(?:'?s|\s+is|\s+was)?|how\s+much\s+is|show\s+me|tell\s+me)\b|^(?:check|get)\b/i;
-
-// Words to strip when extracting the analyte / test name
-const FILLER_WORDS = /^(?:the|her|his|patient(?:'?s)?|latest|recent|last|recorded|current|value\s+of|level\s+of|result\s+of|reading\s+of|status\s+of)\s+/i;
-const TRAILING_WORDS = /\s+(?:of|for|in|from)\s+(?:this\s+patient|her|him|the\s+patient|patient)\??$/i;
+// Regex patterns to identify question phrases
+const QUESTION_INDICATOR = /\b(?:what(?:'?s|\s+is|\s+was)?|how\s+much\s+is|show\s+me|tell\s+me|give\s+me)\b|^(?:check|get)\b/i;
 
 // Common standardized alias normalization & typos
 const ALIASES = {
@@ -54,14 +50,124 @@ const ALIASES = {
   'expected date': 'due date',
   'gestation': 'gestational age',
   'weeks': 'gestational age',
+  'vit d': 'vitamin d',
+  'vit b12': 'vitamin b12',
+  'b12': 'vitamin b12',
+  'sgpt': 'alt',
+  'sgot': 'ast',
 };
+
+// Set of recognized clinical nutrients and metrics
+const KNOWN_METRIC_KEYWORDS = new Set([
+  'hemoglobin', 'haemoglobin', 'hb', 'hgb', 'bp', 'blood pressure', 'systolic', 'diastolic',
+  'fhr', 'fetal heart', 'fetal heart rate', 'weight', 'wt', 'sugar', 'blood sugar',
+  'glucose', 'blood glucose', 'fbs', 'rbs', 'blood group', 'blood type', 'rh', 'edd',
+  'due date', 'expected date', 'gestation', 'weeks', 'lmp', 'last menstrual', 'creatinine',
+  'urea', 'uric acid', 'ast', 'alt', 'sgot', 'sgpt', 'alp', 'bilirubin', 'calcium',
+  'vitamin d', 'vitamin b12', 'tsh', 'albumin', 'globulin', 'total protein', 'platelets',
+  'wbc', 'rbc', 'hematocrit', 'mcv', 'mch', 'mchc', 'ferritin', 'iron', 'esr', 'crp',
+  'sodium', 'potassium', 'chloride', 'cholesterol', 'triglycerides', 'urine albumin', 'proteinuria'
+]);
+
+/**
+ * Checks whether a candidate metric name/key matches the target search term.
+ * Normalizes British/American spellings (e.g. haemoglobin vs hemoglobin) and guards against empty strings.
+ */
+function matchesMetricName(candidateKey, candidateName, targetTerm) {
+  if (!targetTerm) return false;
+  const term = String(targetTerm).toLowerCase().replace(/haem/g, 'hem').replace(/[^a-z0-9]/g, '');
+  if (!term || term.length < 2) return false;
+
+  const key = candidateKey ? String(candidateKey).toLowerCase().replace(/haem/g, 'hem').replace(/[^a-z0-9]/g, '') : '';
+  const name = candidateName ? String(candidateName).toLowerCase().replace(/haem/g, 'hem').replace(/[^a-z0-9]/g, '') : '';
+
+  if (key && (key === term || key.includes(term) || (key.length >= 3 && term.includes(key)))) return true;
+  if (name && (name === term || name.includes(term) || (name.length >= 4 && term.includes(name)))) return true;
+  return false;
+}
+
+/**
+ * Differentiates the patient name from the nutrient / analyte term in a query.
+ * @param {string} message
+ * @param {Array} patients
+ */
+function extractPatientAndMetric(message, patients = []) {
+  let text = String(message || '').trim();
+  if (!text) return { candidateName: null, matchedPatients: [], metricTerm: '' };
+
+  let matchedPatients = [];
+  let candidateName = null;
+
+  // 1. Check among known clinic patients (longer names first)
+  const sortedPatients = [...(patients || [])].sort((a, b) => (b.fullName || '').length - (a.fullName || '').length);
+
+  for (const p of sortedPatients) {
+    if (!p.fullName) continue;
+    const fullName = p.fullName.trim();
+    const firstName = fullName.split(/\s+/)[0];
+
+    const escFull = fullName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escFirst = firstName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    const fullRegex = new RegExp(`\\b${escFull}\\b`, 'i');
+    const firstRegex = firstName.length >= 3 ? new RegExp(`\\b${escFirst}\\b`, 'i') : null;
+
+    if (fullRegex.test(text)) {
+      matchedPatients.push(p);
+      if (!candidateName) {
+        candidateName = fullName;
+        text = text.replace(fullRegex, ' ');
+      }
+    } else if (firstRegex && firstRegex.test(text)) {
+      matchedPatients.push(p);
+      if (!candidateName) {
+        candidateName = firstName;
+        text = text.replace(firstRegex, ' ');
+      }
+    }
+  }
+
+  // 2. Also check standard linguistic patterns like "of <Name>" or "<Name>'s" if no directory patient matched
+  if (!candidateName) {
+    const ofMatch = text.match(/(?:of|for)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)(?:\s|$|[?!.])/i);
+    const aposMatch = text.match(/(?:^|\b(?:is|was|me))\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)'s\b/i) || text.match(/^([a-zA-Z]+(?:\s+[a-zA-Z]+)?)'s\b/i);
+    const hindiMatch = text.match(/\b([a-zA-Z]+(?:\s+[a-zA-Z]+)?)\s+(?:ka|ki|ke)\b/i);
+    if (ofMatch && !/^(?:this|her|him|the|patient|my|this\s+patient|the\s+patient|her\s+patient)$/i.test(ofMatch[1].trim())) {
+      candidateName = ofMatch[1].trim();
+      text = text.replace(ofMatch[0], ' ');
+    } else if (aposMatch && !/^(?:what|her|his|this|patient|this\s+patient)$/i.test(aposMatch[1].trim())) {
+      candidateName = aposMatch[1].trim();
+      text = text.replace(aposMatch[0], ' ');
+    } else if (hindiMatch && !/^(?:what|her|his|this|patient|this\s+patient)$/i.test(hindiMatch[1].trim())) {
+      candidateName = hindiMatch[1].trim();
+      text = text.replace(hindiMatch[0], ' ');
+    }
+  }
+
+  // 3. Clean text to leave the nutrient / analyte / metric term
+  let cleaned = text
+    .replace(/[?!.,;:]+/g, ' ')
+    .replace(/\b(?:for|of|in|about)\s+(?:this\s+patient|the\s+patient|her|him|patient)\b/gi, ' ')
+    .replace(/\b(?:what(?:'?s|\s+is|\s+was)?|tell\s+me|show\s+me|check|get|how\s+much\s+is|give\s+me)\b/gi, ' ')
+    .replace(/\b(?:of|for|in|from|ka|ki|ke|hai|kya|batao|dikhao|level|status|value|reading|test|report|score|number)\b/gi, ' ')
+    .replace(/\b(?:the|her|his|this|patient|latest|recent|last|recorded|current)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return {
+    candidateName,
+    matchedPatients,
+    metricTerm: cleaned.toLowerCase(),
+  };
+}
 
 /**
  * Checks if a typed message is asking for a patient metric or test value.
  * @param {string} message
- * @returns {{ isQuery: boolean, isDiagnostic?: boolean, metricTerm?: string, rawTerm?: string, candidateName?: string }}
+ * @param {Array} patients
+ * @returns {{ isQuery: boolean, isDiagnostic?: boolean, metricTerm?: string, rawTerm?: string, candidateName?: string, matchedPatients?: Array }}
  */
-function detectClinicalQuery(message) {
+function detectClinicalQuery(message, patients = []) {
   const text = String(message || '').trim();
   if (!text) return { isQuery: false };
 
@@ -75,64 +181,31 @@ function detectClinicalQuery(message) {
     return { isQuery: false };
   }
 
-  // Must have a question indicator or end with '?'
+  // Differentiate Name and Nutrient/Metric
+  const parsed = extractPatientAndMetric(text, patients);
+  const rawTerm = parsed.metricTerm;
+  const canonicalTerm = ALIASES[rawTerm] || rawTerm;
+
   const hasQuestion = QUESTION_INDICATOR.test(text) || text.endsWith('?');
-  if (!hasQuestion) {
+  const isKnownMetric = KNOWN_METRIC_KEYWORDS.has(rawTerm) || KNOWN_METRIC_KEYWORDS.has(canonicalTerm);
+
+  // It's a query if:
+  // 1. It explicitly asks a question (has question indicator or ends with '?')
+  // 2. OR the metric is a recognized clinical nutrient/test (e.g. "pramit hemoglobin", "pramit bp")
+  // 3. OR a patient name and a potential analyte were extracted
+  const isClinicalQuery = hasQuestion || isKnownMetric || (parsed.candidateName && rawTerm.length >= 2);
+
+  if (!isClinicalQuery || !rawTerm || rawTerm.length < 2) {
     return { isQuery: false };
   }
-
-  // Clean the prompt to extract the analyte / test term
-  let cleaned = text
-    .replace(/[?!.]+$/g, '')
-    .replace(QUESTION_INDICATOR, '')
-    .trim();
-
-  // Extract candidate patient name if present
-  let candidateName = null;
-  const nameOfMatch = cleaned.match(/(?:of|for)\s+([a-zA-Z\s]+)$/i);
-  if (nameOfMatch && !/^(?:this\s+patient|her|him|the\s+patient|patient)$/i.test(nameOfMatch[1].trim())) {
-    candidateName = nameOfMatch[1].trim();
-    cleaned = cleaned.replace(nameOfMatch[0], '').trim();
-  } else {
-    const posApos = cleaned.match(/^([a-zA-Z\s]+?)'s\s+/i);
-    const posHindi = cleaned.match(/^([a-zA-Z\s]+?)\s+(?:ke|ki|ka)\s+/i);
-    const posSingle = cleaned.match(/^([A-Z][a-z]{2,})s\s+/);
-    if (posApos) {
-      if (!/^(?:what|how|patient|her|his|this)$/i.test(posApos[1].trim())) {
-        candidateName = posApos[1].trim();
-        cleaned = cleaned.replace(posApos[0], '').trim();
-      }
-    } else if (posHindi) {
-      candidateName = posHindi[1].trim();
-      cleaned = cleaned.replace(posHindi[0], '').trim();
-    } else if (posSingle && !/^(?:this|what|his)$/i.test(posSingle[1].toLowerCase())) {
-      candidateName = posSingle[1];
-      cleaned = cleaned.replace(posSingle[0], '').trim();
-    }
-  }
-
-  cleaned = cleaned.replace(TRAILING_WORDS, '').trim();
-
-  // Strip multiple filler words iteratively (e.g. "her last bp" -> "last bp" -> "bp")
-  while (FILLER_WORDS.test(cleaned)) {
-    cleaned = cleaned.replace(FILLER_WORDS, '').trim();
-  }
-  cleaned = cleaned.replace(/^(?:the|her|his)\s+/i, '').trim();
-  cleaned = cleaned.replace(/\s+(?:status|value|level|result|reading)$/i, '').trim();
-
-  if (!cleaned || cleaned.length < 2) {
-    return { isQuery: false };
-  }
-
-  const rawTerm = cleaned.toLowerCase();
-  const metricTerm = ALIASES[rawTerm] || rawTerm;
 
   return {
     isQuery: true,
     isDiagnostic: false,
-    metricTerm,
+    metricTerm: canonicalTerm,
     rawTerm,
-    candidateName,
+    candidateName: parsed.candidateName,
+    matchedPatients: parsed.matchedPatients,
   };
 }
 
@@ -140,11 +213,12 @@ function detectClinicalQuery(message) {
  * Searches all available patient records (visits, investigations, uploaded lab reports, vitals)
  * for the most recent reading matching the metric term.
  */
-async function queryPatientMetric(clinicianId, patientId, metricTerm, options = {}) {
+async function queryPatientMetric(clinicianId, patientId, targetTerm, options = {}) {
   const supabase = options.supabaseClient || defaultSupabase;
   const getSharedReports = options.reportIdsFn || reportIdsSharedWithClinician;
-  const term = String(metricTerm || '').toLowerCase().trim();
 
+  const term = String(targetTerm || '').toLowerCase().trim();
+  const canonical = ALIASES[term] || term;
   const candidates = [];
 
   // 1. Check Pregnancy Episode (Blood Group, Due Date, Gestation, History)
@@ -160,41 +234,35 @@ async function queryPatientMetric(clinicianId, patientId, metricTerm, options = 
       .maybeSingle();
 
     if (episode) {
-      if (term.includes('blood group') || term.includes('blood type') || term === 'rh' || term === 'abo') {
-        if (episode.blood_group) {
-          candidates.push({
-            name: 'Blood Group',
-            value: episode.blood_group,
-            unit: '',
-            date: episode.created_at ? episode.created_at.split('T')[0] : null,
-            source: 'Maternity Record',
-            sourceType: 'maternity',
-          });
-        }
+      if (canonical === 'blood group' && episode.blood_group) {
+        candidates.push({
+          name: 'Blood Group',
+          value: episode.blood_group,
+          unit: '',
+          date: episode.created_at ? episode.created_at.split('T')[0] : null,
+          source: 'Maternity Record',
+          sourceType: 'maternity',
+        });
       }
-      if (term.includes('due date') || term.includes('edd')) {
-        if (episode.due_date) {
-          candidates.push({
-            name: 'Expected Delivery Date',
-            value: episode.due_date,
-            unit: '',
-            date: episode.due_date,
-            source: 'Maternity Record',
-            sourceType: 'maternity',
-          });
-        }
+      if (canonical === 'due date' && episode.due_date) {
+        candidates.push({
+          name: 'Expected Delivery Date',
+          value: episode.due_date,
+          unit: '',
+          date: episode.due_date,
+          source: 'Maternity Record',
+          sourceType: 'maternity',
+        });
       }
-      if (term.includes('lmp') || term.includes('last menstrual')) {
-        if (episode.last_menstrual_period) {
-          candidates.push({
-            name: 'Last Menstrual Period (LMP)',
-            value: episode.last_menstrual_period,
-            unit: '',
-            date: episode.last_menstrual_period,
-            source: 'Maternity Record',
-            sourceType: 'maternity',
-          });
-        }
+      if ((canonical === 'gestational age' || canonical === 'lmp') && episode.last_menstrual_period) {
+        candidates.push({
+          name: 'Last Menstrual Period (LMP)',
+          value: episode.last_menstrual_period,
+          unit: '',
+          date: episode.last_menstrual_period,
+          source: 'Maternity Record',
+          sourceType: 'maternity',
+        });
       }
 
       // Check Antenatal Visits for this episode
@@ -206,7 +274,7 @@ async function queryPatientMetric(clinicianId, patientId, metricTerm, options = 
 
       if (visits?.length) {
         for (const v of visits) {
-          if ((term.includes('haemoglobin') || term.includes('hemoglobin') || term === 'hb') && v.hemoglobin_g_dl != null) {
+          if ((canonical === 'haemoglobin' || canonical === 'hemoglobin') && v.hemoglobin_g_dl != null) {
             candidates.push({
               name: 'Haemoglobin',
               value: v.hemoglobin_g_dl,
@@ -217,7 +285,7 @@ async function queryPatientMetric(clinicianId, patientId, metricTerm, options = 
             });
             break;
           }
-          if ((term.includes('blood pressure') || term === 'bp' || term === 'systolic' || term === 'diastolic') && (v.bp_systolic != null || v.bp_diastolic != null)) {
+          if (canonical === 'blood pressure' && (v.bp_systolic != null || v.bp_diastolic != null)) {
             candidates.push({
               name: 'Blood Pressure',
               value: `${v.bp_systolic || '—'}/${v.bp_diastolic || '—'}`,
@@ -228,7 +296,7 @@ async function queryPatientMetric(clinicianId, patientId, metricTerm, options = 
             });
             break;
           }
-          if (term.includes('weight') && v.weight_kg != null) {
+          if (canonical === 'weight' && v.weight_kg != null) {
             candidates.push({
               name: 'Weight',
               value: v.weight_kg,
@@ -239,7 +307,7 @@ async function queryPatientMetric(clinicianId, patientId, metricTerm, options = 
             });
             break;
           }
-          if (term.includes('tsh') && v.tsh != null) {
+          if (canonical === 'tsh' && v.tsh != null) {
             candidates.push({
               name: 'TSH',
               value: v.tsh,
@@ -250,7 +318,7 @@ async function queryPatientMetric(clinicianId, patientId, metricTerm, options = 
             });
             break;
           }
-          if ((term.includes('fetal heart') || term === 'fhr') && v.fetal_heart_rate) {
+          if (canonical === 'fetal heart rate' && v.fetal_heart_rate) {
             candidates.push({
               name: 'Fetal Heart Rate',
               value: v.fetal_heart_rate,
@@ -261,7 +329,7 @@ async function queryPatientMetric(clinicianId, patientId, metricTerm, options = 
             });
             break;
           }
-          if (term.includes('fundal') && v.fundal_height_cm != null) {
+          if (canonical === 'fundal height' && v.fundal_height_cm != null) {
             candidates.push({
               name: 'Fundal Height',
               value: v.fundal_height_cm,
@@ -272,7 +340,7 @@ async function queryPatientMetric(clinicianId, patientId, metricTerm, options = 
             });
             break;
           }
-          if (term.includes('albumin') && v.urine_albumin) {
+          if (canonical === 'urine albumin' && v.urine_albumin) {
             candidates.push({
               name: 'Urine Albumin',
               value: v.urine_albumin,
@@ -283,19 +351,28 @@ async function queryPatientMetric(clinicianId, patientId, metricTerm, options = 
             });
             break;
           }
-          if (term.includes('gestation') || term.includes('week')) {
-            if (v.gestational_weeks != null) {
-              const days = v.gestational_days ? ` +${v.gestational_days}d` : '';
-              candidates.push({
-                name: 'Gestational Age',
-                value: `${v.gestational_weeks}w${days}`,
-                unit: '',
-                date: v.visit_date,
-                source: 'Antenatal Visit',
-                sourceType: 'maternity',
-              });
-              break;
-            }
+          if (canonical === 'blood glucose' && v.blood_glucose_mg_dl != null) {
+            candidates.push({
+              name: 'Blood Glucose',
+              value: v.blood_glucose_mg_dl,
+              unit: 'mg/dL',
+              date: v.visit_date,
+              source: 'Antenatal Visit',
+              sourceType: 'maternity',
+            });
+            break;
+          }
+          if (canonical === 'gestational age' && v.gestational_weeks != null) {
+            const days = v.gestational_days ? ` +${v.gestational_days}d` : '';
+            candidates.push({
+              name: 'Gestational Age',
+              value: `${v.gestational_weeks}w${days}`,
+              unit: '',
+              date: v.visit_date,
+              source: 'Antenatal Visit',
+              sourceType: 'maternity',
+            });
+            break;
           }
         }
       }
@@ -309,9 +386,7 @@ async function queryPatientMetric(clinicianId, patientId, metricTerm, options = 
 
       if (investigations?.length) {
         for (const inv of investigations) {
-          const invName = String(inv.investigation_name || '').toLowerCase();
-          const invKey = String(inv.investigation_key || '').toLowerCase();
-          if (invName.includes(term) || invKey.includes(term) || term.includes(invName) || term.includes(invKey)) {
+          if (matchesMetricName(inv.investigation_key, inv.investigation_name, canonical)) {
             const val = inv.result_value ?? inv.result_text;
             if (val != null && val !== '') {
               candidates.push({
@@ -344,9 +419,7 @@ async function queryPatientMetric(clinicianId, patientId, metricTerm, options = 
 
       if (metrics?.length) {
         for (const m of metrics) {
-          const rawKey = String(m.raw_key || '').toLowerCase();
-          const stdKey = String(m.standard_key || '').toLowerCase();
-          if (rawKey.includes(term) || stdKey.includes(term) || term.includes(rawKey) || (stdKey && term.includes(stdKey))) {
+          if (matchesMetricName(m.standard_key, m.raw_key, canonical)) {
             const val = m.reviewed_value ?? m.parsed_value ?? m.raw_value;
             const unit = m.unit_standard || m.unit_raw || '';
             const reportDate = m.lab_reports?.report_date || (m.lab_reports?.uploaded_at ? m.lab_reports.uploaded_at.split('T')[0] : null);
@@ -380,8 +453,7 @@ async function queryPatientMetric(clinicianId, patientId, metricTerm, options = 
 
     if (vitals?.length) {
       for (const v of vitals) {
-        const vKey = String(v.metric_key || '').toLowerCase();
-        if (vKey.includes(term) || term.includes(vKey)) {
+        if (matchesMetricName(v.metric_key, v.metric_key, canonical)) {
           candidates.push({
             name: v.metric_key,
             value: v.value,
@@ -450,6 +522,8 @@ function formatMetricAnswer(patientName, metricTerm, record, patientId) {
 
 module.exports = {
   detectClinicalQuery,
+  extractPatientAndMetric,
+  matchesMetricName,
   queryPatientMetric,
   formatMetricAnswer,
   ALIASES,
