@@ -4,6 +4,7 @@ import { SectionCard } from '../../components/common/SectionCard.jsx';
 import { Icon } from '../../components/common/Icon.jsx';
 import { Spinner } from '../../components/common/Spinner.jsx';
 import { useToast } from '../../context/ToastContext';
+import { useAssistantControls } from '../../components/assistant/AssistantBridge.jsx';
 import {
   getQuestionnaireTemplates,
   createQuestion,
@@ -26,7 +27,7 @@ const QUESTION_TYPES = [
  * controls (type and red flag for questions); `addControls` sits beside the
  * add box (the question-type choice).
  */
-function EditableList({ items, onAdd, onRename, onRemove, placeholder, emptyText, extra, addControls }) {
+function EditableList({ items, onAdd, onRename, onRemove, placeholder, emptyText, extra, addControls, inputAssistantId, buttonAssistantId }) {
   const [draft, setDraft] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState('');
@@ -82,6 +83,8 @@ function EditableList({ items, onAdd, onRename, onRemove, placeholder, emptyText
                     if (e.key === 'Escape') setEditingId(null);
                   }}
                   aria-label="Edit item"
+                  // Saves when you leave the field or press Enter.
+                  data-assistant-effect="save"
                   className="field h-9 flex-1"
                 />
               ) : (
@@ -92,6 +95,9 @@ function EditableList({ items, onAdd, onRename, onRemove, placeholder, emptyText
                     setEditText(item.label);
                   }}
                   title="Click to edit"
+                  // Only opens the item for renaming.
+                  data-assistant-effect="free"
+                  data-assistant-label={`Rename ${item.label}`}
                   className="min-w-0 flex-1 truncate text-left text-body-md text-ink hover:text-cypress"
                 >
                   {item.label}
@@ -116,6 +122,7 @@ function EditableList({ items, onAdd, onRename, onRemove, placeholder, emptyText
         {addControls}
         <input
           value={draft}
+          data-assistant-id={inputAssistantId}
           onChange={(e) => setDraft(e.target.value)}
           placeholder={placeholder}
           aria-label={placeholder}
@@ -123,6 +130,7 @@ function EditableList({ items, onAdd, onRename, onRemove, placeholder, emptyText
         />
         <button
           type="submit"
+          data-assistant-id={buttonAssistantId}
           disabled={!draft.trim() || busy}
           aria-label="Add"
           className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cypress text-surface hover:bg-cypress-deep disabled:opacity-40"
@@ -146,6 +154,9 @@ export function ClinicianChecklists() {
   const [actions, setActions] = useState([]);
   const [newQuestionType, setNewQuestionType] = useState('yes_no');
   const [loading, setLoading] = useState(true);
+  const [draftQuestionText, setDraftQuestionText] = useState('');
+  const [draftConsultationItem, setDraftConsultationItem] = useState('');
+  const [draftActionItem, setDraftActionItem] = useState('');
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -158,6 +169,66 @@ export function ClinicianChecklists() {
       .catch((err) => showToast(err.message || 'Could not load your checklists.', 'error'))
       .finally(() => setLoading(false));
   }, [showToast]);
+
+  useAssistantControls(
+    'checklists',
+    {
+      controls: {
+        questionText: {
+          get: () => draftQuestionText,
+          set: (val) => setDraftQuestionText(val ?? ''),
+        },
+        questionType: {
+          get: () => newQuestionType,
+          set: (val) => setNewQuestionType(val || 'yes_no'),
+        },
+        consultationItem: {
+          get: () => draftConsultationItem,
+          set: (val) => setDraftConsultationItem(val ?? ''),
+        },
+        actionItem: {
+          get: () => draftActionItem,
+          set: (val) => setDraftActionItem(val ?? ''),
+        },
+      },
+      buttons: {
+        add_question: {
+          run: async () => {
+            if (!draftQuestionText.trim()) return false;
+            const created = await createQuestion({ questionText: draftQuestionText.trim(), responseType: newQuestionType });
+            setQuestions((list) => [...list, created]);
+            setDraftQuestionText('');
+            showToast('Question template added.', 'success');
+            return true;
+          },
+          summary: () => [{ label: 'Question', value: draftQuestionText }],
+        },
+        add_consultation_item: {
+          run: async () => {
+            if (!draftConsultationItem.trim()) return false;
+            const created = await createTemplate('consultation', draftConsultationItem.trim());
+            setConsultation((list) => [...list, created]);
+            setDraftConsultationItem('');
+            showToast('Consultation checklist item added.', 'success');
+            return true;
+          },
+          summary: () => [{ label: 'Item', value: draftConsultationItem }],
+        },
+        add_action_item: {
+          run: async () => {
+            if (!draftActionItem.trim()) return false;
+            const created = await createTemplate('action', draftActionItem.trim());
+            setActions((list) => [...list, created]);
+            setDraftActionItem('');
+            showToast('Action checklist item added.', 'success');
+            return true;
+          },
+          summary: () => [{ label: 'Item', value: draftActionItem }],
+        },
+      },
+    },
+    { ready: !loading }
+  );
 
   /** Any failed change surfaces as a toast; the list only changes on success. */
   const guarded = useCallback(
@@ -217,6 +288,8 @@ export function ClinicianChecklists() {
               >
                 <EditableList
                   items={questionItems}
+                  inputAssistantId="checklists.questionText"
+                  buttonAssistantId="checklists.add_question"
                   placeholder="Add a question, e.g. Any new medication since your last visit?"
                   emptyText="No questions yet. Patients skip the questionnaire until you add some."
                   onAdd={guarded(async (text) => {
@@ -226,6 +299,7 @@ export function ClinicianChecklists() {
                   addControls={
                     <select
                       value={newQuestionType}
+                      data-assistant-id="checklists.questionType"
                       onChange={(e) => setNewQuestionType(e.target.value)}
                       aria-label="How the patient answers"
                       className="field h-10 w-auto shrink-0"
@@ -286,6 +360,8 @@ export function ClinicianChecklists() {
               >
                 <EditableList
                   items={consultation}
+                  inputAssistantId="checklists.consultationItem"
+                  buttonAssistantId="checklists.add_consultation_item"
                   placeholder="Add an item, e.g. Blood pressure checked"
                   emptyText="No consultation items yet."
                   {...templateHandlers('consultation', setConsultation)}
@@ -300,6 +376,8 @@ export function ClinicianChecklists() {
               >
                 <EditableList
                   items={actions}
+                  inputAssistantId="checklists.actionItem"
+                  buttonAssistantId="checklists.add_action_item"
                   placeholder="Add an action, e.g. Repeat blood test in 2 weeks"
                   emptyText="No actions yet."
                   {...templateHandlers('action', setActions)}

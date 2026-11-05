@@ -12,6 +12,8 @@ import {
   deleteMaternityRow,
   importMaternityReports,
 } from '../../services/clinicianService.js';
+import { useAssistantControls } from '../../components/assistant/AssistantBridge.jsx';
+import { createMaternityReaders } from '../../components/assistant/maternityReaders';
 import './MaternityCard.css';
 
 const URINE_OPTIONS = ['Negative', 'Trace', '1+', '2+', '3+', '4+', 'Not tested'];
@@ -139,6 +141,45 @@ const hbLow = v => v !== '' && v != null && Number(v) < 11;
 const fhrAbnormal = v => v && (Number(v) < 110 || Number(v) > 160);
 const urinePositive = v => ['1+', '2+', '3+', '4+'].includes(v);
 
+// Assistant control ids ("visit.weight", "baseline.hb") name a card section and a field.
+const ROW_KIND = { visit: 'visits', lab: 'labs', scan: 'scans', vaccine: 'vaccines' };
+const SAVE_BUTTONS = { save_visit: 'visits', save_lab: 'labs', save_scan: 'scans', save_vaccine: 'vaccines' };
+// What an entry needs before it can be added (the form marks these *).
+const REQUIRED = { visits: ['date'], labs: ['date', 'test', 'result'], scans: ['date', 'report'], vaccines: ['name', 'date'] };
+const ROW_LABELS = {
+  visits: {
+    date: 'Visit date', weeks: 'GA weeks', days: '+ days', weight: 'Weight (kg)', fundal: 'Fundal height (cm)',
+    systolic: 'BP systolic', diastolic: 'BP diastolic', presentation: 'Presentation', brim: 'Relation to brim', fhr: 'FHR (bpm)',
+    albumin: 'Urine albumin', sugar: 'Urine sugar', hb: 'Hb (g/dL)', tsh: 'TSH (mIU/L)', next: 'Next visit', clinician: 'Clinician', advice: 'Advice / notes',
+  },
+  labs: { date: 'Date tested', test: 'Investigation', result: 'Result', unit: 'Unit', notes: 'Notes' },
+  scans: { date: 'Scan date', weeks: 'GA weeks', days: '+ days', report: 'Report' },
+  vaccines: { name: 'Vaccine / injection', dose: 'Dose', date: 'Date given', next: 'Next dose', notes: 'Notes' },
+};
+
+/** Patient details after one change; a new LMP moves the EDD unless the EDD was set by hand. */
+function patientWith(patient, key, value) {
+  const next = { ...patient, [key]: value };
+  if (key === 'lmp' && value && (!patient.edd || patient.edd === addDays(patient.lmp, 280))) {
+    next.edd = addDays(value, 280);
+  }
+  return next;
+}
+
+/** The card with new values in a section's unfinished entry; a visit date fills GA from the LMP unless GA was given. */
+function withPendingValues(card, kind, newValues) {
+  const draft = card.pending[kind] || { editId: null, values: {} };
+  const values = { ...newValues };
+  if (values.date && kind === 'visits' && !draft.values.weeks && !values.weeks) {
+    const ga = gestation(card.patient.lmp, values.date);
+    if (ga) {
+      values.weeks = String(ga.weeks);
+      values.days = String(ga.days);
+    }
+  }
+  return { ...card, pending: { ...card.pending, [kind]: { ...draft, values: { ...draft.values, ...values } } } };
+}
+
 export function MaternityCardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [entryPanelOpen, setEntryPanelOpen] = useState(true);
@@ -149,7 +190,16 @@ export function MaternityCardPage() {
 
   const [patients, setPatients] = useState([]);
   const [activePatientId, setActivePatientId] = useState(urlPatientId);
+  // Follow the URL when it names another patient (a link, the assistant, back and forward).
+  useEffect(() => {
+    setActivePatientId(urlPatientId);
+  }, [urlPatientId]);
   const [state, setState] = useState(() => JSON.parse(JSON.stringify(DEFAULT_STATE)));
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  // Whose card is loaded: a patient id, '' for the device draft, null while loading.
+  // The assistant fills only a card that has finished loading for the patient shown.
+  const [loadedPatientId, setLoadedPatientId] = useState(null);
   const [saveStatus, setSaveStatus] = useState('New card · Local draft');
   const [activeSection, setActiveSection] = useState('patient');
   const [toastMsg, setToastMsg] = useState('');
@@ -202,6 +252,7 @@ export function MaternityCardPage() {
   useEffect(() => {
     if (!activePatientId) {
       setRecordState('none');
+      setLoadedPatientId('');
       setLabImport(null);
       try {
         const raw = localStorage.getItem(storageKey);
@@ -243,6 +294,7 @@ export function MaternityCardPage() {
           pending: readDrafts(storageKey),
         });
         setRecordState('ready');
+        setLoadedPatientId(activePatientId);
         setLabImport(card.labImport ?? null);
         setSaveStatus(card.episodeId ? 'Loaded from patient record' : 'New record · saves to patient record');
         const added = card.labImport?.added ?? 0;
@@ -403,15 +455,7 @@ export function MaternityCardPage() {
 
   // Update static fields
   const handlePatientChange = (key, value) => {
-    const nextPatient = { ...state.patient, [key]: value };
-    if (key === 'lmp' && value) {
-      const edd = nextPatient.edd;
-      const prevLmp = state.patient.lmp;
-      if (!edd || edd === addDays(prevLmp, 280)) {
-        nextPatient.edd = addDays(value, 280);
-      }
-    }
-    persistState({ ...state, patient: nextPatient }, 'details');
+    persistState({ ...state, patient: patientWith(state.patient, key, value) }, 'details');
   };
 
   const handleInvestigationChange = (key, value) => {
@@ -440,22 +484,7 @@ export function MaternityCardPage() {
   };
 
   const setPendingValues = (kind, newValues) => {
-    const draft = getPendingDraft(kind);
-    // Auto gestation on date change
-    if (newValues.date && kind === 'visits' && !draft.values.weeks) {
-      const ga = gestation(state.patient.lmp, newValues.date);
-      if (ga) {
-        newValues.weeks = String(ga.weeks);
-        newValues.days = String(ga.days);
-      }
-    }
-    persistState({
-      ...state,
-      pending: {
-        ...state.pending,
-        [kind]: { ...draft, values: { ...draft.values, ...newValues } },
-      },
-    });
+    persistState(withPendingValues(state, kind, newValues));
   };
 
   const startEditRow = (kind, row) => {
@@ -510,15 +539,24 @@ export function MaternityCardPage() {
     showToast('Entry deleted');
   };
 
-  const saveListEntry = async (e, kind) => {
+  const saveListEntry = (e, kind) => {
     e.preventDefault();
+    saveEntry(kind);
+  };
+
+  /**
+   * Adds the section's unfinished entry to the card, or saves the edited one.
+   * The form's button and the assistant (after the clinician confirms) both call this.
+   * @returns {Promise<boolean>} whether it was saved
+   */
+  const saveEntry = async (kind) => {
     const draft = getPendingDraft(kind);
     const editId = draft.editId;
 
     if (isRecord) {
       if (recordState !== 'ready') {
         showToast('Record not loaded · entry not saved');
-        return;
+        return false;
       }
       const patientId = activePatientId;
       const values = pick(draft.values, ROW_FIELDS[kind]);
@@ -535,11 +573,12 @@ export function MaternityCardPage() {
         });
         setSaveStatus(`Saved to record · ${timeNow()}`);
         showToast(editId ? 'Changes saved' : 'New entry added to card');
+        return true;
       } catch (err) {
         setSaveStatus('Entry not saved');
         showToast(saveError(err));
+        return false;
       }
-      return;
     }
 
     const row = { ...draft.values, id: editId || uid() };
@@ -560,6 +599,7 @@ export function MaternityCardPage() {
       pending: nextPending,
     });
     showToast(editId ? 'Changes saved' : 'New entry added to card');
+    return true;
   };
 
   // Only the local draft can be blanked; a patient's record is never wiped from here.
@@ -570,6 +610,84 @@ export function MaternityCardPage() {
     persistState(fresh);
     showToast('Started blank maternity card');
   };
+
+  // ---- Assistant: the fields and Add buttons it may use (ids match the server's controls registry). ----
+  const assistantReady = isRecord ? recordState === 'ready' && loadedPatientId === activePatientId : loadedPatientId === '';
+  const patientLabel = () =>
+    (isRecord ? patients.find((p) => p.id === activePatientId)?.fullName : state.patient.name) || (isRecord ? 'This patient' : 'Draft on this device');
+
+  /**
+   * Fills several fields at once: one new card from the latest state, so no
+   * change overwrites another, saved once per changed part. Refuses a card that
+   * is not loaded for the patient shown.
+   */
+  const applyMany = (fields) => {
+    if (!assistantReady) throw new Error('Card not loaded');
+    let next = stateRef.current;
+    let details = false;
+    let delivery = false;
+    const rows = {};
+    Object.entries(fields).forEach(([id, raw]) => {
+      const [section, key] = id.split('.');
+      const value = String(raw);
+      if (section === 'patient') {
+        next = { ...next, patient: patientWith(next.patient, key, value) };
+        details = true;
+      } else if (section === 'baseline') {
+        next = { ...next, investigations: { ...next.investigations, [key]: value } };
+        details = true;
+      } else if (section === 'delivery') {
+        next = { ...next, delivery: { ...next.delivery, [key]: value } };
+        delivery = true;
+      } else if (ROW_KIND[section]) {
+        rows[ROW_KIND[section]] = { ...rows[ROW_KIND[section]], [key]: value };
+      }
+    });
+    // One update per entry, so a given GA is not replaced by one worked out from the visit date.
+    Object.entries(rows).forEach(([kind, values]) => {
+      next = withPendingValues(next, kind, values);
+    });
+    setEntryPanelOpen(true);
+    persistState(next, details ? 'details' : delivery ? 'delivery' : undefined);
+    if (details && delivery) persistState(next, 'delivery');
+  };
+
+  const entryButton = (kind) => ({
+    available: () => assistantReady && REQUIRED[kind].every((key) => String(getPendingDraft(kind).values[key] || '').trim()),
+    run: () => saveEntry(kind),
+    summary: () => {
+      const draft = getPendingDraft(kind);
+      const values = Object.entries(ROW_LABELS[kind])
+        .filter(([key]) => String(draft.values[key] || '').trim())
+        .map(([key, label]) => ({ label, value: String(draft.values[key]) }));
+      return [
+        { label: 'Patient', value: patientLabel() },
+        { label: 'Saves to', value: isRecord ? 'Patient record' : 'This device only' },
+        ...(draft.editId ? [{ label: 'Entry', value: 'Changes an existing entry' }] : []),
+        ...values,
+      ];
+    },
+  });
+
+  useAssistantControls('maternity', {
+    context: () => ({ patientId: loadedPatientId || null }),
+    controls: createMaternityReaders({
+      readState: () => stateRef.current,
+      patientFields: DETAIL_FIELDS.patient,
+      baselineFields: DETAIL_FIELDS.investigations,
+      deliveryFields: DELIVERY_FIELDS,
+      rowFields: ROW_FIELDS,
+      rowKinds: ROW_KIND,
+    }),
+    applyMany,
+    // On a patient's record these sections save as soon as they change, so the clinician confirms them first.
+    confirmFill: (fields) => {
+      if (!isRecord) return null;
+      const ids = Object.keys(fields).filter((id) => /^(patient|baseline|delivery)\./.test(id));
+      return ids.length ? { ids, sideEffect: `Saved to ${patientLabel()}'s maternity record as soon as it is filled.` } : null;
+    },
+    buttons: Object.fromEntries(Object.entries(SAVE_BUTTONS).map(([id, kind]) => [id, entryButton(kind)])),
+  }, { ready: assistantReady });
 
   // Gestation status today
   const gaToday = state.delivery.when
@@ -643,7 +761,8 @@ export function MaternityCardPage() {
 
           <div className="maternity-top-actions">
             {/* Patient selector */}
-            <div className="patient-select-wrap">
+            {/* Its choices are patient names; the assistant opens a patient's card by the name you type. */}
+            <div className="patient-select-wrap" data-assistant-private="">
               <label htmlFor="pSelect" className="font-semibold text-white/80">Patient:</label>
               <select
                 id="pSelect"
@@ -806,6 +925,8 @@ export function MaternityCardPage() {
                       <input
                         type="date"
                         value={state.patient.attendance || ''}
+                        data-assistant-id="patient.attendance"
+
                         onChange={e => handlePatientChange('attendance', e.target.value)}
                       />
                     </label>
@@ -814,6 +935,8 @@ export function MaternityCardPage() {
                       <input
                         type="number"
                         value={state.patient.gravida || ''}
+                        data-assistant-id="patient.gravida"
+
                         onChange={e => handlePatientChange('gravida', e.target.value)}
                         placeholder="0"
                       />
@@ -823,6 +946,8 @@ export function MaternityCardPage() {
                       <input
                         type="number"
                         value={state.patient.para || ''}
+                        data-assistant-id="patient.para"
+
                         onChange={e => handlePatientChange('para', e.target.value)}
                         placeholder="0"
                       />
@@ -832,6 +957,8 @@ export function MaternityCardPage() {
                       <input
                         type="number"
                         value={state.patient.living || ''}
+                        data-assistant-id="patient.living"
+
                         onChange={e => handlePatientChange('living', e.target.value)}
                         placeholder="0"
                       />
@@ -841,6 +968,8 @@ export function MaternityCardPage() {
                       <input
                         type="number"
                         value={state.patient.abortions || ''}
+                        data-assistant-id="patient.abortions"
+
                         onChange={e => handlePatientChange('abortions', e.target.value)}
                         placeholder="0"
                       />
@@ -850,6 +979,8 @@ export function MaternityCardPage() {
                       <input
                         type="date"
                         value={state.patient.lmp || ''}
+                        data-assistant-id="patient.lmp"
+
                         onChange={e => handlePatientChange('lmp', e.target.value)}
                       />
                     </label>
@@ -858,6 +989,8 @@ export function MaternityCardPage() {
                       <input
                         type="date"
                         value={state.patient.edd || ''}
+                        data-assistant-id="patient.edd"
+
                         onChange={e => handlePatientChange('edd', e.target.value)}
                       />
                       <span className="field-hint">Auto: LMP + 280 days</span>
@@ -867,6 +1000,8 @@ export function MaternityCardPage() {
                       <textarea
                         rows={2}
                         value={state.patient.history || ''}
+                        data-assistant-id="patient.history"
+
                         onChange={e => handlePatientChange('history', e.target.value)}
                         placeholder="e.g. Hypothyroidism, Penicillin allergy"
                       />
@@ -888,6 +1023,8 @@ export function MaternityCardPage() {
                       <span className="field-label">Blood group</span>
                       <select
                         value={state.investigations.blood || ''}
+                        data-assistant-id="baseline.blood"
+
                         onChange={e => handleInvestigationChange('blood', e.target.value)}
                       >
                         <option value="">Select…</option>
@@ -899,6 +1036,8 @@ export function MaternityCardPage() {
                       <input
                         type="date"
                         value={state.investigations.resultsDate || ''}
+                        data-assistant-id="baseline.resultsDate"
+
                         onChange={e => handleInvestigationChange('resultsDate', e.target.value)}
                       />
                     </label>
@@ -908,6 +1047,8 @@ export function MaternityCardPage() {
                         type="number"
                         step="0.1"
                         value={state.investigations.hb || ''}
+                        data-assistant-id="baseline.hb"
+
                         onChange={e => handleInvestigationChange('hb', e.target.value)}
                         placeholder="e.g. 11.5"
                       />
@@ -918,6 +1059,8 @@ export function MaternityCardPage() {
                         type="number"
                         step="0.01"
                         value={state.investigations.tsh || ''}
+                        data-assistant-id="baseline.tsh"
+
                         onChange={e => handleInvestigationChange('tsh', e.target.value)}
                         placeholder="e.g. 2.10"
                       />
@@ -927,6 +1070,8 @@ export function MaternityCardPage() {
                       <input
                         type="text"
                         value={state.investigations.chest || ''}
+                        data-assistant-id="baseline.chest"
+
                         onChange={e => handleInvestigationChange('chest', e.target.value)}
                         placeholder="Clear / Normal"
                       />
@@ -936,6 +1081,8 @@ export function MaternityCardPage() {
                       <input
                         type="text"
                         value={state.investigations.cvs || ''}
+                        data-assistant-id="baseline.cvs"
+
                         onChange={e => handleInvestigationChange('cvs', e.target.value)}
                         placeholder="S1 S2 heard"
                       />
@@ -945,6 +1092,8 @@ export function MaternityCardPage() {
                       <textarea
                         rows={2}
                         value={state.investigations.results || ''}
+                        data-assistant-id="baseline.results"
+
                         onChange={e => handleInvestigationChange('results', e.target.value)}
                         placeholder="HIV negative, VDRL non-reactive, etc."
                       />
@@ -1023,6 +1172,7 @@ export function MaternityCardPage() {
                               type="date"
                               required
                               value={v.date || ''}
+                              data-assistant-id="visit.date"
                               onChange={e => {
                                 const newDate = e.target.value;
                                 const updates = { date: newDate };
@@ -1042,6 +1192,8 @@ export function MaternityCardPage() {
                             <input
                               type="number"
                               value={v.weeks || ''}
+                              data-assistant-id="visit.weeks"
+
                               onChange={e => setPendingValues('visits', { weeks: e.target.value })}
                               placeholder="14"
                             />
@@ -1051,6 +1203,8 @@ export function MaternityCardPage() {
                             <input
                               type="number"
                               value={v.days || ''}
+                              data-assistant-id="visit.days"
+
                               onChange={e => setPendingValues('visits', { days: e.target.value })}
                               placeholder="2"
                             />
@@ -1096,6 +1250,8 @@ export function MaternityCardPage() {
                               type="number"
                               step="0.1"
                               value={v.weight || ''}
+                              data-assistant-id="visit.weight"
+
                               onChange={e => setPendingValues('visits', { weight: e.target.value })}
                               placeholder="58.5"
                             />
@@ -1106,6 +1262,8 @@ export function MaternityCardPage() {
                               type="number"
                               step="0.1"
                               value={v.fundal || ''}
+                              data-assistant-id="visit.fundal"
+
                               onChange={e => setPendingValues('visits', { fundal: e.target.value })}
                               placeholder="16"
                             />
@@ -1115,6 +1273,8 @@ export function MaternityCardPage() {
                             <input
                               type="number"
                               value={v.systolic || ''}
+                              data-assistant-id="visit.systolic"
+
                               onChange={e => setPendingValues('visits', { systolic: e.target.value })}
                               placeholder="120"
                             />
@@ -1124,6 +1284,8 @@ export function MaternityCardPage() {
                             <input
                               type="number"
                               value={v.diastolic || ''}
+                              data-assistant-id="visit.diastolic"
+
                               onChange={e => setPendingValues('visits', { diastolic: e.target.value })}
                               placeholder="80"
                             />
@@ -1132,6 +1294,8 @@ export function MaternityCardPage() {
                             <span className="field-label">Presentation</span>
                             <select
                               value={v.presentation || ''}
+                              data-assistant-id="visit.presentation"
+
                               onChange={e => setPendingValues('visits', { presentation: e.target.value })}
                             >
                               <option value="">Select…</option>
@@ -1143,6 +1307,8 @@ export function MaternityCardPage() {
                             <input
                               type="text"
                               value={v.brim || ''}
+                              data-assistant-id="visit.brim"
+
                               onChange={e => setPendingValues('visits', { brim: e.target.value })}
                               placeholder="3/5 palpable"
                             />
@@ -1152,6 +1318,8 @@ export function MaternityCardPage() {
                             <input
                               type="number"
                               value={v.fhr || ''}
+                              data-assistant-id="visit.fhr"
+
                               onChange={e => setPendingValues('visits', { fhr: e.target.value })}
                               placeholder="140"
                             />
@@ -1160,6 +1328,8 @@ export function MaternityCardPage() {
                             <span className="field-label">Urine albumin</span>
                             <select
                               value={v.albumin || ''}
+                              data-assistant-id="visit.albumin"
+
                               onChange={e => setPendingValues('visits', { albumin: e.target.value })}
                             >
                               <option value="">Select…</option>
@@ -1170,6 +1340,8 @@ export function MaternityCardPage() {
                             <span className="field-label">Urine sugar</span>
                             <select
                               value={v.sugar || ''}
+                              data-assistant-id="visit.sugar"
+
                               onChange={e => setPendingValues('visits', { sugar: e.target.value })}
                             >
                               <option value="">Select…</option>
@@ -1182,6 +1354,8 @@ export function MaternityCardPage() {
                               type="number"
                               step="0.1"
                               value={v.hb || ''}
+                              data-assistant-id="visit.hb"
+
                               onChange={e => setPendingValues('visits', { hb: e.target.value })}
                               placeholder="11.2"
                             />
@@ -1192,6 +1366,8 @@ export function MaternityCardPage() {
                               type="number"
                               step="0.01"
                               value={v.tsh || ''}
+                              data-assistant-id="visit.tsh"
+
                               onChange={e => setPendingValues('visits', { tsh: e.target.value })}
                               placeholder="2.0"
                             />
@@ -1201,6 +1377,8 @@ export function MaternityCardPage() {
                             <input
                               type="date"
                               value={v.next || ''}
+                              data-assistant-id="visit.next"
+
                               onChange={e => setPendingValues('visits', { next: e.target.value })}
                             />
                           </label>
@@ -1209,6 +1387,8 @@ export function MaternityCardPage() {
                             <input
                               type="text"
                               value={v.clinician || ''}
+                              data-assistant-id="visit.clinician"
+
                               onChange={e => setPendingValues('visits', { clinician: e.target.value })}
                               placeholder="Dr. Name"
                             />
@@ -1218,6 +1398,8 @@ export function MaternityCardPage() {
                             <textarea
                               rows={2}
                               value={v.advice || ''}
+                              data-assistant-id="visit.advice"
+
                               onChange={e => setPendingValues('visits', { advice: e.target.value })}
                               placeholder="Prescribed calcium & iron, normal movements"
                             />
@@ -1324,6 +1506,8 @@ export function MaternityCardPage() {
                               type="date"
                               required
                               value={v.date || ''}
+                              data-assistant-id="lab.date"
+
                               onChange={e => setPendingValues('labs', { date: e.target.value })}
                             />
                           </label>
@@ -1334,6 +1518,8 @@ export function MaternityCardPage() {
                               required
                               list="testOptions"
                               value={v.test || ''}
+                              data-assistant-id="lab.test"
+
                               onChange={e => setPendingValues('labs', { test: e.target.value })}
                               placeholder="e.g. OGTT, Hb, Platelets"
                             />
@@ -1344,6 +1530,8 @@ export function MaternityCardPage() {
                               type="text"
                               required
                               value={v.result || ''}
+                              data-assistant-id="lab.result"
+
                               onChange={e => setPendingValues('labs', { result: e.target.value })}
                               placeholder="e.g. 125, Negative"
                             />
@@ -1353,6 +1541,8 @@ export function MaternityCardPage() {
                             <input
                               type="text"
                               value={v.unit || ''}
+                              data-assistant-id="lab.unit"
+
                               onChange={e => setPendingValues('labs', { unit: e.target.value })}
                               placeholder="mg/dL"
                             />
@@ -1362,6 +1552,8 @@ export function MaternityCardPage() {
                             <textarea
                               rows={2}
                               value={v.notes || ''}
+                              data-assistant-id="lab.notes"
+
                               onChange={e => setPendingValues('labs', { notes: e.target.value })}
                               placeholder="Fasting 92, 2h 130 normal"
                             />
@@ -1447,6 +1639,8 @@ export function MaternityCardPage() {
                               type="date"
                               required
                               value={v.date || ''}
+                              data-assistant-id="scan.date"
+
                               onChange={e => setPendingValues('scans', { date: e.target.value })}
                             />
                           </label>
@@ -1455,6 +1649,8 @@ export function MaternityCardPage() {
                             <input
                               type="number"
                               value={v.weeks || ''}
+                              data-assistant-id="scan.weeks"
+
                               onChange={e => setPendingValues('scans', { weeks: e.target.value })}
                               placeholder="18"
                             />
@@ -1464,6 +1660,8 @@ export function MaternityCardPage() {
                             <input
                               type="number"
                               value={v.days || ''}
+                              data-assistant-id="scan.days"
+
                               onChange={e => setPendingValues('scans', { days: e.target.value })}
                               placeholder="4"
                             />
@@ -1474,6 +1672,8 @@ export function MaternityCardPage() {
                               rows={3}
                               required
                               value={v.report || ''}
+                              data-assistant-id="scan.report"
+
                               onChange={e => setPendingValues('scans', { report: e.target.value })}
                               placeholder="Single live intrauterine gestation, normal liquor, anterior placenta."
                             />
@@ -1559,6 +1759,8 @@ export function MaternityCardPage() {
                               required
                               list="vaccineOptions"
                               value={v.name || ''}
+                              data-assistant-id="vaccine.name"
+
                               onChange={e => setPendingValues('vaccines', { name: e.target.value })}
                               placeholder="e.g. Td, Tdap, Anti-D"
                             />
@@ -1568,6 +1770,8 @@ export function MaternityCardPage() {
                             <input
                               type="text"
                               value={v.dose || ''}
+                              data-assistant-id="vaccine.dose"
+
                               onChange={e => setPendingValues('vaccines', { dose: e.target.value })}
                               placeholder="0.5 mL IM, Dose 1"
                             />
@@ -1578,6 +1782,8 @@ export function MaternityCardPage() {
                               type="date"
                               required
                               value={v.date || ''}
+                              data-assistant-id="vaccine.date"
+
                               onChange={e => setPendingValues('vaccines', { date: e.target.value })}
                             />
                           </label>
@@ -1586,6 +1792,8 @@ export function MaternityCardPage() {
                             <input
                               type="date"
                               value={v.next || ''}
+                              data-assistant-id="vaccine.next"
+
                               onChange={e => setPendingValues('vaccines', { next: e.target.value })}
                             />
                           </label>
@@ -1594,6 +1802,8 @@ export function MaternityCardPage() {
                             <input
                               type="text"
                               value={v.notes || ''}
+                              data-assistant-id="vaccine.notes"
+
                               onChange={e => setPendingValues('vaccines', { notes: e.target.value })}
                               placeholder="Left deltoid"
                             />
@@ -1635,6 +1845,8 @@ export function MaternityCardPage() {
                       <span className="field-label">Type of delivery</span>
                       <select
                         value={state.delivery.type || ''}
+                        data-assistant-id="delivery.type"
+
                         onChange={e => handleDeliveryChange('type', e.target.value)}
                       >
                         {DELIVERY_TYPES.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -1645,6 +1857,8 @@ export function MaternityCardPage() {
                       <input
                         type="datetime-local"
                         value={state.delivery.when || ''}
+                        data-assistant-id="delivery.when"
+
                         onChange={e => handleDeliveryChange('when', e.target.value)}
                       />
                     </label>
@@ -1653,6 +1867,8 @@ export function MaternityCardPage() {
                       <input
                         type="text"
                         value={state.delivery.indication || ''}
+                        data-assistant-id="delivery.indication"
+
                         onChange={e => handleDeliveryChange('indication', e.target.value)}
                         placeholder="e.g. Spontaneous vaginal / Foetal distress"
                       />
@@ -1661,6 +1877,8 @@ export function MaternityCardPage() {
                       <span className="field-label">Sex of baby</span>
                       <select
                         value={state.delivery.sex || ''}
+                        data-assistant-id="delivery.sex"
+
                         onChange={e => handleDeliveryChange('sex', e.target.value)}
                       >
                         <option value="">Select…</option>
@@ -1673,6 +1891,8 @@ export function MaternityCardPage() {
                         type="number"
                         step="0.001"
                         value={state.delivery.weight || ''}
+                        data-assistant-id="delivery.weight"
+
                         onChange={e => handleDeliveryChange('weight', e.target.value)}
                         placeholder="3.250"
                       />
@@ -1683,6 +1903,8 @@ export function MaternityCardPage() {
                         type="number"
                         max="10"
                         value={state.delivery.apgar1 || ''}
+                        data-assistant-id="delivery.apgar1"
+
                         onChange={e => handleDeliveryChange('apgar1', e.target.value)}
                         placeholder="8"
                       />
@@ -1693,6 +1915,8 @@ export function MaternityCardPage() {
                         type="number"
                         max="10"
                         value={state.delivery.apgar5 || ''}
+                        data-assistant-id="delivery.apgar5"
+
                         onChange={e => handleDeliveryChange('apgar5', e.target.value)}
                         placeholder="9"
                       />
@@ -1702,6 +1926,8 @@ export function MaternityCardPage() {
                       <input
                         type="date"
                         value={state.delivery.next || ''}
+                        data-assistant-id="delivery.next"
+
                         onChange={e => handleDeliveryChange('next', e.target.value)}
                       />
                     </label>
@@ -1710,6 +1936,8 @@ export function MaternityCardPage() {
                       <textarea
                         rows={2}
                         value={state.delivery.advice || ''}
+                        data-assistant-id="delivery.advice"
+
                         onChange={e => handleDeliveryChange('advice', e.target.value)}
                         placeholder="Exclusive breastfeeding, immunize at 6 weeks, follow up in 2 weeks"
                       />
@@ -1724,7 +1952,8 @@ export function MaternityCardPage() {
           {/* ============================================================ */}
           {/* RIGHT: Live Structured Clinical Maternity Card                */}
           {/* ============================================================ */}
-          <main className="card-area">
+          {/* The printed card shows the patient's values: the assistant fills the form on the left instead. */}
+          <main className="card-area" data-assistant-private="">
             <article id="card" className="card" aria-label="Maternity Card">
               {/* Card Header */}
               <header className="card-head">

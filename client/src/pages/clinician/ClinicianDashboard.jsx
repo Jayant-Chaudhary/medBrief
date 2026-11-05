@@ -27,6 +27,7 @@ import {
   isPatientSimilarityEnabled,
   isSimilaritySyntheticDataAllowed,
 } from '../../services/patientSimilarityClient.js';
+import { useAssistantControls } from '../../components/assistant/AssistantBridge.jsx';
 import {
   fetchPatients,
   saveConsultancyNotes,
@@ -132,6 +133,75 @@ export function ClinicianDashboard() {
   const { data, loading, error, patch } = usePatientDashboard(selected?.id, selected?.appointmentId);
   const appointmentId = data?.appointment?.id;
   const consultDraft = useConsultDraft(appointmentId, Boolean(selected));
+  // The previous visit's data stays on screen while the next one loads; nothing is
+  // filled until the open visit's own data has arrived.
+  const visitLoaded = Boolean(selected) && appointmentId === selectedAppointmentId;
+
+  // Notes typed but not yet autosaved belong to the visit they were typed in: save them
+  // before another visit opens, so the debounce cannot land them on the next one.
+  useEffect(() => () => flushNotesRef.current?.(), [selectedAppointmentId]);
+
+  useAssistantControls(
+    'dashboard',
+    {
+      context: () => ({ patientId: visitLoaded ? selected.id : null, appointmentId: visitLoaded ? selectedAppointmentId : null }),
+      // The notes box itself is read and edited by the assistant's page reader, through its own
+      // onChange (so autosave runs as if typed), after the doctor confirms.
+      buttons: {
+        open_notes: {
+          run: () => {
+            setActiveDashboardTab('consultation');
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Open consultation notes' }],
+          available: () => Boolean(selected),
+        },
+        close_notes: {
+          run: () => {
+            setActiveDashboardTab('overview');
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Return to patient overview' }],
+          available: () => Boolean(selected) && activeDashboardTab === 'consultation',
+        },
+        save_notes: {
+          run: async () => {
+            if (flushNotesRef.current) await flushNotesRef.current();
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Save consultation notes' }],
+          available: () => Boolean(selected),
+        },
+        open_transcript_logs: {
+          run: () => {
+            setAudioConsultTab('TRANSCRIPT');
+            setAudioConsultOpen(true);
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Open transcript logs' }],
+          available: () => Boolean(selected),
+        },
+        open_audio_consult: {
+          run: () => {
+            setAudioConsultTab('RECORD');
+            setAudioConsultOpen(true);
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Open audio consultation' }],
+          available: () => Boolean(selected),
+        },
+        close_visit: {
+          run: () => {
+            close();
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Return to dashboard cards' }],
+          available: () => Boolean(selected),
+        },
+      },
+    },
+    { ready: !queueLoading && (!selected || visitLoaded) }
+  );
 
   const [activeDashboardTab, setActiveDashboardTab] = useState('overview'); // 'overview' | 'flowsheet' | 'consultation'
   const [consultationSubView, setConsultationSubView] = useState('both'); // 'both' | 'notes' | 'rx'
@@ -391,7 +461,8 @@ export function ClinicianDashboard() {
             {todays.filter((a) => a.status === 'completed').length} of {todays.length} completed
           </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Patient cards: the assistant reaches a visit by the name you type, never by reading these. */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-assistant-private="">
           {todays.map((appointment, idx) => {
             const isPending = appointment.isPending;
             const isCompleted = !isPending && appointment.status === 'completed';
@@ -503,7 +574,7 @@ export function ClinicianDashboard() {
     if (!selected) return renderTodaysCards();
     if (loading && !data) {
       return (
-        <div className="flex flex-1 items-center justify-center gap-3 text-ink-3">
+        <div className="flex flex-1 items-center justify-center gap-3 text-ink-3" role="status" aria-label="Loading" aria-busy="true">
           <Spinner /> Loading patient record…
         </div>
       );
@@ -527,6 +598,7 @@ export function ClinicianDashboard() {
           <div className="flex items-center gap-3">
             <button
               onClick={close}
+              data-assistant-id="dashboard.close_visit"
               aria-label="Back to dashboard"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-line bg-surface hover:bg-subcanvas text-ink font-medium text-sm transition-all shadow-xs active:scale-95"
             >
@@ -555,6 +627,8 @@ export function ClinicianDashboard() {
 
             <button
               type="button"
+              data-assistant-id="dashboard.open_notes"
+              data-assistant-effect="free"
               onClick={() => setActiveDashboardTab('consultation')}
               className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-label-lg font-semibold transition-all ${
                 activeDashboardTab === 'consultation'
@@ -565,7 +639,7 @@ export function ClinicianDashboard() {
             >
               <NotebookPen className="h-4 w-4 text-emerald-700 shrink-0" />
               <span>Consultation notes</span>
-              {(data.notes.text.trim() || data.actionItems.length > 0 || data.prescriptions.length > 0) && (
+              {(data.notes?.text?.trim() || data.actionItems?.length > 0 || data.prescriptions?.length > 0) && (
                 <span className="h-2 w-2 rounded-full bg-emerald-600 animate-pulse" aria-label="has content" />
               )}
             </button>
@@ -851,17 +925,17 @@ export function ClinicianDashboard() {
           <ul className="mt-3 space-y-1.5 text-body-md text-ink">
             <li>
               <span className="font-semibold">Doctor's notes:</span>{' '}
-              {data.notes.text.trim() ? 'included' : <span className="text-ink-3">none written</span>}
+              {data.notes?.text?.trim() ? 'included' : <span className="text-ink-3">none written</span>}
             </li>
             <li>
-              <span className="font-semibold">Covered in the consultation:</span> {data.consultationItems.length} item
-              {data.consultationItems.length === 1 ? '' : 's'}
+              <span className="font-semibold">Covered in the consultation:</span> {data.consultationItems?.length || 0} item
+              {(data.consultationItems?.length || 0) === 1 ? '' : 's'}
             </li>
             <li>
-              <span className="font-semibold">Next steps for the patient:</span> {data.actionItems.length}
+              <span className="font-semibold">Next steps for the patient:</span> {data.actionItems?.length || 0}
             </li>
             <li>
-              <span className="font-semibold">Prescriptions:</span> {data.prescriptions.length}
+              <span className="font-semibold">Prescriptions:</span> {data.prescriptions?.length || 0}
             </li>
           </ul>
           <p className="mt-3 text-body-sm text-ink-3">
@@ -881,6 +955,7 @@ export function ClinicianDashboard() {
               type="button"
               onClick={handleEndVisit}
               disabled={ending}
+              data-assistant-effect="send"
               className="rounded-xl bg-cypress px-4 py-2 text-label-lg text-white hover:bg-cypress-deep disabled:opacity-60"
             >
               {ending ? 'Ending…' : 'End visit and share summary'}
@@ -942,6 +1017,9 @@ export function ClinicianDashboard() {
               setAudioConsultOpen(true);
             }}
             className="flex items-center gap-2 rounded-full bg-rose-600 px-4 py-2 text-label-md font-semibold text-white shadow-sm transition-all hover:bg-rose-700 hover:shadow active:scale-95"
+            data-assistant-id="dashboard.open_audio_consult"
+            data-assistant-effect="save"
+            data-assistant-side-effect="Opens the recording window and starts a consultation session for this visit. You start the recording yourself."
             title="Record consultation audio with ambient speech-to-text"
           >
             <Mic className="h-4 w-4 shrink-0 text-white" />
@@ -954,6 +1032,9 @@ export function ClinicianDashboard() {
               setAudioConsultTab('TRANSCRIPT');
               setAudioConsultOpen(true);
             }}
+data-assistant-id="dashboard.open_transcript_logs"
+            data-assistant-effect="save"
+            data-assistant-side-effect="Opens the consultation window and starts a consultation session for this visit if none exists."
             className="flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 dark:border-indigo-800/60 dark:bg-indigo-950/50 dark:text-indigo-200 dark:hover:bg-indigo-900/50 px-4 py-2 text-label-md font-semibold text-indigo-800 transition-all hover:bg-indigo-100 hover:border-indigo-300 active:scale-95"
             title="View consultation audio transcript and speech-to-text processing logs"
           >

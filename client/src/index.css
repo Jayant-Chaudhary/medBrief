@@ -41,6 +41,80 @@
   }
 }
 
+/* A field the assistant just filled, outlined for a moment so the user can check it. */
+[data-assistant-flash='on'] {
+  box-shadow: 0 0 0 2px rgb(var(--c-primary));
+  transition: box-shadow 0.2s ease;
+}
+
+/* Assistant button: the MedBrief mark in gold and silver (AssistantMark.jsx). */
+.assistant-button {
+  background: radial-gradient(circle at 30% 25%, #3b3b47, #15151b 70%);
+  border: 1px solid rgb(230 200 120 / 0.55);
+}
+.assistant-mark {
+  position: relative;
+  display: inline-block;
+  isolation: isolate;
+}
+.assistant-mark__silver {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: grayscale(1) contrast(1.25) brightness(1.12);
+}
+.assistant-mark__gold,
+.assistant-mark__shine {
+  position: absolute;
+  inset: 0;
+  -webkit-mask: url('/logo-mark.png') center / contain no-repeat;
+  mask: url('/logo-mark.png') center / contain no-repeat;
+}
+/* Colour blend keeps the silver's light and dark, so the page, pulse line and text lines stay visible. */
+.assistant-mark__gold {
+  background: linear-gradient(135deg, #8a6a12 0%, #f7d774 22%, #fff3c4 34%, #c9a227 48%, #e6e8eb 62%, #a3a8ae 74%, #f2d27a 88%, #a67c00 100%);
+  mix-blend-mode: color;
+}
+.assistant-mark__shine {
+  background: linear-gradient(115deg, transparent 38%, rgb(255 255 255 / 0.85) 50%, transparent 62%);
+  background-size: 260% 100%;
+  mix-blend-mode: screen;
+  animation: assistant-shine 3.4s ease-in-out infinite;
+}
+.assistant-mark__spark {
+  position: absolute;
+  width: 22%;
+  height: 22%;
+  background: radial-gradient(circle, #fff 0 30%, #ffe9a8 60%, transparent 72%);
+  clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%);
+  opacity: 0;
+  pointer-events: none;
+  animation: assistant-twinkle 2.6s ease-in-out infinite;
+}
+.assistant-mark__spark--0 { top: -10%; right: -8%; }
+.assistant-mark__spark--1 { top: 32%; left: -14%; width: 15%; height: 15%; animation-delay: 0.5s; }
+.assistant-mark__spark--2 { bottom: -8%; right: 16%; width: 17%; height: 17%; animation-delay: 1.1s; }
+.assistant-mark__spark--3 { top: 6%; left: 28%; width: 12%; height: 12%; animation-delay: 1.6s; }
+.assistant-mark__spark--4 { bottom: 26%; right: -12%; width: 13%; height: 13%; animation-delay: 2.1s; }
+
+@keyframes assistant-shine {
+  0% { background-position: 160% 0; }
+  55%, 100% { background-position: -60% 0; }
+}
+@keyframes assistant-twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.2) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1) rotate(45deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .assistant-mark__shine,
+  .assistant-mark__spark {
+    animation: none;
+    opacity: 0;
+  }
+}
+
 /* Custom scrollbar for webkit */
 ::-webkit-scrollbar {
   width: 6px;

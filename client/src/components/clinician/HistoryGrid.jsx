@@ -299,7 +299,8 @@ export function HistoryGrid({ flowsheet, patientId, onResolve }) {
             </tr>
           </thead>
 
-          <tbody>
+          {/* Results: the assistant never reads these values; group toggles carry their own labels. */}
+          <tbody data-assistant-private="">
             {filteredGroups.map((group) => {
               const open = isOpen(group.id);
               const flagged = group.rows.filter((row) => row.needsReview).length;
@@ -312,6 +313,7 @@ export function HistoryGrid({ flowsheet, patientId, onResolve }) {
                         type="button"
                         onClick={() => toggleGroup(group.id)}
                         aria-expanded={open}
+                        data-assistant-label={`${group.label} tests`}
                         disabled={filter !== 'all'}
                         className="flex w-full items-center gap-2 px-5 py-2 text-left disabled:cursor-default"
                       >

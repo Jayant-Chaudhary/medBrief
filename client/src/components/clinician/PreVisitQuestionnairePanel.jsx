@@ -20,7 +20,7 @@ export function PreVisitQuestionnairePanel({ questionnaire }) {
   const ordered = [...answers].sort((a, b) => Number(isRedFlag(b)) - Number(isRedFlag(a)));
 
   return (
-    <section className="card shrink-0 overflow-hidden">
+    <section className="card shrink-0 overflow-hidden border border-slate-200/90 shadow-sm bg-white" data-assistant-private="">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}

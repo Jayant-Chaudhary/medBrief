@@ -72,7 +72,12 @@ export default function UploadZone({ onUpload, onBusy, disabled = false }) {
           accept="image/png,image/jpeg,application/pdf"
         />
         
-        <Button onClick={() => fileInputRef.current?.click()} className="px-8" disabled={disabled}>
+        <Button
+          data-assistant-id="reports.trigger_upload"
+          onClick={() => fileInputRef.current?.click()}
+          className="px-8"
+          disabled={disabled}
+        >
           {disabled ? 'Uploading…' : 'Select File'}
         </Button>
       </div>

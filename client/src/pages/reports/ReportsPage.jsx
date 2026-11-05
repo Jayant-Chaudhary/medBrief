@@ -9,6 +9,7 @@ import AppointmentSharePicker from '../../components/reports/AppointmentSharePic
 import NameMismatchModal from '../../components/reports/NameMismatchModal';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { useAssistantControls } from '../../components/assistant/AssistantBridge.jsx';
 
 /**
  * The patient's report library.
@@ -24,6 +25,36 @@ export default function ReportsPage() {
   const [uploading, setUploading] = useState(false);
   const [nameMismatch, setNameMismatch] = useState(null);
   const { showToast } = useToast();
+
+  useAssistantControls(
+    'reports',
+    {
+      buttons: {
+        trigger_upload: {
+          run: () => {
+            document.querySelector('[data-assistant-id="reports.trigger_upload"]')?.click();
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Open report file picker' }],
+        },
+        share_all: {
+          run: async () => {
+            if (!activeAppointment?.id) {
+              showToast('No active appointment selected to share with.', 'info');
+              return false;
+            }
+            await reportService.shareAllWithAppointment(activeAppointment.id);
+            await loadReports();
+            showToast('All reports shared with your doctor for this visit.', 'success');
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Share reports with upcoming appointment' }],
+          available: () => Boolean(activeAppointment?.id),
+        },
+      },
+    },
+    { ready: !loading }
+  );
 
   const loadReports = useCallback(async () => {
     try {
