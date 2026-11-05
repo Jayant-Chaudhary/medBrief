@@ -921,7 +921,7 @@ async function handleStep({
 
       // 4. Query all sources (visits, investigations, uploaded lab reports, vitals)
       const record = await metricLookup(userId, targetPatient.id, clinicalQuery.metricTerm);
-      const answer = formatMetricAnswer(targetPatient.fullName, clinicalQuery.metricTerm, record, targetPatient.id);
+      const answer = formatMetricAnswer(targetPatient.fullName, clinicalQuery.metricTerm, record, targetPatient.id, { timeZone: clock.timeZone });
 
       return {
         type: 'answer',

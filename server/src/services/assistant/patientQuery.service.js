@@ -11,6 +11,8 @@
 
 const defaultSupabase = require('../../config/supabaseAdminClient');
 const { reportIdsSharedWithClinician } = require('../reportSharing.service');
+const assistantConfig = require('../../config/assistant.config');
+const { safeTimeZone } = require('./resolvers/datetime');
 
 // Phrases that ask for medical opinion, diagnosis, or normality interpretation
 const DIAGNOSTIC_PATTERN = /\b(?:is\s+.*?\b(?:normal|abnormal|high|low|safe|dangerous|concerning|okay)\b|diagnos\w*|does\s+(?:she|he)\s+have|what\s+should\s+i\s+(?:prescribe|give)|treatment\s+for|medicine\s+for|cure)\b/i;
@@ -406,7 +408,7 @@ async function queryPatientMetric(clinicianId, patientId, targetTerm, options = 
         .from('pregnancy_investigations')
         .select('investigation_name, investigation_key, result_value, result_text, result_unit, performed_on')
         .eq('pregnancy_episode_id', episode.id)
-        .order('performed_on', { ascending: false });
+        .order('performed_on', { ascending: false, nullsFirst: false });
 
       if (investigations?.length) {
         for (const inv of investigations) {
@@ -421,7 +423,6 @@ async function queryPatientMetric(clinicianId, patientId, targetTerm, options = 
                 source: 'Maternity Investigations',
                 sourceType: 'maternity',
               });
-              break;
             }
           }
         }
@@ -446,7 +447,7 @@ async function queryPatientMetric(clinicianId, patientId, targetTerm, options = 
           if (matchesMetricName(m.standard_key, m.raw_key, canonical)) {
             const val = m.reviewed_value ?? m.parsed_value ?? m.raw_value;
             const unit = m.unit_standard || m.unit_raw || '';
-            const reportDate = m.lab_reports?.report_date || (m.lab_reports?.uploaded_at ? m.lab_reports.uploaded_at.split('T')[0] : null);
+            const reportDate = m.lab_reports?.report_date || null;
             if (val != null && val !== '') {
               candidates.push({
                 name: m.standard_key || m.raw_key,
@@ -456,8 +457,8 @@ async function queryPatientMetric(clinicianId, patientId, targetTerm, options = 
                 source: 'Lab Report',
                 sourceType: 'lab_report',
                 reportId: m.lab_reports?.id,
+                uploadedAt: m.lab_reports?.uploaded_at || null,
               });
-              break;
             }
           }
         }
@@ -482,11 +483,10 @@ async function queryPatientMetric(clinicianId, patientId, targetTerm, options = 
             name: v.metric_key,
             value: v.value,
             unit: v.unit || '',
-            date: v.recorded_at ? v.recorded_at.split('T')[0] : null,
+            date: v.recorded_at || null,
             source: 'Vitals Log',
             sourceType: 'vitals',
           });
-          break;
         }
       }
     }
@@ -496,20 +496,25 @@ async function queryPatientMetric(clinicianId, patientId, targetTerm, options = 
 
   if (!candidates.length) return null;
 
-  // Pick the most recent record (date descending)
+  // Compare measurement dates across ALL matching reports. Upload order cannot
+  // identify the latest reading, and an undated report must not displace a
+  // dated measurement just because it was uploaded recently.
+  const timeOf = date => date && Number.isFinite(Date.parse(date)) ? Date.parse(date) : null;
   candidates.sort((a, b) => {
-    const timeA = a.date ? new Date(a.date).getTime() : 0;
-    const timeB = b.date ? new Date(b.date).getTime() : 0;
+    const timeA = timeOf(a.date);
+    const timeB = timeOf(b.date);
+    if (timeA == null) return timeB == null ? (timeOf(b.uploadedAt) || 0) - (timeOf(a.uploadedAt) || 0) : 1;
+    if (timeB == null) return -1;
     return timeB - timeA;
   });
-
+  if (candidates.some(candidate => timeOf(candidate.date) == null)) candidates[0].hasUndatedResults = true;
   return candidates[0];
 }
 
 /**
  * Formats a factual, grounded response for the doctor.
  */
-function formatMetricAnswer(patientName, metricTerm, record, patientId) {
+function formatMetricAnswer(patientName, metricTerm, record, patientId, options = {}) {
   const name = patientName || 'The patient';
   if (!record) {
     const displayTerm = metricTerm ? metricTerm.charAt(0).toUpperCase() + metricTerm.slice(1) : 'value';
@@ -522,10 +527,16 @@ function formatMetricAnswer(patientName, metricTerm, record, patientId) {
 
   const testName = record.name ? record.name.charAt(0).toUpperCase() + record.name.slice(1) : metricTerm;
   const unitStr = record.unit ? ` ${record.unit}` : '';
-  const dateStr = record.date ? ` on ${new Date(record.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : '';
+  const validDate = record.date && Number.isFinite(Date.parse(record.date));
+  const dateStr = validDate ? ` on ${new Date(record.date).toLocaleDateString('en-IN', {
+    day: 'numeric', month: 'short', year: 'numeric',
+    timeZone: /^\d{4}-\d{2}-\d{2}$/.test(record.date) ? 'UTC' : safeTimeZone(options.timeZone, assistantConfig.defaultTimeZone),
+  })}` : '';
   const sourceStr = record.source ? ` from ${record.source}` : '';
 
-  const text = `${name}'s latest recorded ${testName} is ${record.value}${unitStr}${dateStr}${sourceStr}.`;
+  const recency = validDate ? (record.hasUndatedResults ? 'latest dated' : 'latest recorded') : 'recorded';
+  const dateNote = !validDate ? ' Measurement date unavailable.' : record.hasUndatedResults ? ' Other matching results have no measurement date.' : '';
+  const text = `${name}'s ${recency} ${testName} is ${record.value}${unitStr}${dateStr}${sourceStr}.${dateNote}`;
 
   let recordPath = null;
   let recordLabel = 'View Record';
