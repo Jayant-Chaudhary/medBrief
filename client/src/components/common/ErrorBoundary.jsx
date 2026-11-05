@@ -32,6 +32,11 @@ export class ErrorBoundary extends React.Component {
                 {this.state.error.message}
               </p>
             )}
+            {this.state.error?.stack && (
+              <pre className="mt-2 max-h-40 overflow-auto rounded-lg border border-line bg-canvas p-2 text-left text-[11px] font-mono text-ink-soft select-all">
+                {this.state.error.stack}
+              </pre>
+            )}
             <div className="mt-5 flex justify-center gap-3">
               <button
                 type="button"

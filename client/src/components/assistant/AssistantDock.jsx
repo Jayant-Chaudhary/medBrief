@@ -48,7 +48,8 @@ function doneLines(reply) {
 const pageIdOf = (pathname) => pathname.replace(/^\/+|\/+$/g, '').replace(/[^a-z]+/gi, '_').toLowerCase().slice(0, 40) || 'home';
 
 /** Outlines the fields the assistant just filled (pages mark them with data-assistant-id) and scrolls to the first. */
-function highlight(ids) {
+function highlight(ids = []) {
+  if (!Array.isArray(ids)) return;
   const elements = ids.map((id) => document.querySelector(`[data-assistant-id="${CSS.escape(id)}"]`)).filter(Boolean);
   elements[0]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   elements.forEach((element) => {
@@ -726,10 +727,11 @@ const CHECK_NOTE = 'Check the highlighted fields before you save.';
 const FILL_FAILED_NOTE = 'I could not fill in the form, so please enter the details yourself.';
 
 function RequestChecklist({ items }) {
-  if (!items.length) return null;
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return null;
   return (
     <ul aria-label="Request progress" className="mb-2 space-y-1 rounded-lg border border-line bg-canvas p-2 text-xs">
-      {items.map((item, i) => (
+      {list.map((item, i) => (
         <li key={item.id || i} className={`flex items-start gap-1.5 ${item.done ? 'text-primary' : 'text-ink-soft'}`}>
           {item.done ? <Check size={13} className="mt-0.5 shrink-0" /> : <span className="inline-block w-[13px] shrink-0 text-center">·</span>}
           <span className={item.done ? 'line-through opacity-70' : ''}>{item.text || item.item}</span>
@@ -763,9 +765,11 @@ const PENDING_VERB = { click: 'press', type: 'type in', append: 'add to', replac
 
 /** Actions on elements read from the page: done, waiting, refused. */
 function PageLines({ page, states = [], confirm, onAnswer }) {
+  const actions = Array.isArray(page?.actions) ? page.actions : [];
+  const refused = Array.isArray(page?.refused) ? page.refused : [];
   return (
     <>
-      {page.actions.map((action, j) => {
+      {actions.map((action, j) => {
         const state = states[j];
         const label = action.op === 'replace'
           ? `"${action.name}": “${action.find}” → “${action.value}”`
@@ -784,7 +788,7 @@ function PageLines({ page, states = [], confirm, onAnswer }) {
           </span>
         );
       })}
-      {page.refused.map((item) => <Note key={item.name}>Didn’t touch “{item.name}”: {item.reason}.</Note>)}
+      {refused.map((item) => <Note key={item.name}>Didn’t touch “{item.name}”: {item.reason}.</Note>)}
     </>
   );
 }
