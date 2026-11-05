@@ -205,16 +205,22 @@ function detectClinicalQuery(message, patients = []) {
   const canonicalTerm = ALIASES[rawTerm] || rawTerm;
 
   const hasQuestion = QUESTION_INDICATOR.test(text) || text.endsWith('?');
-  const isKnownMetric = KNOWN_METRIC_KEYWORDS.has(rawTerm) || KNOWN_METRIC_KEYWORDS.has(canonicalTerm);
+  const isKnownMetric = KNOWN_METRIC_KEYWORDS.has(rawTerm) || KNOWN_METRIC_KEYWORDS.has(canonicalTerm) || Object.hasOwn(MATCH_ALIASES, rawTerm);
 
   // Before loading the directory, recognize shorthand ending in a known
   // metric. An arbitrary patient name plus arbitrary leftover words is not
   // evidence of a clinical question (e.g. "Asha's card" or "next visit Asha").
-  const knownSuffix = !patients?.length && [...KNOWN_METRIC_KEYWORDS, ...Object.keys(ALIASES)].some(metric => {
+  const knownSuffix = !patients?.length && [...KNOWN_METRIC_KEYWORDS, ...Object.keys(MATCH_ALIASES)].some(metric => {
     const escaped = metric.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return new RegExp(`(?:^|\\s)${escaped}$`, 'i').test(rawTerm);
   });
-  const isClinicalQuery = hasQuestion || isKnownMetric || knownSuffix;
+  // A question mark alone does not make app help a clinical question. Unknown
+  // analytes remain supported when the question names/refers to a patient or
+  // explicitly asks about clinical results; ordinary UI help stays with the
+  // existing planner.
+  const patientReference = Boolean(parsed.candidateName) || /\b(?:her|his|their|this\s+patient|the\s+patient)\b/i.test(text);
+  const clinicalContext = /\b(?:lab(?:oratory)?|analyte|vitals?|test\s+results?|blood\s+results?|measurements?)\b/i.test(text);
+  const isClinicalQuery = isKnownMetric || knownSuffix || (hasQuestion && (patientReference || clinicalContext));
 
   if (!isClinicalQuery || !rawTerm || rawTerm.length < 2) {
     return { isQuery: false };
