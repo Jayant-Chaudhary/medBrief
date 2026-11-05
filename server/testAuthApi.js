@@ -20,7 +20,7 @@ async function testServerApis() {
 
       // 2. Signup endpoint
       console.log('\n--- 2. Testing POST /auth/signup ---');
-      const signupRes = await fetch(`${baseUrl}/auth/signup`, {
+      const signupRes = await fetch(`${baseUrl}/api/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -35,27 +35,25 @@ async function testServerApis() {
       console.log('Signup Status:', signupRes.status);
       console.log('Signup Response:', signupData);
 
-      // 3. Login endpoint
-      console.log('\n--- 3. Testing POST /auth/login ---');
-      const loginRes = await fetch(`${baseUrl}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: testEmail,
-          password: testPassword,
-        }),
+      // 3. Sign in with Supabase Auth directly, as the web and mobile apps do.
+      // The server has no /login: it would sign in on the shared service-role client.
+      console.log('\n--- 3. Signing in through Supabase Auth (anon key) ---');
+      const { createClient } = require('@supabase/supabase-js');
+      const anonClient = createClient(env.supabaseUrl, env.supabaseAnonKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
       });
-      const loginData = await loginRes.json();
-      console.log('Login Status:', loginRes.status);
-      console.log('Login Message:', loginData.message);
-      const accessToken = loginData.session?.access_token;
-      console.log('User Role:', loginData.profile?.role);
+      const { data: signIn, error: signInError } = await anonClient.auth.signInWithPassword({
+        email: testEmail,
+        password: testPassword,
+      });
+      console.log('Sign-in error code:', signInError?.code ?? null);
+      const accessToken = signIn?.session?.access_token;
       console.log('Access Token Received:', Boolean(accessToken));
 
       // 4. Authenticated /auth/me endpoint
       if (accessToken) {
         console.log('\n--- 4. Testing GET /auth/me with JWT Bearer Token ---');
-        const meRes = await fetch(`${baseUrl}/auth/me`, {
+        const meRes = await fetch(`${baseUrl}/api/auth/me`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -68,7 +66,7 @@ async function testServerApis() {
 
       // 5. Logout endpoint
       console.log('\n--- 5. Testing POST /auth/logout ---');
-      const logoutRes = await fetch(`${baseUrl}/auth/logout`, {
+      const logoutRes = await fetch(`${baseUrl}/api/auth/logout`, {
         method: 'POST',
       });
       const logoutData = await logoutRes.json();

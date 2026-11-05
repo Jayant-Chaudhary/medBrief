@@ -629,7 +629,31 @@ async function getLatestSessionByAppointment(appointmentId, doctorUserId = null)
   };
 }
 
+/**
+ * Throws 404/403 unless the user is this session's doctor (or, when
+ * doctorOnly is false, its patient). For routes reached with a normal
+ * login token, which is not bound to a session the way scoped tokens are.
+ */
+async function assertSessionParticipant(sessionId, userId, { doctorOnly = false } = {}) {
+  const { data: session, error } = await supabaseAdmin
+    .from('consult_sessions')
+    .select('id, doctor_id, patient_id')
+    .eq('id', sessionId)
+    .maybeSingle();
+
+  if (error || !session) {
+    throw Object.assign(new Error('Session not found'), { status: 404 });
+  }
+
+  const allowed = doctorOnly ? [session.doctor_id] : [session.doctor_id, session.patient_id];
+  if (!userId || !allowed.includes(userId)) {
+    throw Object.assign(new Error('Not authorized for this consultation'), { status: 403 });
+  }
+  return session;
+}
+
 module.exports = {
+  assertSessionParticipant,
   createSession,
   joinSessionByRoomCode,
   recordSessionConsent,

@@ -56,8 +56,8 @@ module.exports = {
   nodeEnv: process.env.NODE_ENV || 'development',
   _demoSelfVerify: process.env.DEMO_SELF_VERIFY === 'true',
   isSelfVerifyPermitted() {
-    const currentEnv = process.env.NODE_ENV || this.nodeEnv || 'development';
-    if (currentEnv !== 'development' && currentEnv !== 'test') {
+    // Unset NODE_ENV counts as production here: demo shortcuts fail closed.
+    if (!require('./runtimeEnv').isDevOrTest()) {
       return false;
     }
     const configured = this._demoSelfVerify !== undefined

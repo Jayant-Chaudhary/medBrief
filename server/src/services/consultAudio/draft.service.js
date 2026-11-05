@@ -31,7 +31,8 @@ const logger = require('../../utils/logger');
  * @param {string} sessionId
  * @param {Object} [options]
  * @param {string} [options.provider] - 'gemini' | 'local' | 'fake'
- * @param {Object} [options.providerOptions] - Custom provider overrides
+ * @param {Object} [options.providerOptions] - Custom provider overrides (internal callers only)
+ * @param {string} [options.doctorUserId] - Set for human requests; must match the session's doctor
  * @returns {Promise<Object>} Created consult_drafts row
  */
 async function generateDraftForSession(sessionId, options = {}) {
@@ -44,6 +45,14 @@ async function generateDraftForSession(sessionId, options = {}) {
   if (sessErr || !session) {
     const err = new Error('Session not found');
     err.status = 404;
+    throw err;
+  }
+
+  // Requests from a person must come from this session's doctor. The
+  // orchestrator calls without doctorUserId and is trusted.
+  if (options.doctorUserId !== undefined && options.doctorUserId !== session.doctor_id) {
+    const err = new Error('Not authorized to generate a draft for this session');
+    err.status = 403;
     throw err;
   }
 

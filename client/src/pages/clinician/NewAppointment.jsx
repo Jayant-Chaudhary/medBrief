@@ -190,8 +190,10 @@ export default function NewAppointment() {
       setNewQuestions([]);
       setSelectedQuestionIds(new Set(library.map((q) => q.id)));
       showToast(
-        created.isReturningPatient
+        created.patientLinked
           ? 'Appointment added to the existing patient record.'
+          : created.isReturningPatient
+            ? 'Invite sent. The visit links once the patient accepts it.'
           : created.inviteEmailSent ? 'Appointment created and invite sent.' : 'Appointment created; email was not sent. Copy the invite link.'
       );
       return true;
@@ -218,8 +220,10 @@ export default function NewAppointment() {
           {result?.inviteLink && (
             <SectionCard icon="check" title="Visit created" bodyClassName="p-5">
               <p className="mb-3 text-body-md text-ink-2">
-                {result.isReturningPatient
+                {result.patientLinked
                   ? 'Added to the patient’s account — they will see it when they sign in.'
+                  : result.isReturningPatient
+                    ? 'The patient already has an account. The visit links once they accept the invite with their password.'
                   : result.inviteEmailSent
                     ? 'The invite was emailed. Copy the link here if you need to send it another way.'
                     : 'The invite email was not sent. Copy the link to share it with the patient.'}

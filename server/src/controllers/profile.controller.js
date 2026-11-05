@@ -1,14 +1,12 @@
 const supabaseAdmin = require('../config/supabaseAdminClient');
 const env = require('../config/env');
+const { isDevOrTest } = require('../config/runtimeEnv');
 
 function isSelfVerifyPermitted() {
   if (typeof env.isSelfVerifyPermitted === 'function') {
     return env.isSelfVerifyPermitted();
   }
-  const currentEnv = process.env.NODE_ENV || env.nodeEnv || 'development';
-  if (currentEnv !== 'development' && currentEnv !== 'test') {
-    return false;
-  }
+  if (!isDevOrTest()) return false;
   return Boolean(env.demoSelfVerify);
 }
 

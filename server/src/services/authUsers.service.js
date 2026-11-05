@@ -1,4 +1,6 @@
+const { createClient } = require('@supabase/supabase-js');
 const supabaseAdmin = require('../config/supabaseAdminClient');
+const env = require('../config/env');
 
 const PAGE_SIZE = 1000;
 
@@ -23,4 +25,23 @@ async function findAuthUserByEmail(email) {
   }
 }
 
-module.exports = { findAuthUserByEmail };
+/**
+ * Whether this email/password pair signs in. Uses a throwaway anon-key client:
+ * signing in on the shared service-role client would make its later queries
+ * run as this user. Bad credentials resolve false; other failures throw.
+ */
+async function verifyPassword(email, password, clientFactory = createClient) {
+  const client = clientFactory(env.supabaseUrl, env.supabaseAnonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { data, error } = await client.auth.signInWithPassword({ email, password });
+  if (!error) {
+    // Drop the session; we only needed the check.
+    await client.auth.signOut({ scope: 'local' }).catch(() => {});
+    return Boolean(data?.session);
+  }
+  if (error.status === 400 || error.code === 'invalid_credentials') return false;
+  throw error;
+}
+
+module.exports = { findAuthUserByEmail, verifyPassword };

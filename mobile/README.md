@@ -17,7 +17,7 @@ No new Android-specific API or database is required:
 | Look up clinic invitation | `GET /api/auth/invite/:token` |
 | Set up a new invited account | `POST /api/auth/accept-invite` |
 
-The Node `/api/auth/login` endpoint also exists, but the website signs in directly
+There is no Node `/api/auth/login` endpoint; the website signs in directly
 through Supabase. Flutter follows that established path so the SDK manages token
 refresh and session lifecycle. Account credentials work on both clients.
 

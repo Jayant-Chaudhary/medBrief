@@ -7,6 +7,8 @@ const app = require('../../app');
 const supabaseAdmin = require('../../config/supabaseAdminClient');
 const { signSessionToken } = require('../../services/consultAudio/token.service');
 const { ok, mockTables, profileRow } = require('../helpers/supabaseMock');
+const consultConfig = require('../../config/consultAudio.config');
+const { resetSttTestLimits } = require('../../services/consultAudio/sttTestLimiter.service');
 
 jest.mock('../../config/supabaseAdminClient', () => ({
   auth: {
@@ -24,8 +26,17 @@ describe('Consult Audio HTTP Endpoints', () => {
   const doctorUser = { id: 'doc-user-1', email: 'doctor@example.com' };
   const patientUser = { id: 'patient-user-1', email: 'patient@example.com' };
 
+  const configuredDraftProvider = consultConfig.draftModelProvider;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    resetSttTestLimits();
+    // Draft generation uses the server-configured provider only.
+    consultConfig.draftModelProvider = 'fake';
+  });
+
+  afterAll(() => {
+    consultConfig.draftModelProvider = configuredDraftProvider;
   });
 
   describe('GET /api/time (Clock Handshake)', () => {
@@ -637,6 +648,75 @@ describe('Consult Audio HTTP Endpoints', () => {
       expect(res.body).toHaveProperty('latencyMs');
       expect(res.body).toHaveProperty('provider');
     });
+
+    test('limits how often one user can call the paid STT provider', async () => {
+      const doctorToken = signSessionToken({
+        sessionId: 'sess-100',
+        userId: doctorUser.id,
+        role: 'doctor',
+        device: 'doctor',
+      });
+      const call = () => request(app)
+        .post('/api/consults/test-stt')
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .set('Content-Type', 'audio/webm')
+        .send(Buffer.from('synthetic-test-speech-chunk'));
+
+      for (let i = 0; i < consultConfig.sttTestMaxPerWindow; i += 1) {
+        expect((await call()).status).toBe(200);
+      }
+      const limited = await call();
+      expect(limited.status).toBe(429);
+      expect(limited.headers['retry-after']).toBeDefined();
+    });
+
+    test('refuses a session-specific STT test from a clinician who is not its doctor', async () => {
+      supabaseAdmin.auth.getUser.mockResolvedValue({ data: { user: { id: 'other-doc' } }, error: null });
+      mockTables(supabaseAdmin, {
+        profiles: profileRow('clinician'),
+        consult_sessions: ok({ id: 'sess-100', doctor_id: doctorUser.id, patient_id: patientUser.id }),
+      });
+
+      const res = await request(app)
+        .post('/api/consults/sess-100/test-stt')
+        .set('Authorization', 'Bearer valid-other-doc-token')
+        .set('Content-Type', 'audio/webm')
+        .send(Buffer.from('synthetic-test-speech-chunk'));
+
+      expect(res.status).toBe(403);
+    });
+  });
+
+  describe('GET /api/consults/:id/gaps', () => {
+    test('refuses a signed-in user who is not part of the session', async () => {
+      supabaseAdmin.auth.getUser.mockResolvedValue({ data: { user: { id: 'stranger' } }, error: null });
+      const chains = mockTables(supabaseAdmin, {
+        profiles: profileRow('patient'),
+        consult_sessions: ok({ id: 'sess-100', doctor_id: doctorUser.id, patient_id: patientUser.id }),
+      });
+
+      const res = await request(app)
+        .get('/api/consults/sess-100/gaps')
+        .set('Authorization', 'Bearer valid-stranger-token');
+
+      expect(res.status).toBe(403);
+      expect(chains.consult_audio_gaps).toBeUndefined();
+    });
+
+    test('returns gaps to the session patient', async () => {
+      supabaseAdmin.auth.getUser.mockResolvedValue({ data: { user: patientUser }, error: null });
+      mockTables(supabaseAdmin, {
+        profiles: profileRow('patient'),
+        consult_sessions: ok({ id: 'sess-100', doctor_id: doctorUser.id, patient_id: patientUser.id }),
+        consult_audio_gaps: ok([]),
+      });
+
+      const res = await request(app)
+        .get('/api/consults/sess-100/gaps')
+        .set('Authorization', 'Bearer valid-patient-token');
+
+      expect(res.status).toBe(200);
+    });
   });
 
   describe('Clinical Notes Drafting Endpoints (Phase 8)', () => {
@@ -755,7 +835,7 @@ describe('Consult Audio HTTP Endpoints', () => {
         provider: 'fake',
       };
 
-      mockTables(supabaseAdmin, {
+      const chains = mockTables(supabaseAdmin, {
         consult_sessions: ok(mockSession),
         segments: ok(mockSegments),
         audio_chunks: ok([]),
@@ -767,15 +847,45 @@ describe('Consult Audio HTTP Endpoints', () => {
         session_consents: ok([]),
         session_devices: ok([]),
       });
+      const fetchSpy = jest.spyOn(global, 'fetch');
 
+      // A caller-chosen provider and endpoint must be ignored.
       const res = await request(app)
         .post('/api/consults/sess-100/draft/generate')
         .set('Authorization', `Bearer ${doctorToken}`)
-        .send({ provider: 'fake', providerOptions: { simulatedLatencyMs: 0 } });
+        .send({ provider: 'local', providerOptions: { url: 'https://attacker.example/collect' } });
 
       expect(res.status).toBe(201);
       expect(res.body.id).toBe('draft-new');
       expect(res.body.status).toBe('needs_review');
+      expect(chains.consult_drafts[0].insert).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'fake' })
+      );
+      expect(fetchSpy).not.toHaveBeenCalledWith('https://attacker.example/collect', expect.anything());
+      fetchSpy.mockRestore();
+    });
+
+    test('POST /api/consults/:id/draft/generate refuses a clinician who is not the session doctor', async () => {
+      supabaseAdmin.auth.getUser.mockResolvedValue({ data: { user: { id: 'other-doc' } }, error: null });
+      const chains = mockTables(supabaseAdmin, {
+        profiles: profileRow('clinician'),
+        consult_sessions: ok({
+          id: 'sess-100',
+          appointment_id: 'appt-100',
+          doctor_id: doctorUser.id,
+          patient_id: patientUser.id,
+          status: 'processing',
+        }),
+      });
+
+      const res = await request(app)
+        .post('/api/consults/sess-100/draft/generate')
+        .set('Authorization', 'Bearer valid-other-doc-token')
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(chains.segments).toBeUndefined();
+      expect(chains.consult_drafts).toBeUndefined();
     });
   });
 });
