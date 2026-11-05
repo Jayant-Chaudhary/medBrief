@@ -30,8 +30,8 @@ const ALIASES = {
   'heamoglobin': 'haemoglobin',
   'hemaglobin': 'haemoglobin',
   'bp': 'blood pressure',
-  'systolic': 'blood pressure',
-  'diastolic': 'blood pressure',
+  'systolic': 'blood pressure systolic',
+  'diastolic': 'blood pressure diastolic',
   'fhr': 'fetal heart rate',
   'fetal heart': 'fetal heart rate',
   'wt': 'weight',
@@ -57,6 +57,23 @@ const ALIASES = {
   'sgot': 'ast',
 };
 
+const MATCH_ALIASES = {
+  ...ALIASES,
+  // Whole-label equivalents used by the existing metric dictionary/schema.
+  'platelet count': 'platelets',
+  'plt': 'platelets',
+  'serum ferritin': 'ferritin',
+  'ferritin serum': 'ferritin',
+  'serum iron': 'iron',
+  'total calcium': 'calcium',
+  'calcium total': 'calcium',
+  'calcium, total': 'calcium',
+  'serum calcium': 'calcium',
+  'blood glucose fasting': 'fasting blood glucose',
+  'blood glucose random': 'random blood glucose',
+  'blood glucose pp': 'postprandial blood glucose',
+};
+
 // Set of recognized clinical nutrients and metrics
 const KNOWN_METRIC_KEYWORDS = new Set([
   'hemoglobin', 'haemoglobin', 'hb', 'hgb', 'bp', 'blood pressure', 'systolic', 'diastolic',
@@ -74,16 +91,15 @@ const KNOWN_METRIC_KEYWORDS = new Set([
  * Normalizes British/American spellings (e.g. haemoglobin vs hemoglobin) and guards against empty strings.
  */
 function matchesMetricName(candidateKey, candidateName, targetTerm) {
-  if (!targetTerm) return false;
-  const term = String(targetTerm).toLowerCase().replace(/haem/g, 'hem').replace(/[^a-z0-9]/g, '');
+  const identity = value => {
+    const label = String(value || '').normalize('NFKC').toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return (MATCH_ALIASES[label] || label).replace(/haem/g, 'hem').replace(/[^a-z0-9]/g, '');
+  };
+  const term = identity(targetTerm);
   if (!term || term.length < 2) return false;
-
-  const key = candidateKey ? String(candidateKey).toLowerCase().replace(/haem/g, 'hem').replace(/[^a-z0-9]/g, '') : '';
-  const name = candidateName ? String(candidateName).toLowerCase().replace(/haem/g, 'hem').replace(/[^a-z0-9]/g, '') : '';
-
-  if (key && (key === term || key.includes(term) || (key.length >= 3 && term.includes(key)))) return true;
-  if (name && (name === term || name.includes(term) || (name.length >= 4 && term.includes(name)))) return true;
-  return false;
+  // A recorded standard key takes precedence over its display label. Never
+  // conflate two tests because one name contains part of another name.
+  return identity(candidateKey || candidateName) === term;
 }
 
 /**
@@ -295,6 +311,14 @@ async function queryPatientMetric(clinicianId, patientId, targetTerm, options = 
               sourceType: 'maternity',
             });
             break;
+          }
+          if (['blood pressure systolic', 'blood pressure diastolic'].includes(canonical)) {
+            const value = canonical === 'blood pressure systolic' ? v.bp_systolic : v.bp_diastolic;
+            if (value != null) {
+              candidates.push({ name: canonical === 'blood pressure systolic' ? 'Systolic blood pressure' : 'Diastolic blood pressure',
+                value, unit: 'mmHg', date: v.visit_date, source: 'Antenatal Visit', sourceType: 'maternity' });
+              break;
+            }
           }
           if (canonical === 'weight' && v.weight_kg != null) {
             candidates.push({
