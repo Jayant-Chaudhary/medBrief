@@ -37,6 +37,7 @@ describe('New Visit Reachable by Name (T3)', () => {
       userId: 'dr-1',
       directory: async () => patients,
       settings,
+      now: () => Date.parse("2026-11-04T04:00:00Z"),
     });
     expect(res).toMatchObject({
       type: 'navigate',
@@ -61,6 +62,7 @@ describe('New Visit Reachable by Name (T3)', () => {
       directory: async () => patients,
       provider,
       settings,
+      now: () => Date.parse("2026-11-04T04:00:00Z"),
     });
     expect(res.type).toBe('run');
     expect(res.steps[0].path).toBe('/clinician/appointments/new?patient=p-asha');
@@ -84,6 +86,7 @@ describe('New Visit Reachable by Name (T3)', () => {
       directory: async () => patients,
       provider,
       settings,
+      now: () => Date.parse("2026-11-04T04:00:00Z"),
     });
     expect(res.steps[0].path).toBe('/clinician?appointment=v-100');
   });
@@ -105,6 +108,7 @@ describe('New Visit Reachable by Name (T3)', () => {
       directory: async () => patients,
       provider,
       settings,
+      now: () => Date.parse("2026-11-04T04:00:00Z"),
     });
     expect(res.steps[0].path).toBe('/clinician?appointment=v-101');
   });
@@ -118,6 +122,7 @@ describe('New Visit Reachable by Name (T3)', () => {
       currentPath: '/clinician',
       directory: async () => patients,
       settings,
+      now: () => Date.parse("2026-11-04T04:00:00Z"),
     });
     expect(res.type).toBe('run');
     expect(res.steps[0].page.actions[0]).toMatchObject({
