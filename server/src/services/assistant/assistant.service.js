@@ -869,28 +869,41 @@ async function handleStep({
 
       // 1. If a specific patient name was typed in the question
       if (clinicalQuery.candidateName) {
-        const resolved = resolvePatient(clinicalQuery.candidateName, patients);
-        if (resolved.status === 'one') {
-          targetPatient = resolved.patient;
-        } else if (resolved.status === 'many') {
-          return {
-            type: 'choose',
-            message: 'Which patient did you mean?',
-            options: resolved.matches.map(p => ({
-              label: p.fullName,
-              steps: [{ do: 'find_patient', page: 'none', patient: p.fullName, which: 'none', when: '', fields: [], press: 'none' }],
-            })),
-            source: 'clinical_record',
-            attempts: 0,
-          };
+        // If the active patient on screen matches the candidate name, prefer the active patient
+        const activeMatch = current?.patientId && patients.find(p => p.id === current.patientId);
+        if (activeMatch && [activeMatch.fullName, String(activeMatch.fullName || '').split(' ')[0]].some(
+          n => n && n.toLowerCase() === clinicalQuery.candidateName.toLowerCase()
+        )) {
+          targetPatient = activeMatch;
         } else {
-          return {
-            type: 'clarify',
-            message: NOT_FOUND,
-            options: [],
-            source: 'clinical_record',
-            attempts: 0,
-          };
+          const resolved = resolvePatient(clinicalQuery.candidateName, patients);
+          if (resolved.status === 'one') {
+            targetPatient = resolved.patient;
+          } else if (resolved.status === 'many') {
+            const onScreenMatch = current?.patientId && resolved.matches.find(p => p.id === current.patientId);
+            if (onScreenMatch) {
+              targetPatient = onScreenMatch;
+            } else {
+              return {
+                type: 'choose',
+                message: 'Which patient did you mean?',
+                options: resolved.matches.map(p => ({
+                  label: p.fullName,
+                  steps: [{ do: 'open_maternity_card', page: 'maternity', patient: p.fullName, which: 'none', when: '', fields: [], press: 'none' }],
+                })),
+                source: 'clinical_record',
+                attempts: 0,
+              };
+            }
+          } else {
+            return {
+              type: 'clarify',
+              message: NOT_FOUND,
+              options: [],
+              source: 'clinical_record',
+              attempts: 0,
+            };
+          }
         }
       }
 

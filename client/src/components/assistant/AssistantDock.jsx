@@ -860,7 +860,9 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
                 )}
                 {started && Array.isArray(item.skipped) && item.skipped.map((skip) => <Note key={skip.label}>Didn’t fill {skip.label}: {skip.reason}.</Note>)}
                 {started && item.notice && <Note>{item.notice}</Note>}
-                {item.press && <PressLine press={item.press} state={result.press} />}
+                {item.press && item.press.id && item.press.id !== 'none' && item.press.label && (
+                  <PressLine press={item.press} state={result.press} />
+                )}
                 {confirm && result.press === 'confirming' && (
                   <ConfirmCard {...confirm} onConfirm={() => onAnswer(true)} onCancel={() => onAnswer(false)} />
                 )}
