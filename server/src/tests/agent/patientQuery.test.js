@@ -258,8 +258,9 @@ describe('Clinical Patient Q&A Query Engine', () => {
         recordLookup: async () => ({ id: 'apt-1', patient_id: 'pat-1' }),
       });
 
-      expect(reply.type).toBe('answer');
-      expect(reply.text).toContain('do not diagnose');
+      expect(reply.type).toBe('unsupported');
+      expect(reply.message).toContain('do not diagnose');
     });
   });
 });
+

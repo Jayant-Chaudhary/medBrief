@@ -15,11 +15,11 @@ const { reportIdsSharedWithClinician } = require('../reportSharing.service');
 // Phrases that ask for medical opinion, diagnosis, or normality interpretation
 const DIAGNOSTIC_PATTERN = /\b(?:is\s+.*?\b(?:normal|abnormal|high|low|safe|dangerous|concerning|okay)\b|diagnos\w*|does\s+(?:she|he)\s+have|what\s+should\s+i\s+(?:prescribe|give)|treatment\s+for|medicine\s+for|cure)\b/i;
 
-// Action commands (opening, filling, adding, booking) are never Q&A requests
-const ACTION_COMMANDS = /\b(?:add|save|open|book|type|click|fill|write|create|go\s+to|press|enter|submit|tick|untick|finish|mark)\b/i;
+// Action commands (opening, filling, adding, booking, searching) are never Q&A requests
+const ACTION_COMMANDS = /\b(?:add|save|open|book|type|click|fill|write|create|go\s+to|press|enter|submit|tick|untick|finish|mark|find|search)\b/i;
 
 // Regex patterns to identify a clinical metric question and extract the test/vital name
-const QUESTION_INDICATOR = /\b(?:what(?:'?s|\s+is|\s+was)?|how\s+much\s+is|show\s+me|tell\s+me)\b|^(?:check|get|find)\b/i;
+const QUESTION_INDICATOR = /\b(?:what(?:'?s|\s+is|\s+was)?|how\s+much\s+is|show\s+me|tell\s+me)\b|^(?:check|get)\b/i;
 
 // Words to strip when extracting the analyte / test name
 const FILLER_WORDS = /^(?:the|her|his|patient(?:'?s)?|latest|recent|last|recorded|current|value\s+of|level\s+of|result\s+of|reading\s+of|status\s+of)\s+/i;

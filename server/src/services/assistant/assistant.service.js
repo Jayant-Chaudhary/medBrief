@@ -735,8 +735,8 @@ async function handleStep({
     const earlyQuery = detectClinicalQuery(message);
     if (earlyQuery.isQuery && earlyQuery.isDiagnostic) {
       return {
-        type: 'answer',
-        text: 'I can look up recorded test results, vitals, and investigations for you, but I do not diagnose or interpret clinical normality.',
+        type: 'unsupported',
+        message: 'I can look up recorded test results, vitals, and investigations for you, but I do not diagnose or interpret clinical normality.',
         source: 'clinical_record',
         attempts: 0,
       };
@@ -854,8 +854,8 @@ async function handleStep({
     if (clinicalQuery.isQuery) {
       if (clinicalQuery.isDiagnostic) {
         return {
-          type: 'answer',
-          text: 'I can look up recorded test results, vitals, and investigations for you, but I do not diagnose or interpret clinical normality.',
+          type: 'unsupported',
+          message: 'I can look up recorded test results, vitals, and investigations for you, but I do not diagnose or interpret clinical normality.',
           source: 'clinical_record',
           attempts: 0,
         };

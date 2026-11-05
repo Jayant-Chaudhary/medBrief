@@ -77,7 +77,14 @@ export default function AssistantDock({ enabled = ENABLED }) {
       const saved = localStorage.getItem('assistant_dock_pos');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') return parsed;
+        if (
+          typeof parsed?.x === 'number' &&
+          typeof parsed?.y === 'number' &&
+          Number.isFinite(parsed.x) &&
+          Number.isFinite(parsed.y)
+        ) {
+          return parsed;
+        }
       }
     } catch (_) {}
     return null;
@@ -247,12 +254,16 @@ export default function AssistantDock({ enabled = ENABLED }) {
 
   function getDialogStyle() {
     if (!dockPos || typeof window === 'undefined' || window.innerWidth < 640) return undefined;
+    if (typeof dockPos.x !== 'number' || typeof dockPos.y !== 'number' || !Number.isFinite(dockPos.x) || !Number.isFinite(dockPos.y)) {
+      return undefined;
+    }
     const DIALOG_W = 360;
     const DIALOG_H = 480;
     let left = dockPos.x + 56 > window.innerWidth / 2 ? dockPos.x + 56 - DIALOG_W : dockPos.x;
     let top = dockPos.y + 56 > window.innerHeight / 2 ? dockPos.y + 56 - DIALOG_H : dockPos.y;
     left = Math.max(12, Math.min(window.innerWidth - DIALOG_W - 12, left));
     top = Math.max(12, Math.min(window.innerHeight - DIALOG_H - 12, top));
+    if (!Number.isFinite(left) || !Number.isFinite(top)) return undefined;
     return {
       position: 'fixed',
       left: `${left}px`,
@@ -576,8 +587,12 @@ export default function AssistantDock({ enabled = ENABLED }) {
     <>
       {!open && (
         <div
-          style={dockPos ? { left: `${dockPos.x}px`, top: `${dockPos.y}px`, bottom: 'auto', right: 'auto' } : undefined}
-          className={`${dockPos ? 'fixed' : 'fixed bottom-5 right-5'} z-40 touch-none select-none`}
+          style={
+            dockPos && Number.isFinite(dockPos.x) && Number.isFinite(dockPos.y)
+              ? { left: `${dockPos.x}px`, top: `${dockPos.y}px`, bottom: 'auto', right: 'auto' }
+              : undefined
+          }
+          className={`${dockPos && Number.isFinite(dockPos.x) ? 'fixed' : 'fixed bottom-5 right-5'} z-40 touch-none select-none`}
         >
           {/* Animated Glow Highlight Ring */}
           <span
@@ -782,18 +797,19 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
   if (reply.type === 'unsupported') {
     return (
       <div className="space-y-1 text-sm text-ink-soft">
-        <p>{reply.message || 'Couldn’t complete this request.'}</p>
+        <p>{typeof reply.message === 'string' ? reply.message : 'Couldn’t complete this request.'}</p>
       </div>
     );
   }
 
   if (reply.type === 'answer') {
+    const answerText = typeof reply.text === 'string' ? reply.text : (reply.text ? String(reply.text) : (reply.message || ''));
     return (
       <div className="space-y-1.5 text-sm">
         <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
           {reply.source === 'clinical_record' ? 'Patient Record' : 'Assistant tip'}
         </p>
-        <p className="text-ink leading-relaxed">{reply.text}</p>
+        <p className="text-ink leading-relaxed">{answerText}</p>
         {reply.recordPath && (
           <button
             type="button"
@@ -807,23 +823,31 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
     );
   }
 
-  if (reply.type === 'done') return <p style={{ whiteSpace: 'pre-line' }} className="flex items-center gap-1.5 text-sm text-primary"><Check size={15} aria-hidden="true" />{reply.message || 'Completed.'}</p>;
+  if (reply.type === 'done') {
+    return (
+      <p style={{ whiteSpace: 'pre-line' }} className="flex items-center gap-1.5 text-sm text-primary">
+        <Check size={15} aria-hidden="true" />
+        {typeof reply.message === 'string' ? reply.message : 'Completed.'}
+      </p>
+    );
+  }
 
   if (reply.type === 'run') {
-    const finished = !running && progress >= reply.steps.length;
-    const filledFields = reply.steps.some((item, index) => item.fill?.filled && results[index]?.fill === 'filled');
-    const saves = reply.steps.some((item) => item.press && item.press.effect !== 'ui');
+    const stepsList = Array.isArray(reply.steps) ? reply.steps : [];
+    const finished = !running && progress >= stepsList.length;
+    const filledFields = stepsList.some((item, index) => item.fill?.filled && results[index]?.fill === 'filled');
+    const saves = stepsList.some((item) => item.press && item.press.effect !== 'ui');
     return (
       <div className="space-y-1 text-sm">
         <ol className="space-y-1">
-          {reply.steps.map((item, index) => {
+          {stepsList.map((item, index) => {
             const started = index < progress;
             const result = results[index] || {};
             return (
               <li key={`${item.path ?? 'here'}-${index}`} className="space-y-1">
                 {(item.path || (!started && !item.page)) && <Line done={started}>{started ? 'Opened' : 'Next:'} {item.label}</Line>}
                 {item.page && <PageLines page={item.page} states={result.page} confirm={confirm} onAnswer={onAnswer} />}
-                {result.fill === 'filled' && (item.fill.filled
+                {result.fill === 'filled' && (Array.isArray(item.fill?.filled)
                   ? item.fill.filled.map((field) => <Line key={field.id} done>{field.label}: {field.value}</Line>)
                   : <Note>{FILLED_NOTE}</Note>)}
                 {result.fill === 'failed' && <Note>{FILL_FAILED_NOTE}</Note>}
@@ -831,7 +855,7 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
                 {confirm && result.fill === 'confirming' && (
                   <ConfirmCard {...confirm} onConfirm={() => onAnswer(true)} onCancel={() => onAnswer(false)} />
                 )}
-                {started && item.skipped?.map((skip) => <Note key={skip.label}>Didn’t fill {skip.label}: {skip.reason}.</Note>)}
+                {started && Array.isArray(item.skipped) && item.skipped.map((skip) => <Note key={skip.label}>Didn’t fill {skip.label}: {skip.reason}.</Note>)}
                 {started && item.notice && <Note>{item.notice}</Note>}
                 {item.press && <PressLine press={item.press} state={result.press} />}
                 {confirm && result.press === 'confirming' && (
@@ -855,13 +879,14 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
   }
 
   if (reply.type === 'choose') {
+    const options = Array.isArray(reply.options) ? reply.options : [];
     return (
       <div className="space-y-1.5 text-sm">
         <p className="text-ink-soft">{reply.prompt}</p>
         <div className="flex flex-col gap-2">
-          {reply.options.map((option) => (
+          {options.map((option, optIdx) => (
             <button
-              key={option.steps[0]?.path ?? option.label}
+              key={option.steps?.[0]?.path ?? option.label ?? optIdx}
               type="button"
               onClick={() => onPickPatient(option)}
               disabled={running || step.chosen}
@@ -888,16 +913,16 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
   }
 
   if (reply.type === 'clarify') {
-    const options = reply.options || [];
+    const options = Array.isArray(reply.options) ? reply.options : [];
     return (
       <div className="space-y-1.5 text-sm">
         <p className="text-ink-soft">{reply.message || (options.length ? 'Did you mean:' : 'Please clarify what you want to do.')}</p>
         {options.length > 0 && <div className="flex flex-wrap gap-2">
-          {options.map((option) => (
+          {options.map((option, optIdx) => (
             <button
-              key={option.path}
+              key={option.path ?? option.label ?? optIdx}
               type="button"
-              onClick={() => onChoose(option.path)}
+              onClick={() => onChoose?.(option.path)}
               aria-pressed={chosen === option.path}
               className="rounded-full border border-line px-3 py-1 hover:border-primary hover:text-primary aria-pressed:border-primary aria-pressed:text-primary"
             >
