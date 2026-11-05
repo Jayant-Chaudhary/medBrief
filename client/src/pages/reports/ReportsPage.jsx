@@ -6,8 +6,10 @@ import { useToast } from '../../context/ToastContext';
 import UploadZone from '../../components/reports/UploadZone';
 import ReportCard from '../../components/reports/ReportCard';
 import AppointmentSharePicker from '../../components/reports/AppointmentSharePicker';
+import NameMismatchModal from '../../components/reports/NameMismatchModal';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { useAssistantControls } from '../../components/assistant/AssistantBridge.jsx';
 
 /**
  * The patient's report library.
@@ -21,7 +23,38 @@ export default function ReportsPage() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [nameMismatch, setNameMismatch] = useState(null);
   const { showToast } = useToast();
+
+  useAssistantControls(
+    'reports',
+    {
+      buttons: {
+        trigger_upload: {
+          run: () => {
+            document.querySelector('[data-assistant-id="reports.trigger_upload"]')?.click();
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Open report file picker' }],
+        },
+        share_all: {
+          run: async () => {
+            if (!activeAppointment?.id) {
+              showToast('No active appointment selected to share with.', 'info');
+              return false;
+            }
+            await reportService.shareAllWithAppointment(activeAppointment.id);
+            await loadReports();
+            showToast('All reports shared with your doctor for this visit.', 'success');
+            return true;
+          },
+          summary: () => [{ label: 'Action', value: 'Share reports with upcoming appointment' }],
+          available: () => Boolean(activeAppointment?.id),
+        },
+      },
+    },
+    { ready: !loading }
+  );
 
   const loadReports = useCallback(async () => {
     try {
@@ -37,13 +70,14 @@ export default function ReportsPage() {
     loadReports();
   }, [loadReports]);
 
-  const handleUpload = async (file) => {
+  const handleUpload = async (file, { confirmNameMismatch = false } = {}) => {
     setUploading(true);
     showToast('Uploading and reading your report…', 'info');
 
     try {
+      // Upload saves to the patient library without automatic sharing
       const result = await reportService.uploadReport(file, {
-        appointmentId: activeAppointment?.id,
+        confirmNameMismatch,
       });
 
       const found = result?.metrics?.length ?? 0;
@@ -56,10 +90,25 @@ export default function ReportsPage() {
 
       await loadReports();
     } catch (err) {
-      showToast(err.message || 'Failed to upload report.', 'error');
+      if (err.code === 'REPORT_NAME_MISMATCH' || err.code === 'REPORT_NAME_UNREADABLE') {
+        setNameMismatch({ file, ...err.details });
+      } else {
+        showToast(err.message || 'Failed to upload report.', 'error');
+      }
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleCancelNameMismatch = () => {
+    setNameMismatch(null);
+    showToast('Upload cancelled. The report was not saved.', 'info');
+  };
+
+  const handleProceedNameMismatch = () => {
+    const { file } = nameMismatch;
+    setNameMismatch(null);
+    handleUpload(file, { confirmNameMismatch: true });
   };
 
   const handleRemove = async (id) => {
@@ -72,26 +121,30 @@ export default function ReportsPage() {
     }
   };
 
-  /** Optimistic toggle — a sharing switch that lags feels broken. */
-  const handleToggleShare = async (report, appointmentId, shouldShare) => {
-    const previous = report.shared_appointment_ids ?? [];
-    const next = shouldShare
-      ? [...previous, appointmentId]
-      : previous.filter((id) => id !== appointmentId);
+  /** Optimistic toggle with functional state updates to prevent stale closure races. */
+  const handleToggleShare = async (reportOrId, appointmentId, shouldShare) => {
+    const reportId = typeof reportOrId === 'object' ? reportOrId.id : reportOrId;
+    let previous = [];
 
-    setReports((current) =>
-      current.map((r) => (r.id === report.id ? { ...r, shared_appointment_ids: next } : r))
-    );
+    setReports((current) => {
+      const target = current.find((r) => r.id === reportId);
+      previous = target?.shared_appointment_ids ?? [];
+      const next = shouldShare
+        ? [...new Set([...previous, appointmentId])]
+        : previous.filter((id) => id !== appointmentId);
+
+      return current.map((r) => (r.id === reportId ? { ...r, shared_appointment_ids: next } : r));
+    });
 
     try {
       if (shouldShare) {
-        await reportService.shareWithAppointment(report.id, appointmentId);
+        await reportService.shareWithAppointment(reportId, appointmentId);
       } else {
-        await reportService.unshareFromAppointment(report.id, appointmentId);
+        await reportService.unshareFromAppointment(reportId, appointmentId);
       }
     } catch (err) {
       setReports((current) =>
-        current.map((r) => (r.id === report.id ? { ...r, shared_appointment_ids: previous } : r))
+        current.map((r) => (r.id === reportId ? { ...r, shared_appointment_ids: previous } : r))
       );
       showToast(err.message || 'Could not update sharing.', 'error');
     }
@@ -109,7 +162,11 @@ export default function ReportsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-1">
           <div className="sticky top-24 space-y-4">
-            <UploadZone onUpload={handleUpload} disabled={uploading} />
+            <UploadZone
+              onUpload={handleUpload}
+              onBusy={() => showToast('Please wait for the current upload to finish.', 'info')}
+              disabled={uploading}
+            />
             {uploading && (
               <p className="text-sm text-primary font-bold flex items-center justify-center gap-2">
                 <span className="animate-spin inline-block">⏳</span> Reading your document…
@@ -148,6 +205,12 @@ export default function ReportsPage() {
           )}
         </div>
       </div>
+
+      <NameMismatchModal
+        mismatch={nameMismatch}
+        onCancel={handleCancelNameMismatch}
+        onProceed={handleProceedNameMismatch}
+      />
     </div>
   );
 }

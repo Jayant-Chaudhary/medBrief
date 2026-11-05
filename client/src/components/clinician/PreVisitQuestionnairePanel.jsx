@@ -10,41 +10,52 @@ import { formatDate } from '../../utils/format.js';
  * clinician reads risk before reading the rest.
  */
 export function PreVisitQuestionnairePanel({ questionnaire }) {
-  const [open, setOpen] = useState(true);
   const answers = questionnaire?.answers ?? [];
   const flagged = countRedFlags(answers);
+
+  // Progressive disclosure: Red flags stay open for safety. Normal answers fold to a compact 1-line verification card.
+  const [open, setOpen] = useState(() => flagged > 0);
 
   // Red flags first, then everything else in original order.
   const ordered = [...answers].sort((a, b) => Number(isRedFlag(b)) - Number(isRedFlag(a)));
 
   return (
-    <section className="card shrink-0 overflow-hidden">
+    <section className="card shrink-0 overflow-hidden border border-slate-200/90 shadow-sm bg-white" data-assistant-private="">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-subcanvas/60"
+        className="flex w-full items-center justify-between gap-3 px-5 py-3 text-left transition-colors hover:bg-subcanvas/50"
       >
-        <Icon
-          name="chevronDown"
-          size={18}
-          className={`shrink-0 text-ink-3 transition-transform duration-250 ${open ? '' : '-rotate-90'}`}
-        />
-        <h2 className="font-display text-head-sm text-ink">Pre-Visit Questionnaire</h2>
+        <div className="flex items-center gap-3">
+          <Icon
+            name="chevronDown"
+            size={18}
+            className={`shrink-0 text-ink-3 transition-transform duration-200 ${open ? '' : '-rotate-90'}`}
+          />
+          <h2 className="font-display text-head-sm font-semibold text-ink">Pre-Visit Questionnaire</h2>
 
-        {flagged > 0 ? (
-          <Chip status="elevated" withDot>
-            {flagged} red flag{flagged > 1 ? 's' : ''}
-          </Chip>
-        ) : (
-          <Chip status="optimal" withDot>
-            No red flags
-          </Chip>
-        )}
+          {flagged > 0 ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-300 bg-rose-50 px-3 py-0.5 text-xs font-bold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
+              <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
+              {flagged} red flag{flagged > 1 ? 's' : ''} reported
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-0.5 text-xs font-semibold text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              Verified · No red flags
+            </span>
+          )}
+        </div>
 
-        <span className="ml-auto hidden text-body-sm text-ink-3 sm:block">
-          Submitted {formatDate(questionnaire?.submittedAt)} · {answers.length} answers
-        </span>
+        <div className="flex items-center gap-2 text-body-sm text-ink-soft">
+          <span className="hidden sm:inline">
+            {open ? `Submitted ${formatDate(questionnaire?.submittedAt)}` : 'Click to inspect answers'}
+          </span>
+          <span className="rounded-full bg-subcanvas px-2 py-0.5 text-xs font-semibold text-ink-2 border border-line">
+            {answers.length} answers
+          </span>
+        </div>
       </button>
 
       {open && (
@@ -56,20 +67,24 @@ export function PreVisitQuestionnairePanel({ questionnaire }) {
             return (
               <article
                 key={answer.id}
-                className={`rounded-xl border p-3 ${
-                  flag ? 'border-terracotta-border bg-terracotta-surface' : 'border-line bg-subcanvas'
+                className={`rounded-xl border p-3.5 transition-all ${
+                  flag
+                    ? 'border-rose-200 bg-rose-50/70 dark:border-rose-900/60 dark:bg-rose-950/40 shadow-xs'
+                    : 'border-line bg-subcanvas/70'
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <h3
-                    className={`font-display text-label-md uppercase ${flag ? 'text-terracotta' : 'text-ink-2'}`}
+                    className={`font-display text-label-md font-semibold uppercase tracking-wide ${
+                      flag ? 'text-rose-900 dark:text-rose-300' : 'text-ink'
+                    }`}
                   >
                     {answer.shortLabel}
                   </h3>
                   {answer.responseType !== 'text' && (
                     <span
-                      className={`shrink-0 rounded-full px-2 py-0.5 text-label-sm uppercase ${
-                        flag ? 'bg-terracotta text-white' : 'bg-line/70 text-ink-2'
+                      className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider ${
+                        flag ? 'bg-rose-600 text-white shadow-xs' : 'bg-subcanvas text-ink-2 border border-line'
                       }`}
                     >
                       {answer.answer ? 'Yes' : 'No'}
@@ -80,7 +95,7 @@ export function PreVisitQuestionnairePanel({ questionnaire }) {
                   <p className="mt-1.5 whitespace-pre-wrap text-body-md text-ink">{answer.answerText}</p>
                 )}
                 {answer.detail && (
-                  <p className={`mt-1.5 text-body-sm ${flag ? 'text-terracotta-deep' : 'text-ink-2'}`}>
+                  <p className={`mt-1.5 text-body-sm ${flag ? 'text-terracotta-deep dark:text-terracotta' : 'text-ink-2'}`}>
                     {answer.detail}
                   </p>
                 )}

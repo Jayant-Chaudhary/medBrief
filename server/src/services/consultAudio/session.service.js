@@ -1,0 +1,643 @@
+/**
+ * Consult Audio Session Management Service.
+ *
+ * Implements business operations for creating sessions, joining via room codes,
+ * recording consent, updating device clock/readiness, and starting consultations.
+ */
+
+const supabaseAdmin = require('../../config/supabaseAdminClient');
+const config = require('../../config/consultAudio.config');
+const { generateRoomCode, getRoomCodeExpiry, checkRateLimit, recordFailedAttempt, clearRateLimit } = require('./roomCode.service');
+const { signSessionToken } = require('./token.service');
+const { STATES, transitionSession } = require('./stateMachine');
+const socketService = require('./socket.service');
+const orchestratorService = require('./orchestrator.service');
+const { mergeSegments } = require('./mergeSegments');
+const logger = require('../../utils/logger');
+
+/**
+ * Creates a consultation session for an appointment.
+ */
+async function createSession({ appointmentId, doctorId, patientRequired = true, languageCode = null }) {
+  if (!appointmentId) throw new Error('appointmentId is required');
+  if (!doctorId) throw new Error('doctorId is required');
+
+  // Verify appointment access
+  const { data: appointment, error: aptErr } = await supabaseAdmin
+    .from('appointments')
+    .select('id, clinician_id, patient_id')
+    .eq('id', appointmentId)
+    .single();
+
+  if (aptErr || !appointment) {
+    const err = new Error('Appointment not found');
+    err.status = 404;
+    throw err;
+  }
+
+  if (appointment.clinician_id !== doctorId) {
+    const err = new Error('Not authorized: clinician does not own this appointment');
+    err.status = 403;
+    throw err;
+  }
+
+  const roomCode = generateRoomCode();
+  const roomCodeExpiresAt = getRoomCodeExpiry();
+
+  const { data: session, error: sessErr } = await supabaseAdmin
+    .from('consult_sessions')
+    .insert({
+      appointment_id: appointmentId,
+      doctor_id: doctorId,
+      patient_id: appointment.patient_id,
+      status: STATES.CREATED,
+      room_code: roomCode,
+      room_code_expires_at: roomCodeExpiresAt,
+      patient_required: patientRequired,
+      language_code: languageCode,
+    })
+    .select()
+    .single();
+
+  if (sessErr) {
+    throw new Error(`Failed to create consult session: ${sessErr.message}`);
+  }
+
+  // Register doctor device as joined
+  await supabaseAdmin
+    .from('session_devices')
+    .insert({
+      session_id: session.id,
+      device: 'doctor',
+      status: 'joined',
+    });
+
+  // Generate scoped token for doctor device
+  const doctorToken = signSessionToken({
+    sessionId: session.id,
+    device: 'doctor',
+    role: 'doctor',
+    userId: doctorId,
+  });
+
+  return {
+    sessionId: session.id,
+    session_id: session.id,
+    id: session.id,
+    roomCode: session.room_code,
+    room_code: session.room_code,
+    roomCodeExpiresAt: session.room_code_expires_at,
+    expires_at: session.room_code_expires_at,
+    doctorToken,
+    doctor_token: doctorToken,
+    token: doctorToken,
+    patientRequired: session.patient_required,
+    patient_required: session.patient_required,
+  };
+}
+
+/**
+ * Patient joins a session using a single-use room code.
+ */
+async function joinSessionByRoomCode({ roomCode, patientUser, clientIp = 'unknown' }) {
+  const normCode = (roomCode || '').trim().toUpperCase();
+  const rateLimitKey = `${clientIp}:${normCode}`;
+
+  const rateCheck = checkRateLimit(rateLimitKey);
+  if (!rateCheck.allowed) {
+    const err = new Error(`Too many join attempts. Please wait ${rateCheck.retryAfterSec} seconds.`);
+    err.status = 429;
+    throw err;
+  }
+
+  const { data: session, error: sessErr } = await supabaseAdmin
+    .from('consult_sessions')
+    .select('*')
+    .eq('room_code', normCode)
+    .maybeSingle();
+
+  if (sessErr || !session) {
+    recordFailedAttempt(rateLimitKey);
+    const err = new Error('Invalid or expired room code');
+    err.status = 404;
+    throw err;
+  }
+
+  // Check expiration
+  if (new Date(session.room_code_expires_at) < new Date()) {
+    recordFailedAttempt(rateLimitKey);
+    const err = new Error('Room code has expired');
+    err.status = 410;
+    throw err;
+  }
+
+  // Check state: patient cannot join an already ending/processing/draft_ready session
+  if (![STATES.CREATED, STATES.WAITING].includes(session.status)) {
+    recordFailedAttempt(rateLimitKey);
+    const err = new Error(`Cannot join session in '${session.status}' state`);
+    err.status = 409;
+    throw err;
+  }
+
+  // Check patient ownership: if session has a designated patient, caller must match
+  if (session.patient_id && session.patient_id !== patientUser.id) {
+    recordFailedAttempt(rateLimitKey);
+    const err = new Error('Not authorized: signed-in patient does not match this consultation');
+    err.status = 403;
+    throw err;
+  }
+
+  // Burn room code conditionally (single-use, race-free)
+  const { data: updatedSession, error: updateErr } = await supabaseAdmin
+    .from('consult_sessions')
+    .update({
+      room_code: null,
+      room_code_expires_at: null,
+      patient_id: patientUser.id,
+      status: STATES.WAITING,
+    })
+    .eq('id', session.id)
+    .eq('room_code', normCode)
+    .in('status', [STATES.CREATED, STATES.WAITING])
+    .select('id, status')
+    .maybeSingle();
+
+  if (updateErr || !updatedSession) {
+    recordFailedAttempt(rateLimitKey);
+    const err = new Error('Room code has already been consumed');
+    err.status = 409;
+    throw err;
+  }
+
+  clearRateLimit(rateLimitKey);
+
+  // Register patient device
+  await supabaseAdmin
+    .from('session_devices')
+    .upsert({
+      session_id: session.id,
+      device: 'patient',
+      status: 'joined',
+    }, { onConflict: 'session_id,device' });
+
+  // Generate scoped token for patient device
+  const patientToken = signSessionToken({
+    sessionId: session.id,
+    device: 'patient',
+    role: 'patient',
+    userId: patientUser.id,
+  });
+
+  socketService.emitSessionState(session.id, {
+    sessionId: session.id,
+    status: STATES.WAITING,
+  });
+
+  return {
+    sessionId: session.id,
+    session_id: session.id,
+    id: session.id,
+    patientToken,
+    patient_token: patientToken,
+    token: patientToken,
+  };
+}
+
+/**
+ * Records doctor or patient consent for a session.
+ */
+async function recordSessionConsent({ sessionId, role, userId, consentTextVersion }) {
+  const version = consentTextVersion || config.consentTextVersion;
+
+  const { data: consent, error } = await supabaseAdmin
+    .from('session_consents')
+    .upsert({
+      session_id: sessionId,
+      role,
+      user_id: userId,
+      consent_text_version: version,
+      accepted_at: new Date().toISOString(),
+    }, { onConflict: 'session_id,role' })
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to record consent: ${error.message}`);
+  }
+
+  // Check if session can transition to READY
+  await evaluateAndTransitionToReady(sessionId);
+
+  return consent;
+}
+
+/**
+ * Marks a device ready after mic and level check with its clock handshake results.
+ */
+async function markDeviceReady({ sessionId, device, offsetMs = 0, rttMs = 0 }) {
+  const { data: updatedDevice, error } = await supabaseAdmin
+    .from('session_devices')
+    .upsert({
+      session_id: sessionId,
+      device,
+      status: 'ready',
+      offset_ms: offsetMs,
+      rtt_ms: rttMs,
+    }, { onConflict: 'session_id,device' })
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to mark device ready: ${error.message}`);
+  }
+
+  // Check if session can transition to READY
+  await evaluateAndTransitionToReady(sessionId);
+
+  return updatedDevice;
+}
+
+/**
+ * Checks all conditions (consents + device readiness) and moves session to READY if fulfilled.
+ */
+async function evaluateAndTransitionToReady(sessionId) {
+  const { data: session } = await supabaseAdmin
+    .from('consult_sessions')
+    .select('*')
+    .eq('id', sessionId)
+    .single();
+
+  if (!session || ![STATES.CREATED, STATES.WAITING].includes(session.status)) {
+    return;
+  }
+
+  const { data: consents } = await supabaseAdmin
+    .from('session_consents')
+    .select('*')
+    .eq('session_id', sessionId);
+
+  const { data: devices } = await supabaseAdmin
+    .from('session_devices')
+    .select('*')
+    .eq('session_id', sessionId);
+
+  const consentList = Array.isArray(consents) ? consents : (consents ? [consents] : []);
+  const deviceList = Array.isArray(devices) ? devices : (devices ? [devices] : []);
+
+  const doctorConsent = consentList.some((c) => c.role === 'doctor');
+  const doctorDevice = deviceList.find((d) => d.device === 'doctor');
+  const doctorReady = doctorConsent && doctorDevice?.status === 'ready';
+
+  let patientReady = true;
+  const patientJoined = deviceList.some((d) => d.device === 'patient');
+  if (patientJoined || session.patient_required) {
+    const patientConsent = consentList.some((c) => c.role === 'patient');
+    const patientDevice = deviceList.find((d) => d.device === 'patient');
+    patientReady = patientConsent && patientDevice?.status === 'ready';
+  }
+
+  if (doctorReady && patientReady) {
+    await transitionSession({
+      sessionId,
+      toState: STATES.READY,
+      socketEmitter: socketService,
+    });
+  }
+}
+
+/**
+ * Doctor starts the consultation session.
+ */
+async function startConsultation({ sessionId, doctorUserId }) {
+  const { data: session } = await supabaseAdmin
+    .from('consult_sessions')
+    .select('*')
+    .eq('id', sessionId)
+    .single();
+
+  if (!session) {
+    const err = new Error('Session not found');
+    err.status = 404;
+    throw err;
+  }
+
+  if (doctorUserId && session.doctor_id !== doctorUserId) {
+    const err = new Error('Not authorized: only the session doctor can start consultation');
+    err.status = 403;
+    throw err;
+  }
+
+  // If session is still in CREATED or WAITING, evaluate if it can transition to READY first
+  if ([STATES.CREATED, STATES.WAITING].includes(session.status)) {
+    await evaluateAndTransitionToReady(sessionId);
+  }
+
+  const nowServerMs = Date.now();
+  const startedAt = new Date(nowServerMs).toISOString();
+
+  // Transitions session to RECORDING
+  const updatedSession = await transitionSession({
+    sessionId,
+    toState: STATES.RECORDING,
+    patch: { started_at: startedAt },
+    socketEmitter: socketService,
+  });
+
+  // Emit session_started event with exact server start timestamp
+  socketService.emitSessionStarted(sessionId, nowServerMs);
+
+  return updatedSession;
+}
+
+/**
+ * Doctor requests end of the consultation session.
+ * Moves state from RECORDING -> ENDING, stores end_deadline_at, and emits end_requested push event.
+ */
+async function endConsultation({ sessionId, doctorUserId }) {
+  const { data: session } = await supabaseAdmin
+    .from('consult_sessions')
+    .select('*')
+    .eq('id', sessionId)
+    .single();
+
+  if (!session) {
+    const err = new Error('Session not found');
+    err.status = 404;
+    throw err;
+  }
+
+  if (doctorUserId && session.doctor_id !== doctorUserId) {
+    const err = new Error('Not authorized: only the session doctor can end consultation');
+    err.status = 403;
+    throw err;
+  }
+
+  const deadlineMs = Date.now() + (config.endDeadlineSec * 1000);
+  const endDeadlineAt = new Date(deadlineMs).toISOString();
+
+  const updatedSession = await transitionSession({
+    sessionId,
+    toState: STATES.ENDING,
+    patch: { end_deadline_at: endDeadlineAt },
+    socketEmitter: socketService,
+  });
+
+  socketService.emitEndRequested(sessionId, endDeadlineAt);
+  orchestratorService.registerEndingSession(sessionId, endDeadlineAt);
+
+  return updatedSession;
+}
+
+/**
+ * Device reports monotonic zero clock point after capture start.
+ */
+async function recordCaptureStarted({ sessionId, device, captureZeroDeviceMs }) {
+  const { data, error } = await supabaseAdmin
+    .from('session_devices')
+    .update({
+      status: 'recording',
+      capture_zero_device_ms: captureZeroDeviceMs,
+    })
+    .eq('session_id', sessionId)
+    .eq('device', device)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to record capture started: ${error.message}`);
+  }
+
+  return data;
+}
+
+/**
+ * Fetches current session state, devices, and consents.
+ */
+async function getSessionState(sessionId, callerUserId) {
+  const { data: session, error: sErr } = await supabaseAdmin
+    .from('consult_sessions')
+    .select('*')
+    .eq('id', sessionId)
+    .single();
+
+  if (sErr || !session) {
+    const err = new Error('Session not found');
+    err.status = 404;
+    throw err;
+  }
+
+  if (!callerUserId || ![session.doctor_id, session.patient_id].includes(callerUserId)) {
+    throw Object.assign(new Error('Not authorized for this consultation'), { status: 403 });
+  }
+
+  const { data: devices } = await supabaseAdmin
+    .from('session_devices')
+    .select('*')
+    .eq('session_id', sessionId);
+
+  const { data: consents } = await supabaseAdmin
+    .from('session_consents')
+    .select('role, accepted_at, consent_text_version')
+    .eq('session_id', sessionId);
+
+  const { data: gaps, error: gapError } = await supabaseAdmin
+    .from('consult_audio_gaps')
+    .select('device, gap_id, start_ms, duration_ms, reason_code')
+    .eq('session_id', sessionId);
+  if (gapError) throw Object.assign(new Error('ERR_GAP_READ'), { status: 503 });
+
+  return {
+    session: {
+      id: session.id,
+      sessionId: session.id,
+      session_id: session.id,
+      status: session.status,
+      patientRequired: session.patient_required,
+      patient_required: session.patient_required,
+      languageCode: session.language_code,
+      language_code: session.language_code,
+      startedAt: session.started_at,
+      started_at: session.started_at,
+      endedAt: session.ended_at,
+      ended_at: session.ended_at,
+      endDeadlineAt: session.end_deadline_at,
+      end_deadline_at: session.end_deadline_at,
+      incompleteSides: session.incomplete_sides || [],
+      incomplete_sides: session.incomplete_sides || [],
+      draftOutdated: session.draft_outdated || false,
+      draft_outdated: session.draft_outdated || false,
+    },
+    devices: (devices || []).map((d) => ({
+      device: d.device,
+      status: d.status,
+      offsetMs: d.offset_ms,
+      offset_ms: d.offset_ms,
+      rttMs: d.rtt_ms,
+      rtt_ms: d.rtt_ms,
+    })),
+    consents: consents || [],
+    gaps: gaps || [],
+  };
+}
+
+/**
+ * Fetches ordered transcript segments for a session.
+ */
+async function getSessionTranscript(sessionId, doctorUserId = null) {
+  const { data: session, error: sErr } = await supabaseAdmin
+    .from('consult_sessions')
+    .select('id, doctor_id, status, incomplete_sides, draft_outdated')
+    .eq('id', sessionId)
+    .single();
+
+  if (sErr || !session) {
+    const err = new Error('Session not found');
+    err.status = 404;
+    throw err;
+  }
+
+  if (doctorUserId && session.doctor_id !== doctorUserId) {
+    const err = new Error('Not authorized to access transcript for this session');
+    err.status = 403;
+    throw err;
+  }
+
+  const { data: segments, error: segErr } = await supabaseAdmin
+    .from('segments')
+    .select('*')
+    .eq('session_id', sessionId)
+    .order('start_ms', { ascending: true });
+
+  if (segErr) {
+    throw new Error(`Failed to fetch segments: ${segErr.message}`);
+  }
+
+  // Fetch audio chunks to associate loudness (avg_dbfs) and calculate progress
+  let totalChunks = 0;
+  let transcribedChunks = 0;
+  let isProcessing = ['recording', 'ending', 'processing'].includes(session.status);
+  let chunkList = [];
+
+  try {
+    const { data: chunks } = await supabaseAdmin
+      .from('audio_chunks')
+      .select('id, status, silent, seq, device, avg_dbfs, start_ms, duration_ms')
+      .eq('session_id', sessionId);
+
+    chunkList = chunks || [];
+    totalChunks = chunkList.length;
+    transcribedChunks = chunkList.filter((c) => c.status === 'transcribed' || c.silent).length;
+    if (totalChunks > 0 && transcribedChunks < totalChunks) {
+      isProcessing = true;
+    }
+  } catch (_chunkErr) {
+    totalChunks = segments?.length || 0;
+    transcribedChunks = segments?.length || 0;
+  }
+
+  // Fetch explicit timeline gaps
+  let gapsList = [];
+  try {
+    const { data: gaps } = await supabaseAdmin
+      .from('consult_audio_gaps')
+      .select('id, gap_id, device, start_ms, duration_ms, reason_code, received_at')
+      .eq('session_id', sessionId);
+    gapsList = gaps || [];
+  } catch (_gapErr) {
+    gapsList = [];
+  }
+
+  // Associate chunk avg_dbfs with segments if not already on the segment
+  const chunkDbfsMap = new Map(chunkList.map((c) => [c.id, c.avg_dbfs]));
+  const enrichedSegments = (segments || []).map((s) => ({
+    ...s,
+    avg_dbfs: s.avg_dbfs !== undefined && s.avg_dbfs !== null ? s.avg_dbfs : chunkDbfsMap.get(s.chunk_id),
+  }));
+
+  const doctorSegments = enrichedSegments.filter((s) => s.device === 'doctor');
+  const patientSegments = enrichedSegments.filter((s) => s.device === 'patient');
+  const failedChunks = chunkList.filter((c) => c.status === 'failed');
+
+  const merged = mergeSegments(doctorSegments, patientSegments, {
+    gaps: gapsList,
+    failedChunks,
+    dedupeMinOverlap: config.dedupeMinOverlap,
+    dedupeMinSimilarity: config.dedupeMinSimilarity,
+    lowConfidenceThreshold: config.lowConfidenceThreshold,
+  });
+
+  return {
+    sessionId,
+    status: session.status,
+    incompleteSides: session.incomplete_sides || [],
+    incomplete_sides: session.incomplete_sides || [],
+    draftOutdated: session.draft_outdated || false,
+    draft_outdated: session.draft_outdated || false,
+    totalChunks,
+    transcribedChunks,
+    isProcessing,
+    segments: merged,
+    stats: merged.stats,
+  };
+}
+
+/**
+ * Fetches the latest consultation session for an appointment.
+ */
+async function getLatestSessionByAppointment(appointmentId, doctorUserId = null) {
+  const { data: session, error } = await supabaseAdmin
+    .from('consult_sessions')
+    .select('*')
+    .eq('appointment_id', appointmentId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error || !session) {
+    return null;
+  }
+
+  if (doctorUserId && session.doctor_id !== doctorUserId) {
+    const err = new Error('Not authorized to access this session');
+    err.status = 403;
+    throw err;
+  }
+
+  const { data: chunks } = await supabaseAdmin
+    .from('audio_chunks')
+    .select('id, status, is_silent')
+    .eq('session_id', session.id);
+
+  const chunkList = chunks || [];
+  const totalChunks = chunkList.length;
+  const transcribedChunks = chunkList.filter((c) => c.status === 'transcribed' || c.is_silent).length;
+
+  return {
+    sessionId: session.id,
+    session_id: session.id,
+    id: session.id,
+    status: session.status,
+    roomCode: session.room_code,
+    room_code: session.room_code,
+    patientRequired: session.patient_required,
+    patient_required: session.patient_required,
+    startedAt: session.started_at,
+    endedAt: session.ended_at,
+    totalChunks,
+    transcribedChunks,
+    createdAt: session.created_at,
+  };
+}
+
+module.exports = {
+  createSession,
+  joinSessionByRoomCode,
+  recordSessionConsent,
+  markDeviceReady,
+  startConsultation,
+  endConsultation,
+  recordCaptureStarted,
+  getSessionState,
+  getSessionTranscript,
+  getLatestSessionByAppointment,
+};

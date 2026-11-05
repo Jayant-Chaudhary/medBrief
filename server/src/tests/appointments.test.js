@@ -30,7 +30,7 @@ describe('Appointments API', () => {
 
     // No existing account for the invited email unless a test says otherwise.
     supabaseAdmin.auth.admin.listUsers.mockResolvedValue({ data: { users: [] }, error: null });
-    createAndSendInvite.mockResolvedValue({ id: 'invite-1', inviteLink: 'http://localhost:5173/invite/tok' });
+    createAndSendInvite.mockResolvedValue({ id: 'invite-1', inviteLink: 'http://localhost:5173/invite/tok', emailSent: true });
   });
 
   describe('POST /appointments', () => {
@@ -54,6 +54,7 @@ describe('Appointments API', () => {
         ...mockCreatedAppointment,
         isReturningPatient: false,
         inviteLink: 'http://localhost:5173/invite/tok',
+        inviteEmailSent: true,
       });
       expect(chains.appointments[0].insert).toHaveBeenCalledWith(
         expect.objectContaining({ clinician_id: mockUser.id, patient_id: null, status: 'invited' })
@@ -63,6 +64,17 @@ describe('Appointments API', () => {
         patientEmail: validPayload.patientEmail,
         patientFullName: validPayload.patientFullName,
       });
+    });
+
+    it('reports when an invite link was created but email delivery failed', async () => {
+      mockTables(supabaseAdmin, {
+        profiles: profileRow('clinician'),
+        appointments: ok({ id: 'appt-123', status: 'invited' }),
+      });
+      createAndSendInvite.mockResolvedValue({ id: 'invite-1', inviteLink: 'http://localhost:5173/invite/tok', emailSent: false });
+      const response = await send('post', '/api/appointments').send(validPayload);
+      expect(response.status).toBe(201);
+      expect(response.body).toMatchObject({ inviteEmailSent: false, inviteLink: 'http://localhost:5173/invite/tok' });
     });
 
     it('should link a returning patient and mark the appointment active', async () => {
@@ -259,43 +271,21 @@ describe('Appointments API', () => {
       expect(response.status).toBe(200);
     });
 
-    it("shares the patient's earlier reports with the appointment on check-in", async () => {
+    it('does not alter report sharing automatically on check-in', async () => {
       const chains = mockTables(supabaseAdmin, {
         profiles: profileRow('patient'),
         appointments: [
           ok({ ...ownAppointment, patient_id: mockUser.id }),
           ok({ id: 'appt-1', patient_id: mockUser.id, status: 'checked_in' }),
         ],
-        lab_reports: ok([{ id: 'report-old-1' }, { id: 'report-old-2' }]),
-        appointment_lab_reports: ok(null),
-      });
-
-      const response = await send('patch', '/api/appointments/appt-1/status').send({ status: 'checked_in' });
-
-      expect(response.status).toBe(200);
-      expect(chains.appointment_lab_reports[0].upsert).toHaveBeenCalledWith(
-        [
-          { appointment_id: 'appt-1', lab_report_id: 'report-old-1' },
-          { appointment_id: 'appt-1', lab_report_id: 'report-old-2' },
-        ],
-        expect.objectContaining({ onConflict: 'appointment_id,lab_report_id' })
-      );
-    });
-
-    it('still checks in when sharing earlier reports fails', async () => {
-      mockTables(supabaseAdmin, {
-        profiles: profileRow('patient'),
-        appointments: [
-          ok({ ...ownAppointment, patient_id: mockUser.id }),
-          ok({ id: 'appt-1', patient_id: mockUser.id, status: 'checked_in' }),
-        ],
-        lab_reports: { data: null, error: { message: 'db down' } },
       });
 
       const response = await send('patch', '/api/appointments/appt-1/status').send({ status: 'checked_in' });
 
       expect(response.status).toBe(200);
       expect(response.body.status).toBe('checked_in');
+      expect(chains.appointment_lab_reports).toBeUndefined();
+      expect(chains.lab_reports).toBeUndefined();
     });
 
     it('should not let a patient mark their appointment completed', async () => {

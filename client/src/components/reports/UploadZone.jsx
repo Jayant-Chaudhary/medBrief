@@ -3,7 +3,7 @@ import { UploadCloud } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 
-export default function UploadZone({ onUpload, disabled = false }) {
+export default function UploadZone({ onUpload, onBusy, disabled = false }) {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -32,10 +32,16 @@ export default function UploadZone({ onUpload, disabled = false }) {
     if (e.target.files && e.target.files[0]) {
       handleFiles(e.target.files[0]);
     }
+    // Otherwise picking the same file again after a cancelled upload does nothing.
+    e.target.value = '';
   };
 
   const handleFiles = (file) => {
-    if (disabled) return;
+    // The button is disabled mid-upload, but a dropped file still lands here.
+    if (disabled) {
+      onBusy?.();
+      return;
+    }
     onUpload(file);
   };
 
@@ -66,7 +72,12 @@ export default function UploadZone({ onUpload, disabled = false }) {
           accept="image/png,image/jpeg,application/pdf"
         />
         
-        <Button onClick={() => fileInputRef.current?.click()} className="px-8" disabled={disabled}>
+        <Button
+          data-assistant-id="reports.trigger_upload"
+          onClick={() => fileInputRef.current?.click()}
+          className="px-8"
+          disabled={disabled}
+        >
           {disabled ? 'Uploading…' : 'Select File'}
         </Button>
       </div>

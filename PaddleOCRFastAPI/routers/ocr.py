@@ -32,11 +32,12 @@ class _LazyOCR:
     def predict(self, *args, **kwargs):
         with self._lock:
             if self._ocr is None:
+                enable_orient = os.environ.get("OCR_DOC_ORIENTATION", "").lower() in {"1", "true", "yes", "on"} or os.environ.get("OCR_AUTOROTATE", "").lower() in {"1", "true", "yes", "on"}
                 self._ocr = PaddleOCR(
                     text_detection_model_name="PP-OCRv6_small_det",
                     text_recognition_model_name="PP-OCRv6_small_rec",
-                    use_textline_orientation=False,
-                    use_doc_orientation_classify=False,
+                    use_textline_orientation=enable_orient,
+                    use_doc_orientation_classify=enable_orient,
                     use_doc_unwarping=False
                 )
             # Materialised inside the lock: predict() returns a generator.

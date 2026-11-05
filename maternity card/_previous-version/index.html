@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Maternity card ? Health-On</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="fields.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="toolbar">
+    <div><a class="wordmark" href="#card">HEALTH-ON <span>/ MATERNITY RECORD</span></a><p id="editingHint">Edit directly on the card. Fields and rows grow with your notes.</p></div>
+    <div class="actions"><span id="saveStatus" role="status" aria-live="polite">Loading draft?</span><button id="newCard">New card</button><button id="preview" aria-pressed="false">Preview</button><button id="print" class="primary">Print / Save PDF</button></div>
+  </header>
+  <div id="storageWarning" class="warning" role="alert" hidden></div>
+  <div class="card-wrap">
+    <main class="clinical-paper" id="card">
+      <div class="paper-title"><div><span class="eyebrow">ONE PATIENT ? ONE PREGNANCY</span><h1>Maternity record</h1></div><div class="title-note">ANTENATAL & POSTNATAL CARD<br><span>Confidential patient record</span></div></div>
+      <section class="patient-section" aria-labelledby="patientHeading"><h2 id="patientHeading" class="section-heading">Patient details <span>01</span></h2><div id="patientFields" class="field-grid patient-grid"></div></section>
+      <div class="paper-top">
+        <section class="paper-box baseline" aria-labelledby="baselineHeading"><h2 id="baselineHeading">First attendance / baseline</h2><div id="baselineFields" class="field-grid"></div></section>
+        <section class="paper-box labs" aria-labelledby="labsHeading"><h2 id="labsHeading">Investigations <span id="labsCount" class="count"></span></h2><div id="labsRows" class="record-list"></div><button class="add-row" data-add="labs">+ Add result</button></section>
+        <section class="paper-box scans" aria-labelledby="scansHeading"><h2 id="scansHeading">Ultrasound examination <span id="scansCount" class="count"></span></h2><div id="scansRows" class="record-list"></div><button class="add-row" data-add="scans">+ Add scan</button></section>
+        <section class="paper-box vaccines" aria-labelledby="vaccinesHeading"><h2 id="vaccinesHeading">Vaccinations / injections <span id="vaccinesCount" class="count"></span></h2><div id="vaccinesRows" class="record-list"></div><button class="add-row" data-add="vaccines">+ Add vaccination</button></section>
+      </div>
+      <section class="visits-section" aria-labelledby="visitsHeading"><div class="section-heading"><h2 id="visitsHeading">Antenatal visits <span id="visitsCount" class="count"></span></h2><button class="add-row" data-add="visits">+ Add visit</button></div><p class="section-help">Add a dated entry at each visit throughout pregnancy. Edit any value in place.</p><div class="visit-scroll" tabindex="0" role="region" aria-label="Antenatal visit table; scroll horizontally on smaller screens"><table class="visit-table"><colgroup><col style="width:12%"><col style="width:9%"><col style="width:10%"><col style="width:11%"><col style="width:12%"><col style="width:10%"><col style="width:10%"><col style="width:12%"><col style="width:14%"></colgroup><thead><tr><th scope="col">Visit / gestation</th><th scope="col">Weight / height</th><th scope="col">Blood pressure</th><th scope="col">Presentation</th><th scope="col">Fetal heart / urine</th><th scope="col">Investigations</th><th scope="col">Next visit</th><th scope="col">Clinician</th><th scope="col">Advice / notes</th></tr></thead><tbody id="visitsRows"></tbody></table></div></section>
+      <section class="delivery-section" aria-labelledby="deliveryHeading"><h2 id="deliveryHeading" class="section-heading">Delivery & postnatal record <span>03</span></h2><div id="deliveryFields" class="field-grid delivery-grid"></div></section>
+      <footer class="paper-foot"><span>Same patient record throughout pregnancy ? Each entry keeps its own date.</span><span>Health-On</span></footer>
+    </main>
+  </div>
+  <p class="local-note">Local draft ? Saved only in this browser. Not yet connected to a patient account or the clinic database.</p>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

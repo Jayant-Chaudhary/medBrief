@@ -176,6 +176,14 @@ def is_column_header(line: Line) -> bool:
     return hits >= 3 and hits / len(words) >= 0.5
 
 
+#: Interpretation tables drawn with text characters ("| Insufficient | 50-74 |",
+#: "|------|------|"). Their rows look like test rows but are guidance, not
+#: results: a ">= 2 pipes, starting or ending with one" line is never a test.
+_ASCII_TABLE_RE = re.compile(r"^\|.*\||^\|[-=+|\s*]+|[-=+\s*]+\|$")
+#: Page footers, including OCR misreads of the "P" ("Hage 1 of 3").
+_PAGE_FOOTER_RE = re.compile(r"^\W*[a-z]{0,2}age\s*\d+\s*(?:of|/)\s*\d+\b", re.I)
+
+
 def is_noise(line: Line) -> bool:
     text = line.text.strip()
     if len(text) <= 1:
@@ -183,6 +191,10 @@ def is_noise(line: Line) -> bool:
     if re.fullmatch(r"\d+", text):
         return True
     if re.fullmatch(r"[\W_]+", text):
+        return True
+    if text.count("|") >= 2 and _ASCII_TABLE_RE.search(text):
+        return True
+    if _PAGE_FOOTER_RE.match(text):
         return True
     return False
 
@@ -274,6 +286,46 @@ def _is_known_label(text: str) -> bool:
     return bool(squashed) and squashed in _SQUASHED_HEADER_KEY_MAP
 
 
+#: Words that turn a "... Name:" label into someone or something other than the
+#: patient. Without them "Doctor Name:" reads as the label "Name", and whichever
+#: comes last on the page overwrites the patient's name.
+_OTHER_NAME_QUALIFIERS = {
+    "attendant", "center", "centre", "client", "clinic", "company", "consultant",
+    "department", "doctor", "doctors", "dr", "father", "fathers", "guardian",
+    "hospital", "husband", "husbands", "investigation", "lab", "laboratory",
+    "mother", "mothers", "panel", "physician", "ref", "referred", "referring",
+    "report", "sample", "spouse", "test", "ward",
+}
+
+
+def _names_someone_else(label: str, previous_word: str) -> bool:
+    """True for a bare "Name" label qualified by the word in front of it."""
+    if label.strip().lower() not in ("name", *_NAME_LABEL_MISREADS):
+        return False
+    return re.sub(r"[^a-z]", "", previous_word.lower()) in _OTHER_NAME_QUALIFIERS
+
+
+#: OCR often loses the small colon on a tilted photo, leaving "Name Mr. X". Only
+#: letters and name punctuation may follow, which rules out anything with a
+#: number or another label's colon.
+_COLONLESS_NAME_RE = re.compile(
+    r"^(?:patient\s*name|name)\s+(?P<value>[^\W\d_](?:[^\W\d_]|[.' -])*)$", re.I
+)
+_NOT_A_NAME_WORDS = _COLUMN_HEADER_WORDS | {"of", "and", "the", "for"}
+
+
+def colonless_patient_name(text: str) -> str | None:
+    """The patient's name from a header line that lost its colon, or None."""
+    match = _COLONLESS_NAME_RE.match(text.strip())
+    if not match:
+        return None
+    value = match.group("value").strip()
+    words = value.lower().split()
+    if len(words) > 5 or any(word.strip(".,") in _NOT_A_NAME_WORDS for word in words):
+        return None
+    return value
+
+
 def parse_kv_pairs(fields: list[Field]) -> list[tuple[str, str]]:
     """Split a header line into every `label : value` pair it carries.
 
@@ -317,6 +369,8 @@ def parse_kv_pairs(fields: list[Field]) -> list[tuple[str, str]]:
 
         for start, end, label in candidates:
             if _is_known_label(label):
+                if _names_someone_else(label, words[start - 1] if start > 0 else ""):
+                    start, label = start - 1, f"{words[start - 1]} {label}"
                 boundaries.append((start, end, label))
                 break
 
@@ -343,6 +397,19 @@ def parse_kv(fields: list[Field]) -> tuple[str, str] | None:
     """
     pairs = parse_kv_pairs(fields)
     return pairs[0] if pairs else None
+
+
+def _box(fields: Sequence[Field]) -> list[float] | None:
+    """[x0, top, x1, bottom] around every token of these fields, in token coordinates."""
+    tokens = [t for f in fields for t in f.tokens]
+    if not tokens:
+        return None
+    return [
+        min(float(t.x0) for t in tokens),
+        min(float(t.top) for t in tokens),
+        max(float(t.x1) for t in tokens),
+        max(float(t.bottom) for t in tokens),
+    ]
 
 
 def parse_test_row(fields: list[Field]) -> dict | None:
@@ -373,14 +440,26 @@ def parse_test_row(fields: list[Field]) -> dict | None:
         elif reference is None:
             reference = text
 
-    return {"name": name, "value": value, "unit": unit, "reference": reference, "flag": flag}
+    # Where the row sits on the page, so a reviewer can be shown the printed
+    # line. Raw token coordinates; document_processor turns them into page
+    # fractions once it knows each page's size.
+    location = {
+        "page": getattr(fields[0].tokens[0], "page", 0) if fields[0].tokens else 0,
+        "row": _box(fields),
+        "value": _box(fields[1:2]),
+    }
+    return {"name": name, "value": value, "unit": unit, "reference": reference, "flag": flag, "location": location}
 
 
 # ------------------------------------------------------------------
 # Header key normalization
 # ------------------------------------------------------------------
+#: How OCR misreads the label on small or blurred photos.
+_NAME_LABEL_MISREADS = ("nam", "nane", "narne", "neme")
+
 _HEADER_KEY_MAP = {
     "name": "name",
+    **{misread: "name" for misread in _NAME_LABEL_MISREADS},
     "patient name": "name",
     "lab no": "lab_no",
     "lab no.": "lab_no",
@@ -497,6 +576,12 @@ def structure_document(
             if len(fields) == 1 and is_method_annotation(fields[0].text):
                 if current_section is not None:
                     current_section["method"] = fields[0].text.strip()
+                continue
+
+            colonless_name = colonless_patient_name(text)
+            if colonless_name:
+                # A properly labelled "Name :" line still wins, whichever comes first.
+                patient.setdefault("name", colonless_name)
                 continue
 
             if is_section_title(fields):

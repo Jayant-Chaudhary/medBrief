@@ -2,13 +2,19 @@ const supabaseAdmin = require('../config/supabaseAdminClient');
 const { standardizeMetrics } = require('../services/standardization/standardizeLabReport.service');
 const { maybeFlagReportForTriage, getTriageQueue } = require('../services/triage.service');
 const { processDocument } = require('../services/ocrService');
-const { shareAllReportsWithAppointment } = require('../services/reportSharing.service');
+const {
+  shareAllReportsWithAppointment,
+  reportIdsSharedWithClinician,
+} = require('../services/reportSharing.service');
 const {
   LAB_REPORTS_BUCKET,
   uploadFile,
   createSignedUrl,
   removeFile,
 } = require('../services/storage.service');
+const { reportNameProblem, NAME_MISMATCH, NAME_UNREADABLE } = require('../services/reportNameCheck.service');
+const { holdExtraction, takeExtraction } = require('../services/pendingExtraction.service');
+const { metricSourceSchema } = require('../validators/labReports.validators');
 const {
   assertAppointmentAccess,
   clinicianHasPatient,
@@ -29,27 +35,6 @@ async function assertAppointmentForPatient(appointmentId, patientId, user) {
     return { ok: false, status: 403, error: 'That appointment belongs to a different patient' };
   }
   return access;
-}
-
-/** Ids of the reports a patient has shared with any of this clinician's appointments. */
-async function reportIdsSharedWithClinician(clinicianId, patientId) {
-  const { data: appointments, error } = await supabaseAdmin
-    .from('appointments')
-    .select('id')
-    .eq('clinician_id', clinicianId)
-    .eq('patient_id', patientId);
-  if (error) throw error;
-
-  const appointmentIds = (appointments || []).map((a) => a.id);
-  if (appointmentIds.length === 0) return [];
-
-  const { data: shares, error: shareError } = await supabaseAdmin
-    .from('appointment_lab_reports')
-    .select('lab_report_id')
-    .in('appointment_id', appointmentIds);
-  if (shareError) throw shareError;
-
-  return [...new Set((shares || []).map((row) => row.lab_report_id))];
 }
 
 /**
@@ -78,7 +63,19 @@ async function persistReport({ patientId, appointmentId, storagePath, reportDate
 
   let savedMetrics = [];
   if (standardized.length > 0) {
-    const rows = standardized.map((m) => ({ ...m, lab_report_id: labReport.id }));
+    // standardizeMetrics keeps input order but not extra fields, so each
+    // value's printed location is joined back by index. Uploads reach here
+    // without passing the request validator, so the shape is checked here;
+    // a malformed box is dropped rather than stored.
+    const rows = standardized.map((m, i) => {
+      const source = metricSourceSchema.safeParse(metrics[i]?.source);
+      return {
+        ...m,
+        lab_report_id: labReport.id,
+        source_page: source.success ? source.data.page : null,
+        source_box: source.success ? { row: source.data.row, value: source.data.value ?? null } : null,
+      };
+    });
     const { data: insertedMetrics, error: metricsError } = await supabaseAdmin
       .from('lab_report_metrics')
       .insert(rows)
@@ -88,16 +85,23 @@ async function persistReport({ patientId, appointmentId, storagePath, reportDate
     savedMetrics = insertedMetrics;
   }
 
-  // Uploading against an appointment shares it with that appointment too.
-  if (appointmentId) {
-    await supabaseAdmin
-      .from('appointment_lab_reports')
-      .upsert({ appointment_id: appointmentId, lab_report_id: labReport.id }, { onConflict: 'appointment_id,lab_report_id' });
-  }
-
   await maybeFlagReportForTriage({ labReport, metrics: savedMetrics });
 
   return { labReport, metrics: savedMetrics };
+}
+
+/** The name a report should carry: the patient's, even when a clinician uploads it. */
+async function patientFullName(patientId, user) {
+  if (patientId === user.id) return user.fullName;
+
+  const { data, error } = await supabaseAdmin
+    .from('profiles')
+    .select('full_name')
+    .eq('id', patientId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data?.full_name ?? null;
 }
 
 /**
@@ -106,6 +110,12 @@ async function persistReport({ patientId, appointmentId, storagePath, reportDate
  * The upload is recorded even when extraction fails: losing a patient's
  * document because OCR had a bad day is worse than a report the clinician
  * has to read manually.
+ *
+ * A report printed with another person's name is the exception. Nothing is
+ * saved until the uploader confirms it is theirs by sending the file again with
+ * `confirmNameMismatch`, so an unanswered prompt can never leave someone else's
+ * values in this patient's record or in front of their clinician. The confirmed
+ * request reuses the first scan when it can, so the file is not read twice.
  */
 async function uploadReport(req, res, next) {
   let storagePath = null;
@@ -133,14 +143,37 @@ async function uploadReport(req, res, next) {
       contentType: req.file.mimetype,
     });
 
-    const extracted = await processDocument({
-      buffer: req.file.buffer,
-      filename: req.file.originalname,
-      contentType: req.file.mimetype,
-      storagePath,
-      appointmentId,
-      requestId: req.id,
-    });
+    const confirmed = req.body.confirmNameMismatch === 'true';
+    const scanOwner = { userId: req.user.id, patientId, buffer: req.file.buffer };
+
+    const extracted =
+      (confirmed && takeExtraction(scanOwner)) ||
+      (await processDocument({
+        buffer: req.file.buffer,
+        filename: req.file.originalname,
+        contentType: req.file.mimetype,
+        storagePath,
+        appointmentId,
+        requestId: req.id,
+      }));
+
+    const nameOnReport = extracted.raw?.structured?.patient?.name;
+    const nameOnAccount = await patientFullName(patientId, req.user);
+    // With no scan at all (OCR down) there is nothing to check; it is recorded for manual review.
+    const nameProblem = extracted.raw ? reportNameProblem(nameOnReport, nameOnAccount) : null;
+
+    if (nameProblem && !confirmed) {
+      holdExtraction(scanOwner, extracted);
+      await removeFile(LAB_REPORTS_BUCKET, storagePath);
+      return res.status(409).json({
+        error:
+          nameProblem === NAME_MISMATCH
+            ? 'The name on this report does not match the name on this account.'
+            : 'No patient name could be read on this report.',
+        code: nameProblem,
+        details: { nameOnReport: nameOnReport || null, nameOnAccount },
+      });
+    }
 
     const result = await persistReport({
       patientId,
@@ -150,7 +183,13 @@ async function uploadReport(req, res, next) {
       ocrStatus: extracted.ocrStatus,
       metrics: extracted.metrics,
       // The pipeline's full envelope; on failure, the error that caused it.
-      rawPayload: extracted.raw ?? { error: extracted.error ?? null },
+      rawPayload: extracted.raw
+        ? {
+            ...extracted.raw,
+            ...(nameProblem === NAME_MISMATCH && { name_mismatch_confirmed: true }),
+            ...(nameProblem === NAME_UNREADABLE && { name_unreadable_confirmed: true }),
+          }
+        : { error: extracted.error ?? null },
     });
 
     res.status(201).json({

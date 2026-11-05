@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shortcut_checkin_short">Check-in</string>
+    <string name="shortcut_checkin_long">Take Weekly Check-in</string>
+    <string name="shortcut_consultation_short">Consultation</string>
+    <string name="shortcut_consultation_long">Join Consultation Room</string>
+    <string name="shortcut_emergency_short">Emergency</string>
+    <string name="shortcut_emergency_long">Emergency &amp; Clinic Contacts</string>
+</resources>

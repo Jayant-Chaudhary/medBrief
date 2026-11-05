@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import ProtectedRoute from './ProtectedRoute';
 import PublicOnlyRoute from './PublicOnlyRoute';
 import AppShell from '../layouts/AppShell';
+import CommunityWorkspace from '../pages/community/CommunityWorkspace';
 import CheckinLayout from '../layouts/CheckinLayout';
 import AuthLayout from '../layouts/AuthLayout';
 
@@ -10,6 +11,7 @@ import HomePage from '../pages/home/HomePage';
 import ProfilePage from '../pages/profile/ProfilePage';
 import ReportsPage from '../pages/reports/ReportsPage';
 import VisitSummaryPage from '../pages/summary/VisitSummaryPage';
+import ReportsStep from '../pages/checkin/ReportsStep';
 import SymptomsStep from '../pages/checkin/SymptomsStep';
 import ChecklistStep from '../pages/checkin/ChecklistStep';
 import CheckinDonePage from '../pages/checkin/CheckinDonePage';
@@ -28,6 +30,8 @@ import { ClinicianChecklists } from '../pages/clinician/ClinicianChecklists.jsx'
 import VerificationPending from '../pages/clinician/VerificationPending.jsx';
 import ClinicianProfile from '../pages/clinician/ClinicianProfile.jsx';
 import NewAppointment from '../pages/clinician/NewAppointment.jsx';
+import MaternityCardPage from '../pages/clinician/MaternityCardPage.jsx';
+import { MedicationTemplateLibraryPage } from '../components/prescriptions/PrescriptionTemplates.jsx';
 
 // Onboarding Pages
 import PatientOnboarding from '../pages/onboarding/PatientOnboarding.jsx';
@@ -43,6 +47,7 @@ export function AppRoutes() {
         <Route path="/signup" element={<SignupPage />} />
       </Route>
       <Route path="/invite/:token" element={<InvitePage />} />
+      <Route path="/maternity" element={<MaternityCardPage />} />
 
       {/* Onboarding Routes */}
       <Route path="/onboarding/patient" element={<ProtectedRoute allowIncomplete><PatientOnboarding /></ProtectedRoute>} />
@@ -59,10 +64,14 @@ export function AppRoutes() {
 
       {/* Patient Check-in Flow Routes */}
       <Route element={<ProtectedRoute><CheckinLayout /></ProtectedRoute>}>
+        <Route path="/checkin/reports" element={<ReportsStep />} />
         <Route path="/checkin/symptoms" element={<SymptomsStep />} />
         <Route path="/checkin/checklist" element={<ChecklistStep />} />
       </Route>
       <Route path="/checkin/done" element={<ProtectedRoute><CheckinDonePage /></ProtectedRoute>} />
+
+      {/* Separate community workspace; API checks community roles independently. */}
+      <Route path="/community-care" element={<ProtectedRoute><CommunityWorkspace /></ProtectedRoute>} />
 
       {/* Clinician Routes */}
       <Route path="/clinician" element={<ProtectedRoute requireVerifiedClinician><ClinicianDashboard /></ProtectedRoute>} />
@@ -70,6 +79,8 @@ export function AppRoutes() {
       <Route path="/clinician/appointments/new" element={<ProtectedRoute requireVerifiedClinician><NewAppointment /></ProtectedRoute>} />
       <Route path="/clinician/schedule" element={<ProtectedRoute requireVerifiedClinician><ClinicianSchedule /></ProtectedRoute>} />
       <Route path="/clinician/patients" element={<ProtectedRoute requireVerifiedClinician><ClinicianPatients /></ProtectedRoute>} />
+      <Route path="/clinician/templates" element={<ProtectedRoute requireVerifiedClinician><MedicationTemplateLibraryPage /></ProtectedRoute>} />
+      <Route path="/clinician/maternity" element={<ProtectedRoute requireVerifiedClinician><MaternityCardPage /></ProtectedRoute>} />
       <Route path="/clinician/checklists" element={<ProtectedRoute requireVerifiedClinician><ClinicianChecklists /></ProtectedRoute>} />
       <Route path="/clinician/lab-inbox" element={<ProtectedRoute requireVerifiedClinician><ComingSoon title="Lab Inbox" icon="flask" /></ProtectedRoute>} />
       <Route path="/clinician/analytics" element={<ProtectedRoute requireVerifiedClinician><ComingSoon title="Analytics" icon="chart" /></ProtectedRoute>} />

@@ -16,7 +16,7 @@ function contentFor(status, daysUntil, navigate) {
         title: daysUntil >= 0 ? `Your appointment is in ${daysUntil} day${daysUntil === 1 ? '' : 's'}` : 'Your appointment is due',
         subtitle: 'Pre-visit check-in not started',
         btnText: 'Start pre-visit check-in',
-        btnAction: () => navigate('/checkin/symptoms'),
+        btnAction: () => navigate('/checkin/reports'),
         secondaryBtnText: 'Share lab reports',
         secondaryBtnAction: () => navigate('/reports'),
       };

@@ -14,11 +14,16 @@ export const reportService = {
   /**
    * Sends the real file. The server stores it, runs the OCR pipeline over it
    * and returns the saved report, so there is nothing to simulate here.
+   *
+   * Rejects with code REPORT_NAME_MISMATCH, and saves nothing, when the report
+   * is printed with another name. Send it again with `confirmNameMismatch`
+   * once the user says it is theirs.
    */
-  async uploadReport(file, { appointmentId } = {}) {
+  async uploadReport(file, { appointmentId, confirmNameMismatch = false } = {}) {
     const form = new FormData();
     form.append('file', file);
     if (appointmentId) form.append('appointmentId', appointmentId);
+    if (confirmNameMismatch) form.append('confirmNameMismatch', 'true');
 
     return upload('/api/lab-reports/upload', form);
   },

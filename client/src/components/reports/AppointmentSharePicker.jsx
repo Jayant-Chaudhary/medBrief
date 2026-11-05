@@ -11,9 +11,9 @@ export default function AppointmentSharePicker({ appointments = [], activeId, on
 
   return (
     <Card className="p-4">
-      <h3 className="text-sm font-bold text-ink mb-1">Share new uploads with</h3>
+      <h3 className="text-sm font-bold text-ink mb-1">Your upcoming visits</h3>
       <p className="text-xs text-ink-soft mb-3">
-        New reports are shared with this visit automatically.
+        Reports in your library stay private until you explicitly choose to share them with an appointment.
       </p>
 
       <div className="space-y-2">

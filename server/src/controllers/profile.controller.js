@@ -1,6 +1,17 @@
 const supabaseAdmin = require('../config/supabaseAdminClient');
 const env = require('../config/env');
 
+function isSelfVerifyPermitted() {
+  if (typeof env.isSelfVerifyPermitted === 'function') {
+    return env.isSelfVerifyPermitted();
+  }
+  const currentEnv = process.env.NODE_ENV || env.nodeEnv || 'development';
+  if (currentEnv !== 'development' && currentEnv !== 'test') {
+    return false;
+  }
+  return Boolean(env.demoSelfVerify);
+}
+
 function shapeProfile(profile, details, role) {
   const base = {
     id: profile.id,
@@ -11,18 +22,22 @@ function shapeProfile(profile, details, role) {
   };
 
   if (role === 'clinician') {
+    const isVerified = details?.is_verified ?? false;
+    const canSelfVerify = Boolean(isSelfVerifyPermitted() && !isVerified);
     return {
       ...base,
       specialty: details?.specialty ?? null,
       licenseNumber: details?.license_number ?? null,
       stateMedicalCouncil: details?.state_medical_council ?? null,
-      isVerified: details?.is_verified ?? false,
+      isVerified,
+      canSelfVerify,
     };
   }
 
   return {
     ...base,
     dateOfBirth: details?.date_of_birth ?? null,
+    dueDate: details?.due_date ?? null,
     bloodType: details?.blood_type ?? null,
     address: details?.address ?? null,
     emergencyContactName: details?.emergency_contact_name ?? null,
@@ -85,6 +100,7 @@ async function updateProfile(req, res, next) {
           }
         : {
             dateOfBirth: 'date_of_birth',
+            dueDate: 'due_date',
             bloodType: 'blood_type',
             address: 'address',
             emergencyContactName: 'emergency_contact_name',
@@ -117,7 +133,7 @@ async function updateProfile(req, res, next) {
  */
 async function demoVerify(req, res, next) {
   try {
-    if (!env.demoSelfVerify) {
+    if (!isSelfVerifyPermitted()) {
       return res.status(403).json({ error: 'Self-verification is turned off. An administrator must verify you.' });
     }
     if (req.user.role !== 'clinician') {

@@ -50,7 +50,11 @@ class TestFieldSplitting(unittest.TestCase):
     def test_a_ruled_row_parses_as_a_test_row(self):
         test = sp.parse_test_row(sp.split_fields(self.ruled_row()))
         self.assertEqual(test, {"name": "Hemoglobin", "value": "11.2",
-                                "unit": "g/dL", "reference": "12.0 - 15.0", "flag": None})
+                                "unit": "g/dL", "reference": "12.0 - 15.0", "flag": None,
+                                # The whole row, and the value cell on its own.
+                                "location": {"page": 0,
+                                             "row": [50.0, 95.0, 360.0, 110.0],
+                                             "value": [170.0, 95.0, 220.0, 110.0]}})
 
     def test_plain_words_still_group_by_gap(self):
         line = sp.Line(y=50, tokens=[
@@ -266,6 +270,70 @@ class TestKeyNormalization(unittest.TestCase):
 
     def test_unknown_labels_still_become_slugs(self):
         self.assertEqual(sp.normalize_key("Some Other Field"), "some_other_field")
+
+
+class TestPatientNameLabels(unittest.TestCase):
+    """Only the patient's own name label may fill patient.name."""
+
+    @staticmethod
+    def _pairs(text):
+        tokens = [type("Tok", (), {"text": word})() for word in text.split()]
+        return sp.parse_kv_pairs([sp.Field(tokens=tokens)])
+
+    def test_someone_elses_name_is_not_the_patients(self):
+        for label in ("Doctor Name", "Lab Name", "Husband Name", "Father's Name", "Hospital Name"):
+            with self.subTest(label=label):
+                pairs = self._pairs(f"{label} : Test Person")
+                self.assertEqual(pairs, [(label, "Test Person")])
+                self.assertNotEqual(sp.normalize_key(pairs[0][0]), "name")
+
+    def test_patient_labels_still_read_as_the_name(self):
+        for label in ("Name", "Patient Name"):
+            with self.subTest(label=label):
+                [(key, value)] = self._pairs(f"{label} : Jane Doe")
+                self.assertEqual((sp.normalize_key(key), value), ("name", "Jane Doe"))
+
+    @staticmethod
+    def _patient_name(*lines):
+        tokens = []
+        for row, line in enumerate(lines):
+            x = 40.0
+            for word in line.split():
+                width = 6.0 * len(word)
+                tokens.append(type("Tok", (), {
+                    "text": word, "x0": x, "x1": x + width,
+                    "top": 50.0 + row * 20, "bottom": 60.0 + row * 20, "page": 0,
+                })())
+                x += width + 4.0
+        return sp.structure_document(tokens)["patient"].get("name")
+
+    def test_common_misreads_of_the_label_still_read_as_the_name(self):
+        for label in ("Nam", "Nane", "NARNE", "Neme"):
+            with self.subTest(label=label):
+                self.assertEqual(self._patient_name(f"{label} : Jane Doe"), "Jane Doe")
+
+    def test_a_misread_label_can_still_name_someone_else(self):
+        self.assertIsNone(self._patient_name("Doctor Nam : Test Person"))
+        self.assertEqual(self._patient_name("Name : Jane Doe", "Doctor Nam : Test Person"), "Jane Doe")
+
+    def test_a_name_line_that_lost_its_colon_is_still_read(self):
+        self.assertEqual(self._patient_name("Name Mrs. Jane Doe"), "Mrs. Jane Doe")
+        self.assertEqual(self._patient_name("Patient Name Jane Doe"), "Jane Doe")
+
+    def test_a_labelled_name_wins_over_a_colonless_one(self):
+        self.assertEqual(self._patient_name("Name Other Person", "Name : Jane Doe"), "Jane Doe")
+        self.assertEqual(self._patient_name("Name : Jane Doe", "Name Other Person"), "Jane Doe")
+
+    def test_lines_that_only_start_with_name_are_not_a_name(self):
+        for line in ("Name of Test", "Name and Address", "Name Result Units", "Name Jane Doe 27", "Name"):
+            with self.subTest(line=line):
+                self.assertIsNone(self._patient_name(line))
+
+    def test_a_qualified_label_ends_the_value_before_it(self):
+        self.assertEqual(
+            self._pairs("Name : Jane Doe Doctor Name : Test Person"),
+            [("Name", "Jane Doe"), ("Doctor Name", "Test Person")],
+        )
 
 
 if __name__ == "__main__":

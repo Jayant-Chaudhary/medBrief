@@ -4,6 +4,13 @@ const supabaseAdmin = require('../config/supabaseAdminClient');
 const { ok, mockTables, profileRow } = require('./helpers/supabaseMock');
 const { standardizeMetrics } = require('../services/standardization/standardizeLabReport.service');
 const { maybeFlagReportForTriage, getTriageQueue } = require('../services/triage.service');
+const { processDocument } = require('../services/ocrService');
+const { uploadFile, removeFile } = require('../services/storage.service');
+
+jest.mock('../services/ocrService', () => ({
+  ...jest.requireActual('../services/ocrService'),
+  processDocument: jest.fn(),
+}));
 
 jest.mock('../services/storage.service', () => ({
   LAB_REPORTS_BUCKET: 'lab-reports',
@@ -431,5 +438,276 @@ describe('GET /lab-reports/history', () => {
   it('requires patientId', async () => {
     mockTables(supabaseAdmin, { profiles: profileRow('clinician') });
     expect((await get('')).status).toBe(400);
+  });
+});
+
+describe('POST /lab-reports/upload name check', () => {
+  const patient = { id: 'patient-123', email: 'patient@example.com' };
+  const clinician = { id: 'dr-1', email: 'dr@example.com' };
+  const accountName = 'Test Patient';
+
+  const extraction = (name) => ({
+    reportDate: null,
+    ocrStatus: 'success',
+    metrics: [],
+    raw: { structured: { patient: name ? { name } : {} } },
+  });
+
+  // Held scans are keyed by file contents, so each test gets a file of its own.
+  let fileCount = 0;
+  const newFile = () => {
+    fileCount += 1;
+    return Buffer.from(`%PDF-synthetic-${fileCount}`);
+  };
+
+  const send = (user = patient, fields = {}, file = newFile(), contentType = 'application/pdf') => {
+    supabaseAdmin.auth.getUser.mockResolvedValue({ data: { user }, error: null });
+    const req = request(app).post('/api/lab-reports/upload').set('Authorization', 'Bearer t');
+    for (const [key, value] of Object.entries(fields)) req.field(key, value);
+    return req.attach('file', file, { filename: 'report.pdf', contentType });
+  };
+
+  const tables = () =>
+    mockTables(supabaseAdmin, {
+      profiles: profileRow('patient', { fullName: accountName }),
+      lab_reports: ok({ id: 'report-1', patient_id: patient.id }),
+    });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    uploadFile.mockResolvedValue('patient-123/report.pdf');
+    standardizeMetrics.mockResolvedValue([]);
+    maybeFlagReportForTriage.mockResolvedValue();
+  });
+
+  it('saves a report carrying the account name without asking', async () => {
+    const chains = tables();
+    processDocument.mockResolvedValue(extraction('Mrs. TEST PATIENT'));
+
+    const response = await send();
+
+    expect(response.status).toBe(201);
+    expect(chains.lab_reports[0].insert.mock.calls[0][0].raw_ocr_payload.name_mismatch_confirmed).toBeUndefined();
+    expect(removeFile).not.toHaveBeenCalled();
+  });
+
+  it('keeps nothing and reports both names when the name differs', async () => {
+    const chains = tables();
+    processDocument.mockResolvedValue(extraction('Someone Else'));
+
+    const response = await send();
+
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({
+      code: 'REPORT_NAME_MISMATCH',
+      details: { nameOnReport: 'Someone Else', nameOnAccount: accountName },
+    });
+    expect(chains.lab_reports).toBeUndefined();
+    expect(removeFile).toHaveBeenCalledWith('lab-reports', 'patient-123/report.pdf');
+  });
+
+  it('does not put either name in the error message', async () => {
+    tables();
+    processDocument.mockResolvedValue(extraction('Someone Else'));
+
+    const { body } = await send();
+
+    expect(body.error).not.toContain('Someone');
+    expect(body.error).not.toContain(accountName);
+  });
+
+  it('saves a mismatched report once the uploader confirms, and records that they did', async () => {
+    const chains = tables();
+    processDocument.mockResolvedValue(extraction('Someone Else'));
+
+    const response = await send(patient, { confirmNameMismatch: 'true' });
+
+    expect(response.status).toBe(201);
+    expect(chains.lab_reports[0].insert.mock.calls[0][0].raw_ocr_payload.name_mismatch_confirmed).toBe(true);
+    expect(removeFile).not.toHaveBeenCalled();
+  });
+
+  it('does not scan the file again when the uploader proceeds', async () => {
+    const chains = tables();
+    processDocument.mockResolvedValue(extraction('Someone Else'));
+    const file = newFile();
+
+    expect((await send(patient, {}, file)).status).toBe(409);
+    expect((await send(patient, { confirmNameMismatch: 'true' }, file)).status).toBe(201);
+
+    expect(processDocument).toHaveBeenCalledTimes(1);
+    expect(chains.lab_reports[0].insert.mock.calls[0][0].raw_ocr_payload.name_mismatch_confirmed).toBe(true);
+    // The confirmed copy is stored afresh, since the first was removed.
+    expect(uploadFile).toHaveBeenCalledTimes(2);
+  });
+
+  it('scans a different file sent with the confirmation instead of trusting the first scan', async () => {
+    const chains = tables();
+    processDocument.mockResolvedValueOnce(extraction('Someone Else'));
+    await send(patient);
+
+    processDocument.mockResolvedValueOnce(extraction(accountName));
+    const response = await send(patient, { confirmNameMismatch: 'true' });
+
+    expect(response.status).toBe(201);
+    expect(processDocument).toHaveBeenCalledTimes(2);
+    expect(chains.lab_reports[0].insert.mock.calls[0][0].raw_ocr_payload.name_mismatch_confirmed).toBeUndefined();
+  });
+
+  it('does not reuse the scan for a second upload of the same file', async () => {
+    tables();
+    processDocument.mockResolvedValue(extraction('Someone Else'));
+    const file = newFile();
+
+    await send(patient, {}, file);
+    await send(patient, { confirmNameMismatch: 'true' }, file);
+    await send(patient, { confirmNameMismatch: 'true' }, file);
+
+    expect(processDocument).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks again rather than saving when the same file is sent unconfirmed', async () => {
+    const chains = tables();
+    processDocument.mockResolvedValue(extraction('Someone Else'));
+    const file = newFile();
+
+    await send(patient, {}, file);
+    const response = await send(patient, {}, file);
+
+    expect(response.status).toBe(409);
+    expect(chains.lab_reports).toBeUndefined();
+  });
+
+  it.each([
+    ['a JPEG photo', 'image/jpeg', 201],
+    ['a PNG photo', 'image/png', 201],
+    ['a file sent with no real type', 'application/octet-stream', 415],
+  ])('handles %s', async (_label, contentType, status) => {
+    tables();
+    processDocument.mockResolvedValue(extraction(accountName));
+
+    expect((await send(patient, {}, newFile(), contentType)).status).toBe(status);
+  });
+
+  it('does not mark a matching report as a confirmed mismatch', async () => {
+    const chains = tables();
+    processDocument.mockResolvedValue(extraction(accountName));
+
+    await send(patient, { confirmNameMismatch: 'true' });
+
+    expect(chains.lab_reports[0].insert.mock.calls[0][0].raw_ocr_payload.name_mismatch_confirmed).toBeUndefined();
+  });
+
+  it('records the upload when the OCR service could not scan it at all', async () => {
+    tables();
+    processDocument.mockResolvedValue({ reportDate: null, ocrStatus: 'failed', metrics: [], raw: null, error: 'down' });
+
+    expect((await send()).status).toBe(201);
+  });
+
+  it('asks, and keeps nothing, when no name could be read on the report', async () => {
+    const chains = tables();
+    processDocument.mockResolvedValue(extraction(null));
+
+    const response = await send();
+
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({
+      code: 'REPORT_NAME_UNREADABLE',
+      details: { nameOnReport: null, nameOnAccount: accountName },
+    });
+    expect(response.body.error).not.toContain(accountName);
+    expect(chains.lab_reports).toBeUndefined();
+    expect(removeFile).toHaveBeenCalledWith('lab-reports', 'patient-123/report.pdf');
+  });
+
+  it('saves a report with no readable name once confirmed, without scanning twice', async () => {
+    const chains = tables();
+    processDocument.mockResolvedValue(extraction(null));
+    const file = newFile();
+
+    await send(patient, {}, file);
+    const response = await send(patient, { confirmNameMismatch: 'true' }, file);
+
+    expect(response.status).toBe(201);
+    expect(processDocument).toHaveBeenCalledTimes(1);
+    const saved = chains.lab_reports[0].insert.mock.calls[0][0].raw_ocr_payload;
+    expect(saved.name_unreadable_confirmed).toBe(true);
+    expect(saved.name_mismatch_confirmed).toBeUndefined();
+  });
+
+  it("compares a clinician's upload with the patient's name, not the clinician's", async () => {
+    mockTables(supabaseAdmin, {
+      profiles: [profileRow('clinician', { fullName: 'Dr. Test' }), ok({ full_name: accountName })],
+      appointments: ok([{ id: 'appt-1' }]),
+    });
+    processDocument.mockResolvedValue(extraction('Someone Else'));
+
+    const response = await send(clinician, { patientId: patient.id });
+
+    expect(response.status).toBe(409);
+    expect(response.body.details.nameOnAccount).toBe(accountName);
+  });
+});
+
+describe('value source locations', () => {
+  const patient = { id: 'patient-123', email: 'patient@example.com' };
+  const post = (body) => {
+    supabaseAdmin.auth.getUser.mockResolvedValue({ data: { user: patient }, error: null });
+    return request(app).post('/api/lab-reports').set('Authorization', 'Bearer t').send(body);
+  };
+  const tables = () =>
+    mockTables(supabaseAdmin, {
+      profiles: profileRow('patient'),
+      lab_reports: ok({ id: 'report-1', patient_id: patient.id }),
+      lab_report_metrics: ok([]),
+    });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Two standardised rows back, in the same order as the input metrics.
+    standardizeMetrics.mockResolvedValue([
+      { raw_key: 'TSH', standard_key: 'tsh', needs_review: false },
+      { raw_key: 'Hb', standard_key: 'hemoglobin', needs_review: false },
+    ]);
+    maybeFlagReportForTriage.mockResolvedValue();
+  });
+
+  it('stores where each value was printed, matched to its row by position', async () => {
+    const chains = tables();
+    const tshSource = { page: 6, row: [0.058, 0.394, 0.931, 0.405], value: [0.495, 0.394, 0.533, 0.404] };
+
+    const response = await post({
+      storagePath: 'labs/report.pdf',
+      metrics: [
+        { key: 'TSH', value: '0.997', source: tshSource },
+        { key: 'Hb', value: '12.2' }, // no location recorded
+      ],
+    });
+
+    expect(response.status).toBe(201);
+    const inserted = chains.lab_report_metrics[0].insert.mock.calls[0][0];
+    expect(inserted[0]).toMatchObject({ raw_key: 'TSH', source_page: 6, source_box: { row: tshSource.row, value: tshSource.value } });
+    expect(inserted[1]).toMatchObject({ raw_key: 'Hb', source_page: null, source_box: null });
+  });
+
+  it('keeps the row box when the value box is missing', async () => {
+    const chains = tables();
+    await post({
+      storagePath: 'labs/report.pdf',
+      metrics: [{ key: 'TSH', value: '0.997', source: { page: 1, row: [0.1, 0.2, 0.9, 0.25], value: null } }, { key: 'Hb', value: '12' }],
+    });
+    const [tsh] = chains.lab_report_metrics[0].insert.mock.calls[0][0];
+    expect(tsh.source_box).toEqual({ row: [0.1, 0.2, 0.9, 0.25], value: null });
+  });
+
+  it.each([
+    ['outside the page', { page: 1, row: [0.1, 0.2, 1.4, 0.25] }],
+    ['with no area', { page: 1, row: [0.5, 0.2, 0.5, 0.25] }],
+    ['on page 0', { page: 0, row: [0.1, 0.2, 0.9, 0.25] }],
+  ])('rejects a location %s', async (_label, source) => {
+    tables();
+    const response = await post({ storagePath: 'labs/report.pdf', metrics: [{ key: 'TSH', value: '1', source }] });
+    expect(response.status).toBe(400);
   });
 });

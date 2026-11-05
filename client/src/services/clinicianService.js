@@ -1,5 +1,6 @@
 import { request, upload } from './apiClient.js';
-import { buildFlowsheet, reviewReason } from '../utils/flowsheet.js';
+import { buildFlowsheet, reviewReason, getScannedNumber } from '../utils/flowsheet.js';
+import { fileKindOf } from '../utils/sourceCrop.js';
 
 /** Create an appointment, attach its questionnaire and invite the patient. */
 export async function createAppointment({
@@ -84,7 +85,7 @@ export async function fetchPatients() {
  * components consume.
  */
 export async function fetchPatientDashboard(patientId, appointmentId) {
-  const [appointment, responses, reports, postVisit, consultationTemplates, actionTemplates] = await Promise.all([
+  const [appointment, responses, reports, postVisit, consultationTemplates, actionTemplates, aiSummary, deviceTrajectory] = await Promise.all([
     request(`/api/appointments/${appointmentId}`),
     request(`/api/questionnaire/responses/${appointmentId}`),
     // Only what the patient chose to share with this appointment.
@@ -92,6 +93,8 @@ export async function fetchPatientDashboard(patientId, appointmentId) {
     request(`/api/post-visit/${appointmentId}`),
     getTemplates('consultation'),
     getTemplates('action'),
+    request(`/api/checkin/summary/${appointmentId}`).catch(() => null),
+    request(`/api/checkin/device-metrics/trajectory?appointmentId=${appointmentId}`).catch(() => null),
   ]);
 
   // Every report shared with any of this doctor's visits, for the history
@@ -137,6 +140,8 @@ export async function fetchPatientDashboard(patientId, appointmentId) {
     })),
     actionTemplates: actionTemplates.map((t) => t.label),
     prescriptions: postVisit?.prescriptions ?? [],
+    aiSummary: aiSummary || null,
+    deviceTrajectory: deviceTrajectory || null,
     notifications: [],
   };
 }
@@ -307,6 +312,58 @@ function buildTriageAlerts(reports = []) {
         confidence: metric.confidence_score ?? null,
         reason: reviewReason(metric),
         imageUrl: report.signed_url ?? null,
+        sourcePage: metric.source_page ?? null,
+        sourceBox: metric.source_box ?? null,
+        fileKind: fileKindOf(report.storage_path),
+        printed: [metric.raw_value, metric.unit_raw].filter(Boolean).join(' '),
+        parsedValue: metric.parsed_value ?? null,
+        rawValue: metric.raw_value ?? null,
+        scannedValue: getScannedNumber(metric.parsed_value, metric.raw_value),
       }))
   );
+}
+
+// ---------- Maternity card ----------
+// :section is visits | labs | scans | vaccines. Values use the card's own field names.
+
+/** The patient's whole maternity card; empty lists when none was started. */
+export async function fetchMaternityCard(patientId) {
+  return request(`/api/maternity/${patientId}`);
+}
+
+/** Patient details and first-attendance baseline. */
+export async function saveMaternityDetails(patientId, values) {
+  return request(`/api/maternity/${patientId}`, { method: 'PUT', body: values });
+}
+
+export async function saveMaternityDelivery(patientId, values) {
+  return request(`/api/maternity/${patientId}/delivery`, { method: 'PUT', body: values });
+}
+
+export async function addMaternityRow(patientId, section, values) {
+  return request(`/api/maternity/${patientId}/${section}`, { method: 'POST', body: values });
+}
+
+export async function updateMaternityRow(patientId, section, rowId, values) {
+  return request(`/api/maternity/${patientId}/${section}/${rowId}`, { method: 'PATCH', body: values });
+}
+
+export async function deleteMaternityRow(patientId, section, rowId) {
+  return request(`/api/maternity/${patientId}/${section}/${rowId}`, { method: 'DELETE' });
+}
+
+/** Pull confirmed values from newly shared lab reports onto the card; returns the investigations list. */
+export async function importMaternityReports(patientId) {
+  return request(`/api/maternity/${patientId}/import-reports`, { method: 'POST' });
+}
+
+
+/** Generate or re-synthesize the AI Pre-Visit Clinical Brief */
+export async function generatePreVisitSummary(appointmentId) {
+  return request(`/api/checkin/summary/${appointmentId}/generate`, { method: 'POST' });
+}
+
+/** Fetch genuine wearable device metrics and trajectory for an appointment */
+export async function getDeviceMetricsTrajectory(appointmentId) {
+  return request(`/api/checkin/device-metrics/trajectory?appointmentId=${appointmentId}`);
 }

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "495156372797",
+    "project_id": "medbrief-ad63b",
+    "storage_bucket": "medbrief-ad63b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:495156372797:android:2ba2fc0c9ba9a129959154",
+        "android_client_info": {
+          "package_name": "com.healthon.health_on_patient"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDvWBO2GQf1-nnq4o8coGVcPf_alZKMXJA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

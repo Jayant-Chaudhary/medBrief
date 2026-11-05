@@ -1,0 +1,750 @@
+{
+  "info": {
+    "name": "MedBrief Community \u2014 synthetic manual smoke tests",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Run requests individually in order against a test setup. No real credentials or private service keys are included. Do not Run Collection against a live clinic: this collection includes writes. Optional help/outreach writes require allowSafetyTest=true. Read docs/postman/README.md before use."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (pm.response.code === 200 && pm.request.url.toString().includes(\"/api/community/\")) {",
+          "  const forbidden = new Set([\"proof\", \"community_id\", \"communityId\", \"auth_user_id\", \"authUserId\", \"author_id\", \"subject_id\", \"member_id\", \"token_hash\"]);",
+          "  function hasPrivateKey(value) { return value && typeof value === \"object\" && Object.entries(value).some(([key, child]) => forbidden.has(key) || hasPrivateKey(child)); }",
+          "  pm.test(\"Community response contains no private identity keys\", () => pm.expect(Boolean(hasPrivateKey(pm.response.json()))).to.equal(false));",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "1 Setup, consent and readiness",
+      "item": [
+        {
+          "name": "01 API health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "description": "Checks only the main API process, not community database readiness.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 Login with a synthetic patient account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/login",
+            "description": "Use an existing synthetic patient login. Saves the session access token locally. Do not use a service-role key as the Bearer token.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"{{testPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get(\"testEmail\") || !pm.environment.get(\"testPassword\")) throw new Error(\"Set testEmail and testPassword in your LOCAL Postman environment, or skip login and set accessToken yourself.\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const token = pm.response.json().session?.access_token;",
+                  "  pm.test(\"Returns a session access token\", () => pm.expect(token).to.be.a(\"string\").and.not.empty);",
+                  "  if (token) pm.environment.set(\"accessToken\", token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 Community notice and readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/community/notice",
+            "description": "enabled=false means clinic configuration/on-call readiness is incomplete. A model bypass does not bypass that gate."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  pm.test(\"Community configuration ready\", () => pm.expect(data.enabled).to.equal(true));",
+                  "  if (data.enabled === true && typeof data.version === \"string\") pm.environment.set(\"noticeVersion\", data.version);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 Accept test account community consent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/community/enrol",
+            "description": "Read the notice and accept it for your synthetic test account. Uses the current server consent version.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"noticeVersion\": \"{{noticeVersion}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get(\"noticeVersion\")) throw new Error(\"Read the current notice first.\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.test(\"Enrolled\", () => pm.expect(pm.response.json().enrolled).to.equal(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 Community username",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/community/me",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.test(\"Public pseudonym returned\", () => pm.expect(pm.response.json().username).to.be.a(\"string\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 Available tags",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/community/tags",
+            "description": "Saves the first active tag as tagId, or leaves it empty. An empty tag list is a valid response."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns an array\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));",
+                  "if (pm.response.code === 200) {",
+                  "  const tags = pm.response.json();",
+                  "  pm.environment.set(\"tagId\", tags.length ? tags[0].id : \"\");",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 Posts and replies \u2014 run worker between writes and reads",
+      "item": [
+        {
+          "name": "07 Create a synthetic post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/community/posts",
+            "description": "Normal content returns pending, not published. Run the scheduled worker after the configured delay. Retains its request key across retries; clear createPostRequestKey to create a different post.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestKey\": \"{{createPostRequestKey}}\",\n  \"title\": \"Postman synthetic community test\",\n  \"body\": \"Testing the community feed with fictional content.\",\n  \"tags\": {{tagIdsJson}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get(\"createPostRequestKey\")) pm.environment.set(\"createPostRequestKey\", pm.variables.replaceIn(\"{{$guid}}\"));",
+                  "pm.variables.set(\"tagIdsJson\", JSON.stringify(pm.environment.get(\"tagId\") ? [pm.environment.get(\"tagId\")] : []));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  pm.test(\"Submission returns a content ID and state\", () => { pm.expect(data.id).to.be.a(\"string\"); pm.expect([\"pending\", \"held\"]).to.include(data.state); });",
+                  "  if (data.id) pm.environment.set(\"postId\", data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08 My posts including pending content",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/community/posts/mine",
+            "description": "Shows the author's latest revisions even before public publication. Revision state may be normal while publication is pending."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns an array\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09 Published feed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/community/posts",
+            "description": "An empty array can be normal before the worker has published anything."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns an array\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10 Published post detail \u2014 after worker",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/community/posts/{{postId}}",
+            "description": "Returns an array. If empty, wait for the configured publication delay and run the worker again. Held posts need professional review."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get(\"postId\")) throw new Error(\"Create a synthetic post first.\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns an array\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));",
+                  "if (pm.response.code === 200) pm.test(\"Created post has been published\", () => pm.expect(pm.response.json().some(post => post.id === pm.environment.get(\"postId\"))).to.equal(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11 Create a synthetic reply",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/community/comments",
+            "description": "Requires a published parent post. Normal replies also need the worker to publish. Keep the same request key only for retries of this exact reply.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestKey\": \"{{commentRequestKey}}\",\n  \"postId\": \"{{postId}}\",\n  \"body\": \"A fictional reply for API testing.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get(\"postId\")) throw new Error(\"Create a synthetic post first.\");",
+                  "if (!pm.environment.get(\"commentRequestKey\")) pm.environment.set(\"commentRequestKey\", pm.variables.replaceIn(\"{{$guid}}\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200 && pm.response.json().id) pm.environment.set(\"commentId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12 Read published replies \u2014 after worker",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/community/posts/{{postId}}/comments",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get(\"postId\")) throw new Error(\"Create a synthetic post first.\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns an array\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3 Care inbox reads",
+      "item": [
+        {
+          "name": "13 Read Care inbox",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/community/care/threads",
+            "description": "An empty array is valid if there are no cases. If there is exactly one thread, saves its ID. Otherwise select the intended synthetic test thread and set threadId manually. Reading the list does not record an acknowledgement."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns an array\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));",
+                  "if (pm.response.code === 200) {",
+                  "  const threads = pm.response.json();",
+                  "  if (threads.length === 1) pm.environment.set(\"threadId\", threads[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14 Read private care messages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/community/care/threads/{{threadId}}/messages",
+            "description": "Requires the subject account or an assigned professional. This GET does not itself acknowledge the message."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get(\"threadId\")) throw new Error(\"Select a threadId from Care inbox first.\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Returns an array\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4 OPTIONAL Synthetic outreach \u2014 explicit enable required",
+      "item": [
+        {
+          "name": "OPTIONAL Create a synthetic help case on own post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/community/help",
+            "description": "Creates an actual urgent case in the configured test database, private outreach and notification jobs. It never reveals identity automatically. Then run request 13 to choose its thread. Do not run this on a live care system.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestKey\": \"{{helpRequestKey}}\",\n  \"id\": \"{{postId}}\",\n  \"targetType\": \"post\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get(\"allowSafetyTest\") !== \"true\") throw new Error(\"This creates an urgent case and on-call outreach. Use an isolated test setup and explicitly set allowSafetyTest=true.\");",
+                  "if (!pm.environment.get(\"postId\")) throw new Error(\"Create a synthetic post first.\");",
+                  "if (!pm.environment.get(\"helpRequestKey\")) pm.environment.set(\"helpRequestKey\", pm.variables.replaceIn(\"{{$guid}}\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OPTIONAL Acknowledge opening a care message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/community/care/respond",
+            "description": "Records a real response in the synthetic case. Also supports kind okay or help; use a new request key for a different action.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestKey\": \"{{respondRequestKey}}\",\n  \"id\": \"{{threadId}}\",\n  \"kind\": \"opened\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get(\"allowSafetyTest\") !== \"true\") throw new Error(\"Enable allowSafetyTest only for an isolated synthetic care test.\");",
+                  "if (!pm.environment.get(\"threadId\")) throw new Error(\"Select a threadId from Care inbox first.\");",
+                  "if (!pm.environment.get(\"respondRequestKey\")) pm.environment.set(\"respondRequestKey\", pm.variables.replaceIn(\"{{$guid}}\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OPTIONAL Reply in the private care thread",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/community/care/messages",
+            "description": "Records a reply/response and queues generic notifications for professionals. This passes through the safety service, including the development LLM bypass when enabled.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestKey\": \"{{careMessageRequestKey}}\",\n  \"id\": \"{{threadId}}\",\n  \"body\": \"Synthetic test reply. Please disregard outside the test setup.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get(\"allowSafetyTest\") !== \"true\") throw new Error(\"Enable allowSafetyTest only for an isolated synthetic care test.\");",
+                  "if (!pm.environment.get(\"threadId\")) throw new Error(\"Select a threadId from Care inbox first.\");",
+                  "if (!pm.environment.get(\"careMessageRequestKey\")) pm.environment.set(\"careMessageRequestKey\", pm.variables.replaceIn(\"{{$guid}}\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5 Authorization checks",
+      "item": [
+        {
+          "name": "Missing token must return 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/community/me",
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Unauthenticated request rejected\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Patient cannot read professional queue",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/community/professional/queue",
+            "description": "Use an ordinary patient account without a verified professional community role."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Ordinary patient denied professional access\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6 Optional public username choice",
+      "item": [
+        {
+          "name": "Check whether a username choice is allowed",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.test(\"Only own choice status returned\", () => pm.expect(pm.response.json().canChooseUsername).to.be.a(\"boolean\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/community/username/status",
+            "description": "Requires migration 20261028000012_community_username_lock.sql. false means the chosen name is locked. Only a human-approved identity reveal rotation allows one new choice."
+          }
+        },
+        {
+          "name": "Choose a public username",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get(\"usernameRequestKey\")) pm.environment.set(\"usernameRequestKey\", pm.variables.replaceIn(\"{{$guid}}\"));",
+                  "if (!pm.environment.get(\"chosenUsername\")) throw new Error(\"Set chosenUsername to a pseudonym such as calm_garden first.\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected username policy response\", () => pm.expect([200, 403, 409]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) pm.test(\"Public username returned\", () => pm.expect(pm.response.json().username).to.equal(pm.environment.get(\"chosenUsername\").trim().toLowerCase()));",
+                  "if (pm.response.code === 403) pm.test(\"Username change denied\", () => pm.expect(pm.response.json()).to.have.property(\"error\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/community/username",
+            "description": "Requires migrations 11 then 12. First choice locks the username. A new choice is allowed only after an approved reveal rotates it. Old names stay reserved. Reuse the same request key only for retries; a different name with a new key is forbidden while locked.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestKey\": \"{{usernameRequestKey}}\",\n  \"username\": \"{{chosenUsername}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

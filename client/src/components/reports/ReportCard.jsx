@@ -143,7 +143,7 @@ export default function ReportCard({ report, appointments = [], onRemove, onTogg
                   >
                     <Checkbox
                       checked={checked}
-                      onChange={(e) => onToggleShare?.(report, appointment.id, e.target.checked)}
+                      onChange={(e) => onToggleShare?.(report.id, appointment.id, e.target.checked)}
                     />
                     <span className="text-sm">
                       <span className="block font-medium text-ink">

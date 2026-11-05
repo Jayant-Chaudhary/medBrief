@@ -408,16 +408,34 @@ def _center_in_any(obj: dict, bboxes: Sequence[tuple]) -> bool:
     return any(b[0] <= cx <= b[2] and b[1] <= cy <= b[3] for b in bboxes)
 
 
+def is_multiline_cell(text: str | None) -> bool:
+    """A cell holding several printed lines, i.e. rows the table has no rules between.
+
+    pdfplumber finds tables by their ruled lines. A box with only an outer
+    border comes back as one cell holding the whole block ("HbA1c 5.4 % ...
+    ⏎Estimated average glucose 108 mg/dL"), and unruled sub-rows come back
+    as stacked cells ("87.10⏎11.40⏎0.90"). As a single token either one is
+    unparseable: names and values can no longer be paired line by line.
+    """
+    return text is not None and "\n" in text.strip()
+
+
 def tokens_from_table_matrix(
     table,
     matrix: Sequence[Sequence[str | None]],
     page_index: int,
     source: str = "pdfplumber_table",
+    cell_bboxes: list[tuple] | None = None,
 ) -> list[Token]:
-    """Convert an already-extracted table into one Token per non-empty cell.
+    """Convert an already-extracted table into one Token per single-line cell.
 
     The matrix is passed in rather than re-extracted: `table.extract()` is not
     cheap and the caller already needs the result.
+
+    Multi-line cells are skipped: the caller reads their words with positions
+    instead, so each printed line becomes its own row (see `is_multiline_cell`).
+    The bbox of every cell turned into a token is appended to `cell_bboxes`,
+    so the caller keeps those words out of word extraction and nothing else.
 
     Merged cells come back as None in both `row.cells` and the text matrix, so
     both are guarded.
@@ -427,9 +445,13 @@ def tokens_from_table_matrix(
         for cell_bbox, text in zip(row_obj.cells, row_text):
             if not cell_bbox or text is None:
                 continue
+            if is_multiline_cell(text):
+                continue
             text = text.strip()
             if not text:
                 continue
+            if cell_bboxes is not None:
+                cell_bboxes.append(tuple(cell_bbox))
             x0, top, x1, bottom = cell_bbox
             tokens.append(Token(
                 text=text,
@@ -491,6 +513,9 @@ class PageReport:
     reasons: tuple[str, ...]
     signals: dict
     table_count: int
+    # Page size in PDF points; token coordinates are measured against it.
+    width: float | None = None
+    height: float | None = None
 
 
 @dataclass
@@ -549,6 +574,9 @@ def process_digital_pdf(
                 found = []
 
             table_bboxes: list[tuple] = []
+            # Only cells that became tokens are kept out of word extraction;
+            # words in multi-line cells are read with their positions instead.
+            cell_bboxes: list[tuple] = []
             for tbl in found:
                 try:
                     matrix = tbl.extract()
@@ -557,15 +585,15 @@ def process_digital_pdf(
                     continue
                 result.tables.append(matrix)
                 result.tokens.extend(
-                    tokens_from_table_matrix(tbl, matrix, page_index)
+                    tokens_from_table_matrix(tbl, matrix, page_index, cell_bboxes=cell_bboxes)
                 )
                 table_bboxes.append(tbl.bbox)
 
             word_page = page
-            if table_bboxes:
+            if cell_bboxes:
                 try:
                     word_page = page.filter(
-                        lambda obj: not _center_in_any(obj, table_bboxes)
+                        lambda obj: not _center_in_any(obj, cell_bboxes)
                     )
                 except Exception as exc:
                     logger.warning("page.filter failed on page %d: %s", page_index, exc)
@@ -600,6 +628,8 @@ def process_digital_pdf(
                 reasons=report.reasons,
                 signals=report.signals,
                 table_count=len(table_bboxes),
+                width=float(page.width),
+                height=float(page.height),
             ))
             result.pages_processed += 1
             page.flush_cache()

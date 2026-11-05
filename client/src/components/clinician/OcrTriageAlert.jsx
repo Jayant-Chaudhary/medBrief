@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Icon } from '../common/Icon.jsx';
 import { Button } from '../common/Button.jsx';
 import { formatDate } from '../../utils/format.js';
+import { getScannedNumber } from '../../utils/flowsheet.js';
+import { SourcePreview } from './SourcePreview.jsx';
 
 /**
  * Human-in-the-loop OCR review.
@@ -20,7 +22,7 @@ export function OcrTriageAlert({ alerts = [], onResolve }) {
   const listId = 'ocr-triage-list';
 
   return (
-    <section className="rounded-2xl border border-terracotta-border bg-terracotta-surface p-4">
+    <section className="rounded-2xl border border-amber-300 bg-gradient-to-r from-amber-50/90 to-orange-50/80 dark:border-amber-800/50 dark:from-amber-950/40 dark:to-orange-950/30 p-4 shadow-xs">
       <button
         type="button"
         onClick={() => setExpanded((open) => !open)}
@@ -28,14 +30,14 @@ export function OcrTriageAlert({ alerts = [], onResolve }) {
         aria-controls={listId}
         className="flex w-full items-start gap-3 text-left"
       >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-terracotta text-white">
-          <Icon name="scan" size={16} />
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-600 text-white shadow-xs">
+          <Icon name="scan" size={18} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block font-display text-label-lg text-terracotta">
+          <span className="block font-display text-label-lg font-bold text-amber-950 dark:text-amber-200">
             {alerts.length} value{alerts.length > 1 ? 's' : ''} need{alerts.length > 1 ? '' : 's'} manual review
           </span>
-          <span className="block text-body-sm text-terracotta-deep">
+          <span className="block text-body-sm text-amber-900/80 dark:text-amber-300/80 mt-0.5">
             {expanded
               ? 'The OCR engine flagged these as low-confidence. Enter the reading from the scan to resolve.'
               : 'Low-confidence OCR values. Expand to review.'}
@@ -65,6 +67,23 @@ function AlertItem({ alert, onResolve }) {
   const [value, setValue] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [showSource, setShowSource] = useState(false);
+
+  const scannedValue =
+    alert.scannedValue ?? getScannedNumber(alert.parsedValue, alert.rawValue ?? alert.printed);
+
+  async function handleKeepScanned() {
+    if (scannedValue == null) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onResolve?.(alert, scannedValue);
+    } catch (err) {
+      setError(err.message || 'Could not save that value.');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function submit(event) {
     event.preventDefault();
@@ -81,21 +100,29 @@ function AlertItem({ alert, onResolve }) {
   }
 
   return (
-    <li className="rounded-xl border border-terracotta-border bg-surface p-3">
+    // Shows scanned values: the assistant reads only the labelled controls here.
+    <li className="rounded-xl border border-terracotta-border bg-surface p-3" data-assistant-private="">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-display text-label-lg text-ink">{alert.label}</p>
-        {alert.confidence != null && (
-          <span className="rounded-full bg-terracotta-surface px-2 py-0.5 text-label-sm tabular text-terracotta">
-            {Math.round(alert.confidence * 100)}% confidence
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {alert.printed && (
+            <span className="text-body-sm text-ink-3">
+              Scanned: <span className="font-medium text-ink">{alert.printed}</span>
+            </span>
+          )}
+          {alert.confidence != null && (
+            <span className="rounded-full bg-terracotta-surface px-2 py-0.5 text-label-sm tabular text-terracotta">
+              {Math.round(alert.confidence * 100)}% confidence
+            </span>
+          )}
+        </div>
       </div>
       <p className="mt-0.5 text-body-sm text-ink-3">
         {alert.reportName} · {formatDate(alert.reportDate)}
       </p>
       <p className="mt-1 text-body-sm text-ink-2">{alert.reason}</p>
 
-      <form onSubmit={submit} className="mt-2.5 flex items-center gap-2">
+      <form onSubmit={submit} className="mt-2.5 flex flex-wrap items-center gap-2">
         <label className="sr-only" htmlFor={`ocr-${alert.id}`}>
           Corrected value for {alert.label}
         </label>
@@ -103,24 +130,64 @@ function AlertItem({ alert, onResolve }) {
           id={`ocr-${alert.id}`}
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder="Enter value from scan"
-          className="field h-9 flex-1"
+          placeholder={scannedValue != null ? `Or enter new value (scanned: ${scannedValue})` : 'Enter value from scan'}
+          className="field h-9 flex-1 min-w-[140px]"
         />
-        {alert.imageUrl && (
-          <a
-            href={alert.imageUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="shrink-0 rounded-xl border border-line px-3 py-2 text-label-md text-cypress hover:bg-subcanvas"
+        {scannedValue != null && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={handleKeepScanned}
+            disabled={saving}
+            data-assistant-label={`Keep scanned value for ${alert.label}`}
+            title={`Keep scanned value (${scannedValue}) without re-typing`}
           >
-            View scan
-          </a>
+            {saving ? 'Saving…' : `Keep scanned (${scannedValue})`}
+          </Button>
         )}
-        <Button type="submit" size="sm" disabled={saving || !value.trim()}>
+        {alert.imageUrl && (
+          <button
+            type="button"
+            onClick={() => setShowSource(true)}
+            aria-haspopup="dialog"
+            data-assistant-label={`View ${alert.label} on report`}
+            className="shrink-0 rounded-xl border border-line px-3 py-1.5 text-label-md text-cypress hover:bg-subcanvas"
+          >
+            View on report
+          </button>
+        )}
+        <Button type="submit" size="sm" disabled={saving || !value.trim()} data-assistant-label={`Save corrected value for ${alert.label}`}>
           {saving ? 'Saving…' : 'Resolve'}
         </Button>
       </form>
       {error && <p className="mt-1.5 text-body-sm text-terracotta">{error}</p>}
+      {/* The correction box is already right here, so the preview only shows the line. */}
+      <SourcePreview
+        item={
+          showSource
+            ? {
+                name: alert.label,
+                value: alert.printed || (scannedValue != null ? String(scannedValue) : '—'),
+                printed: alert.printed,
+                parsedValue: alert.parsedValue,
+                rawValue: alert.rawValue,
+                scannedValue,
+                scanUrl: alert.imageUrl,
+                fileKind: alert.fileKind,
+                sourcePage: alert.sourcePage,
+                sourceBox: alert.sourceBox,
+                needsReview: true,
+                reason: alert.reason,
+              }
+            : null
+        }
+        onClose={() => setShowSource(false)}
+        onResolve={async (val) => {
+          await onResolve?.(alert, val);
+          setShowSource(false);
+        }}
+      />
     </li>
   );
 }

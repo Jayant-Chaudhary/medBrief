@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Maternity card</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">+</div>
+      <div>
+        <h1>Maternity card</h1>
+        <p>One patient · complete pregnancy record</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span id="saveStatus" class="save-status" role="status" aria-live="polite">Loading…</span>
+      <button id="newCard" class="btn" type="button">New card</button>
+      <button id="printCard" class="btn btn-primary" type="button">Print / Save PDF</button>
+    </div>
+  </header>
+
+  <div id="warning" class="warning" role="alert" hidden></div>
+
+  <div class="workspace">
+    <!-- Left: the doctor enters details in one unified, single-tab panel. -->
+    <aside id="entry" class="entry" aria-label="Enter details">
+      <div class="entry-head">
+        <div class="entry-head-row">
+          <h2>Enter details</h2>
+          <span class="all-in-one-tag">One tab · Live preview</span>
+        </div>
+        <nav id="quickNav" class="quick-nav" aria-label="Quick jump to card sections"></nav>
+      </div>
+      <div id="panel" class="entry-body"></div>
+    </aside>
+
+    <!-- Right: the structured card, updated live as details are entered. -->
+    <main class="card-area">
+      <div class="paper-scroll">
+        <article id="card" class="clinical-paper" aria-label="Maternity card"></article>
+      </div>
+    </main>
+  </div>
+
+  <p class="local-note">Stored only in this browser on this device · not synced to a server.</p>
+
+  <datalist id="testOptions">
+    <option value="Hb"><option value="TSH"><option value="Blood glucose"><option value="OGTT">
+    <option value="Platelet count"><option value="HIV"><option value="HBsAg"><option value="VDRL">
+    <option value="Urine routine"><option value="Urine culture">
+  </datalist>
+  <datalist id="vaccineOptions">
+    <option value="Td"><option value="Tdap"><option value="Anti-D"><option value="Influenza">
+  </datalist>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

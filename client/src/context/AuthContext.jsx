@@ -17,7 +17,7 @@ export function AuthProvider({ children }) {
       setUser(session?.user ?? null);
       if (session?.user) {
         try {
-          const userProfile = await fetchProfile(session.user.id);
+          const userProfile = await fetchProfile(session.user.id, session);
           setProfile(userProfile);
         } catch (e) {
           console.error('Failed to load profile:', e);
@@ -32,7 +32,7 @@ export function AuthProvider({ children }) {
       setUser(session?.user ?? null);
       if (session?.user) {
         try {
-          const userProfile = await fetchProfile(session.user.id);
+          const userProfile = await fetchProfile(session.user.id, session);
           setProfile(userProfile);
         } catch (e) {
           console.error('Failed to update profile:', e);
@@ -72,7 +72,7 @@ export function AuthProvider({ children }) {
   /** Re-reads the signed-in user's profile, e.g. after their verification changes. */
   const refreshProfile = async () => {
     if (!user) return null;
-    const updatedProfile = await fetchProfile(user.id);
+    const updatedProfile = await fetchProfile(user.id, session);
     setProfile(updatedProfile);
     return updatedProfile;
   };

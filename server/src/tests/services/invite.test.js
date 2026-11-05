@@ -56,7 +56,7 @@ describe('Invite Service', () => {
       }));
 
       // The link is returned so the clinician UI can hand it over if SMTP fails.
-      expect(result).toEqual({ ...mockInvite, inviteLink: expect.stringMatching(/\/invite\/[0-9a-f]{64}$/) });
+      expect(result).toEqual({ ...mockInvite, inviteLink: expect.stringMatching(/\/invite\/[0-9a-f]{64}$/), emailSent: true });
     });
 
     it('should throw error if db insert fails', async () => {
@@ -76,6 +76,7 @@ describe('Invite Service', () => {
       transport.sendMail.mockRejectedValue(new Error('Network timeout'));
 
       const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+      const debugSpy = jest.spyOn(logger, 'debug').mockImplementation(() => {});
 
       const result = await createAndSendInvite({
         appointmentId: 'appt-1',
@@ -83,13 +84,20 @@ describe('Invite Service', () => {
       });
 
       // The link is returned so the clinician UI can hand it over if SMTP fails.
-      expect(result).toEqual({ ...mockInvite, inviteLink: expect.stringMatching(/\/invite\/[0-9a-f]{64}$/) });
+      expect(result).toEqual({ ...mockInvite, inviteLink: expect.stringMatching(/\/invite\/[0-9a-f]{64}$/), emailSent: false });
       expect(warnSpy).toHaveBeenCalledWith(
         'could not send invite email via SMTP; invite token was still created',
         expect.objectContaining({ scope: 'invite', appointmentId: 'appt-1', error: 'Network timeout' })
       );
 
+      // Verify debug logs never print the secret token or full URL
+      for (const call of debugSpy.mock.calls) {
+        expect(call[0]).not.toContain('/invite/');
+        expect(call[0]).not.toContain(result.token);
+      }
+
       warnSpy.mockRestore();
+      debugSpy.mockRestore();
     });
   });
 });

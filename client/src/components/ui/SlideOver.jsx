@@ -40,7 +40,7 @@ export function SlideOver({ open, onClose, title, subtitle, children }) {
   return (
     <div className={`fixed inset-0 z-50 ${open ? '' : 'pointer-events-none'}`} aria-hidden={!open}>
       <div
-        className={`absolute inset-0 bg-black/40 transition-opacity duration-300 ${open ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute inset-0 bg-slate-900/20 backdrop-blur-[2px] transition-opacity duration-300 ${open ? 'opacity-100' : 'opacity-0'}`}
         onClick={onClose}
       />
 
@@ -50,13 +50,13 @@ export function SlideOver({ open, onClose, title, subtitle, children }) {
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={`absolute inset-y-0 right-0 flex w-full max-w-[480px] flex-col bg-canvas shadow-2xl outline-none
+        className={`absolute inset-y-0 right-0 flex w-full max-w-[540px] xl:max-w-[620px] flex-col bg-surface border-l border-line shadow-2xl outline-none
                     transition-transform duration-300 ease-out ${open ? 'translate-x-0' : 'translate-x-full'}`}
       >
-        <header className="flex items-start justify-between gap-3 border-b border-line bg-surface px-5 py-4">
+        <header className="flex items-start justify-between gap-3 border-b border-line bg-surface px-6 py-4">
           <div className="min-w-0">
-            <h2 className="font-display text-head-sm text-ink">{title}</h2>
-            {subtitle && <p className="mt-0.5 text-body-sm text-ink-3">{subtitle}</p>}
+            <h2 className="font-display text-head-sm font-bold text-ink">{title}</h2>
+            {subtitle && <p className="mt-0.5 text-body-sm text-ink-soft">{subtitle}</p>}
           </div>
           <button
             type="button"
@@ -68,7 +68,7 @@ export function SlideOver({ open, onClose, title, subtitle, children }) {
           </button>
         </header>
 
-        <div className="scroll-column min-h-0 flex-1 space-y-4 p-4">{children}</div>
+        <div className="scroll-column min-h-0 flex-1 space-y-4 p-5 bg-canvas/40">{children}</div>
       </aside>
     </div>
   );

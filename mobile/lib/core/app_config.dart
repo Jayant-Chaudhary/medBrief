@@ -1,0 +1,30 @@
+class AppConfig {
+  const AppConfig({
+    required this.supabaseUrl,
+    required this.supabaseKey,
+    required this.apiBaseUrl,
+  });
+
+  const AppConfig.fromEnvironment()
+    : supabaseUrl = const String.fromEnvironment(
+        'SUPABASE_URL',
+        defaultValue: 'https://bgvnqpjxhflsjuebqvdr.supabase.co',
+      ),
+      supabaseKey = const String.fromEnvironment(
+        'SUPABASE_PUBLISHABLE_KEY',
+        defaultValue: 'sb_publishable_QTXvGbJOaEivta3Tv99v5A_aRnPno7f',
+      ),
+      apiBaseUrl = const String.fromEnvironment(
+        'API_BASE_URL',
+        defaultValue: 'http://192.168.31.82:4000',
+      );
+
+  final String supabaseUrl;
+  final String supabaseKey;
+  final String apiBaseUrl;
+
+  bool get isConfigured =>
+      Uri.tryParse(supabaseUrl)?.hasAuthority == true &&
+      supabaseKey.isNotEmpty &&
+      Uri.tryParse(apiBaseUrl)?.hasAuthority == true;
+}

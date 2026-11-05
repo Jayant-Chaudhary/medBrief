@@ -23,7 +23,7 @@ async function assertAppointmentAccess(appointmentId, user) {
 
   const { data: appointment, error } = await supabaseAdmin
     .from('appointments')
-    .select('id, patient_id, clinician_id, status')
+    .select('id, patient_id, clinician_id, status, scheduled_at')
     .eq('id', appointmentId)
     .maybeSingle();
 
