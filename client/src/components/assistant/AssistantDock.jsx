@@ -789,9 +789,20 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
 
   if (reply.type === 'answer') {
     return (
-      <div className="space-y-0.5 text-sm">
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Assistant tip</p>
-        <p className="text-ink">{reply.text}</p>
+      <div className="space-y-1.5 text-sm">
+        <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
+          {reply.source === 'clinical_record' ? 'Patient Record' : 'Assistant tip'}
+        </p>
+        <p className="text-ink leading-relaxed">{reply.text}</p>
+        {reply.recordPath && (
+          <button
+            type="button"
+            onClick={() => onChoose?.(reply.recordPath)}
+            className="mt-1 inline-flex items-center gap-1 rounded-full border border-teal-500/30 bg-teal-500/10 px-3 py-1 text-xs font-medium text-teal-700 hover:bg-teal-500/20 dark:text-teal-300"
+          >
+            {reply.recordLabel || 'View Record'} →
+          </button>
+        )}
       </div>
     );
   }

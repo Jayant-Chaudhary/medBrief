@@ -33,6 +33,7 @@ const execution = require('./execution');
 const writes = require('./writes');
 const { resolveRecord, appointmentOwner } = require('./recordContext');
 const { sanitizeMemory, effectiveGroundingMessage, resolveMemoryFollowUp, formatMemoryForPrompt } = require('./memory');
+const { detectClinicalQuery, queryPatientMetric, formatMetricAnswer } = require('./patientQuery.service');
 
 const NOT_FOUND = 'I could not find a patient with that name among your patients. Try the full name, or open Patients to search.';
 const ONE_PATIENT = 'I can only work with one patient per request. Please ask about each patient separately.';
@@ -729,6 +730,19 @@ async function handleStep({
 }) {
   const pages = pagesFor(role);
   if (!pages.length) return { ...unsupported('none'), attempts: 0 };
+
+  if (role === 'clinician' && round === 0) {
+    const earlyQuery = detectClinicalQuery(message);
+    if (earlyQuery.isQuery && earlyQuery.isDiagnostic) {
+      return {
+        type: 'answer',
+        text: 'I can look up recorded test results, vitals, and investigations for you, but I do not diagnose or interpret clinical normality.',
+        source: 'clinical_record',
+        attempts: 0,
+      };
+    }
+  }
+
   if (/\b(?:delete\s+all|remove\s+all|diagnos\w*|what\s+(?:is\s+the\s+)?(?:safe\s+)?dos(?:e|age)|dos(?:e|age)\s+of\s+\w+\s+is\s+safe|is\s+her\s+hb\s+normal|can\s+i\s+eat\s+papaya|papita\s+kha\s+sakti|sign\s*out\s+of)\b/i.test(String(message || ''))) return { ...unsupported('rules'), attempts: 0 };
 
 
@@ -832,6 +846,84 @@ async function handleStep({
   let current = await resolveRecord(currentRecord, patients, userId, lookup);
   if (!current && followUp?.record) {
     current = await resolveRecord(followUp.record, patients, userId, lookup);
+  }
+
+  // Clinical Factual Q&A: answer questions about any patient's recorded metrics/labs
+  if (role === 'clinician' && round === 0) {
+    const clinicalQuery = detectClinicalQuery(message);
+    if (clinicalQuery.isQuery) {
+      if (clinicalQuery.isDiagnostic) {
+        return {
+          type: 'answer',
+          text: 'I can look up recorded test results, vitals, and investigations for you, but I do not diagnose or interpret clinical normality.',
+          source: 'clinical_record',
+          attempts: 0,
+        };
+      }
+
+      if (!patients.length) {
+        patients = await Promise.resolve(directory(userId)).catch(() => []);
+      }
+
+      let targetPatient = null;
+
+      // 1. If a specific patient name was typed in the question
+      if (clinicalQuery.candidateName) {
+        const resolved = resolvePatient(clinicalQuery.candidateName, patients);
+        if (resolved.status === 'one') {
+          targetPatient = resolved.patient;
+        } else if (resolved.status === 'many') {
+          return {
+            type: 'choose',
+            message: 'Which patient did you mean?',
+            options: resolved.matches.map(p => ({
+              label: p.fullName,
+              steps: [{ do: 'find_patient', page: 'none', patient: p.fullName, which: 'none', when: '', fields: [], press: 'none' }],
+            })),
+            source: 'clinical_record',
+            attempts: 0,
+          };
+        } else {
+          return {
+            type: 'clarify',
+            message: NOT_FOUND,
+            options: [],
+            source: 'clinical_record',
+            attempts: 0,
+          };
+        }
+      }
+
+      // 2. If no name was typed, use currently active patient record on screen
+      if (!targetPatient && current?.patientId) {
+        const pMatch = patients.find(p => p.id === current.patientId);
+        targetPatient = pMatch || { id: current.patientId, fullName: 'the patient' };
+      }
+
+      // 3. If neither name nor active patient is available, ask which patient
+      if (!targetPatient) {
+        return {
+          type: 'clarify',
+          message: "Which patient's record would you like me to check?",
+          options: [],
+          source: 'clinical_record',
+          attempts: 0,
+        };
+      }
+
+      // 4. Query all sources (visits, investigations, uploaded lab reports, vitals)
+      const record = await queryPatientMetric(userId, targetPatient.id, clinicalQuery.metricTerm);
+      const answer = formatMetricAnswer(targetPatient.fullName, clinicalQuery.metricTerm, record, targetPatient.id);
+
+      return {
+        type: 'answer',
+        text: answer.text,
+        recordPath: answer.recordPath,
+        recordLabel: answer.recordLabel,
+        source: 'clinical_record',
+        attempts: 0,
+      };
+    }
   }
   const writtenState = [...(saved?.written || [])];
   for (const result of verifiedResults) {
