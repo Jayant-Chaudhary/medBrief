@@ -72,6 +72,18 @@ export default function AssistantDock({ enabled = ENABLED }) {
   const [steps, setSteps] = useState([]);
   const [memory, setMemory] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [dockPos, setDockPos] = useState(() => {
+    try {
+      const saved = localStorage.getItem('assistant_dock_pos');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') return parsed;
+      }
+    } catch (_) {}
+    return null;
+  });
+  const dragRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef(null);
   const buttonRef = useRef(null);
   const listRef = useRef(null);
@@ -120,6 +132,67 @@ export default function AssistantDock({ enabled = ENABLED }) {
   }, [steps]);
 
   if (!visible) return null;
+
+  const handlePointerDown = (e) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    const btn = buttonRef.current;
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: rect.left,
+      originY: rect.top,
+      hasMoved: false,
+    };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (_) {}
+  };
+
+  const handlePointerMove = (e) => {
+    if (!dragRef.current) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    if (!dragRef.current.hasMoved && Math.hypot(dx, dy) > 4) {
+      dragRef.current.hasMoved = true;
+      setIsDragging(true);
+    }
+    if (dragRef.current.hasMoved) {
+      const maxX = Math.max(12, window.innerWidth - 68);
+      const maxY = Math.max(12, window.innerHeight - 68);
+      const newX = Math.min(Math.max(12, dragRef.current.originX + dx), maxX);
+      const newY = Math.min(Math.max(12, dragRef.current.originY + dy), maxY);
+      setDockPos({ x: newX, y: newY });
+    }
+  };
+
+  const handlePointerUp = (e) => {
+    if (!dragRef.current) return;
+    const moved = dragRef.current.hasMoved;
+    dragRef.current = null;
+    setIsDragging(false);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch (_) {}
+    if (moved) {
+      setDockPos((curr) => {
+        if (curr) {
+          try {
+            localStorage.setItem('assistant_dock_pos', JSON.stringify(curr));
+          } catch (_) {}
+        }
+        return curr;
+      });
+    } else {
+      setOpen(true);
+    }
+  };
+
+  const handlePointerCancel = () => {
+    dragRef.current = null;
+    setIsDragging(false);
+  };
 
   function close() {
     setOpen(false);
@@ -438,16 +511,34 @@ export default function AssistantDock({ enabled = ENABLED }) {
   return (
     <>
       {!open && (
-        <button
-          ref={buttonRef}
-          type="button"
-          onClick={() => setOpen(true)}
-          aria-label="Open assistant"
-          data-assistant-panel=""
-          className="assistant-button fixed bottom-5 right-5 z-40 flex h-12 w-12 items-center justify-center rounded-full shadow-card transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+        <div
+          style={dockPos ? { left: `${dockPos.x}px`, top: `${dockPos.y}px`, bottom: 'auto', right: 'auto' } : undefined}
+          className={`${dockPos ? 'fixed' : 'fixed bottom-5 right-5'} z-40 touch-none select-none`}
         >
-          <AssistantMark size={30} />
-        </button>
+          {/* Animated Glow Highlight Ring */}
+          <span
+            className="assistant-highlight-ring absolute -inset-1.5 rounded-full pointer-events-none"
+            aria-hidden="true"
+          />
+          {/* Subtle Outer Highlight Ring */}
+          <span
+            className="absolute -inset-0.5 rounded-full border border-teal-300/80 pointer-events-none"
+            aria-hidden="true"
+          />
+          <button
+            ref={buttonRef}
+            type="button"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
+            aria-label="Open assistant"
+            data-assistant-panel=""
+            className={`assistant-button relative flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${isDragging ? 'cursor-grabbing scale-105' : 'cursor-grab hover:scale-105'}`}
+          >
+            <AssistantMark size={36} />
+          </button>
+        </div>
       )}
 
       {open && (
