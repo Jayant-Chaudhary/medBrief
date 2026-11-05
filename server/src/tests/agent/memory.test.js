@@ -126,7 +126,7 @@ describe('Slice 5: memory of previous requests (this browser tab only)', () => {
       ),
     };
 
-    const res = await assistant.handleStep({
+    const input = {
       message: 'repeat that',
       role: 'clinician',
       userId: 'dr-1',
@@ -138,6 +138,12 @@ describe('Slice 5: memory of previous requests (this browser tab only)', () => {
       settings,
       now,
       provider,
+    };
+    const opened = await assistant.handleStep(input);
+    expect(opened.type).toBe('navigate');
+    const res = await assistant.handleStep({
+      ...input, round: 1, mode: opened.mode, continuationToken: opened.continuationToken,
+      currentRecord: { kind: 'visit', id: 'v-soham' }, results: [{ actionId: opened.actionId, result: 'ok' }],
     });
 
     expect(res.type).toBe('run');

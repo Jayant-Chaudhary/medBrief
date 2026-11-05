@@ -11,7 +11,7 @@
  *
  * It outputs:
  * - note: concise summary of progress / next intent (<= 200 chars)
- * - actions: 1 to 3 actions from the approved action set
+ * - actions: one action for the first unfinished task
  * - status: "continue" | "done" | "ask" | "cannot"
  * - question / reason (optional)
  */
@@ -29,7 +29,7 @@ const NAVIGATOR_SCHEMA = {
     note: { type: 'string', maxLength: 200 },
     actions: {
       type: 'array',
-      maxItems: 3,
+      maxItems: 1,
       items: {
         type: 'object',
         properties: {
@@ -128,7 +128,8 @@ function buildNavigatorMessages({
     : [];
 
   const system = [
-    'You are the Navigator for a clinic web assistant. You help the doctor by selecting 1 to 3 actions each round.',
+    'You are the Navigator for a clinic web assistant. Select exactly ONE action for the FIRST unfinished checklist item, or a prerequisite needed for that item. Never start a later item. The browser verifies the result and displays the updated checklist before you are asked again.',
+    'For a task with several fields, fill one remaining field now. Already verified fields must not be filled again. Saving is a separate action after all requested fields are verified.',
     'At each round, evaluate what the user asked, what checklist items are still pending, the last action results, your prior note, and the elements on screen.',
     '',
     'Action Set (only these may be returned):',
@@ -159,7 +160,7 @@ function buildNavigatorMessages({
     '',
     'Examples:',
     '- "open new visit" -> actions: [{ op: "go", page: "new_appointment" }]',
-    '- "new visit for Test Person tomorrow at 5 pm" -> actions: [{ op: "open_record", kind: "new_appointment", patient: "Test Person" }, { op: "fill", control: "scheduledAt", value: "<tomorrow>T17:00" }]',
+    '- "new visit for Test Person tomorrow at 5 pm" -> first actions: [{ op: "open_record", kind: "new_appointment", patient: "Test Person" }]; after verified arrival, actions: [{ op: "fill", control: "scheduledAt", value: "<tomorrow>T17:00" }]',
     '- "back to dashboard" -> actions: [{ op: "go", page: "dashboard" }]',
     '',
     `Available Menu Pages:\n${pageList}`,
@@ -171,6 +172,8 @@ function buildNavigatorMessages({
     `User Request: "${message}"`,
     '',
     `Checklist Status:\n${formatChecklist(checklist)}`,
+    `Work on this item only: ${checklist.find(item => !item.done)?.text || '(none)'}`,
+    `Already verified fields for this item: ${(checklist.find(item => !item.done)?.completed || []).join(', ') || '(none)'}`,
     '',
     `Previous Action Results:\n${formatResults(results)}`,
     '',
@@ -230,7 +233,7 @@ async function navigateRound({
 
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
       if (parsed && typeof parsed === 'object') {
-        let actions = Array.isArray(parsed.actions) ? parsed.actions.slice(0, 3) : [];
+        let actions = Array.isArray(parsed.actions) ? parsed.actions.slice(0, 1) : [];
         // Backward compatibility with Phase 5 pageActions in test helpers:
         if (!actions.length && Array.isArray(parsed.pageActions)) {
           actions = parsed.pageActions.map((a) => ({
@@ -240,7 +243,7 @@ async function navigateRound({
             value: a.value,
             find: a.find,
             option: a.value,
-          })).slice(0, 3);
+          })).slice(0, 1);
         }
         let status = ['continue', 'done', 'ask', 'cannot'].includes(parsed.status) ? parsed.status : null;
         if (actions.length > 0 && status === 'cannot') {

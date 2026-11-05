@@ -163,7 +163,9 @@ function effectiveGroundingMessage(message, memory = []) {
  */
 function resolveMemoryFollowUp(message, memory = [], patients = []) {
   const text = String(message || '').trim();
-  if (!Array.isArray(memory) || !memory.length) return null;
+  if (!Array.isArray(memory) || !memory.length) {
+    return FINISH_FAILED.test(text) ? { kind: 'answer', text: 'There is no earlier checklist to resume.' } : null;
+  }
 
   const last = memory[memory.length - 1];
   const lastWithPatient = [...memory].reverse().find((m) => m.patient);
@@ -251,8 +253,10 @@ function resolveMemoryFollowUp(message, memory = [], patients = []) {
 
   // 5. "finish what failed"
   if (FINISH_FAILED.test(text) && last) {
+    if (!last.checklist?.length) return { kind: 'answer', text: 'The previous request has no checklist to resume. Please specify what remains to be done.' };
     const failedItems = (last.checklist || []).filter((c) => !c.done);
-    const items = failedItems.length ? failedItems : [{ text: last.message, done: false }];
+    if (!failedItems.length) return { kind: 'answer', text: 'Nothing is left to finish from the previous request.' };
+    const items = failedItems;
     const targetPatient = namedNow || last.patient;
     return {
       kind: 'rewrite',

@@ -43,6 +43,19 @@ describe('POST /api/assistant/step', () => {
     expect(res.body).toEqual({ type: 'navigate', path: '/reports', label: 'Lab reports', source: 'rules' });
   });
 
+  it('provides execution deadlines and UI timing when the panel requests metadata', async () => {
+    as('patient');
+    const startedAt = Date.now();
+    const res = await request(app).post('/api/assistant/step').set('Authorization', 'Bearer t')
+      .send({ message: 'open my reports', currentPath: '/', startedAt, includeExecutionMetadata: true });
+    expect(res.status).toBe(200);
+    expect(res.body.expiresAt).toBe(startedAt + config.requestTimeoutMs);
+    expect(res.body.uiTiming).toEqual({
+      settleQuietMs: config.settleQuietMs, settleTimeoutMs: config.settleTimeoutMs, progressPauseMs: config.progressPauseMs,
+    });
+    expect(res.body.path).toBe('/reports');
+  });
+
   it('opens a page for a verified doctor', async () => {
     as('clinician');
     const res = await send("show today's schedule");

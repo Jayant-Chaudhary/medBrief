@@ -5,6 +5,11 @@ const { validateAgentActions } = require('../../services/assistant/agent/actions
 const patients = [{ id: 'synthetic-p', fullName: 'Sarthak Test', lastVisit: { appointmentId: 'synthetic-v' } }];
 const checklist = ['Find Sarthak in patients', 'Open his last visit', 'Open his consultation notes'];
 const base = { role: 'clinician', userId: 'synthetic-doctor', directory: async () => patients, settings: { ...config, agentLoop: true }, message: 'find Sarthak in patients and open his last visit and then open his consultation notes' };
+
+// These cases exercise model fallback/recovery. Deterministic navigation is
+// covered separately and would otherwise bypass the injected model failures.
+beforeEach(() => jest.spyOn(require('../../services/assistant/navigationRules'), 'nextNavigation').mockReturnValue(null));
+afterEach(() => jest.restoreAllMocks());
 test('named search navigation ticks find, plain Patients navigation does not', () => {
   const list = [{ text: checklist[0], done: false }];
   expect(execution.matchingItem(list, { op: 'go', path: '/clinician/patients', state: { assistantQuery: 'Sarthak' } })).toBe(0);

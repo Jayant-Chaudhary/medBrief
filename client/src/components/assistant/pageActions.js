@@ -57,6 +57,8 @@ export function runPageAction(action, expectedName, doc = document) {
   el.scrollIntoView({ block: 'center', behavior: 'smooth' });
   const previousValue = el.value;
   const previousChecked = isOn(el);
+  if (action.op === 'type' && el.value === action.value) return { result: 'ok', verified: true };
+  if (action.op === 'check' && previousChecked) return { result: 'ok', verified: true };
 
   switch (action.op) {
     case 'click':
@@ -89,6 +91,7 @@ export function runPageAction(action, expectedName, doc = document) {
     case 'select': {
       const option = [...el.options].find((o) => cleanLabel(o.textContent) === action.value);
       if (!option) throw new PageActionError('NO_OPTION');
+      if (el.value === option.value) return { result: 'ok', verified: true };
       setValue(el, option.value);
       break;
     }

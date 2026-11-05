@@ -119,6 +119,36 @@ function relativeDay(message, clock, { future = true } = {}) {
   return null;
 }
 
+// Accept an unambiguous relative day plus an explicit clock time from the
+// doctor's words. No guessed hour, minute, or am/pm; all dates still go through
+// settleDay/checkWhen below. ISO values proposed by the model keep their path.
+function relativeDateTime(text, clock, options) {
+  const day = relativeDay(text, clock, options);
+  if (!day) return null;
+  const words = norm(text);
+  const dayWords = words.replace(/day after tomorrow/g, 'parso').match(/\b(parso|yesterday|tomorrow|tmrw|kal|today|todays|tonight|aaj)\b/g) || [];
+  if (new Set(dayWords).size !== 1) return null;
+  const times = [...words.matchAll(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\b(\d{1,2}):(\d{2})\b|\b(noon|midnight)\b/g)];
+  if (times.length !== 1) return null;
+  const match = times[0];
+  let hour;
+  let minute;
+  if (match[6]) {
+    hour = match[6] === 'noon' ? 12 : 0;
+    minute = 0;
+  } else if (match[3]) {
+    hour = Number(match[1]);
+    minute = Number(match[2] || 0);
+    if (hour < 1 || hour > 12) return null;
+    hour = hour % 12 + (match[3] === 'pm' ? 12 : 0);
+  } else {
+    hour = Number(match[4]);
+    minute = Number(match[5]);
+  }
+  if (hour > 23 || minute > 59) return null;
+  return `${day}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
 /**
  * Keeps the model's time but takes the day from the user's own words when the
  * model got the day wrong. Returns null when the day cannot be settled.
@@ -205,9 +235,18 @@ function checkValue(control, raw, message, clock) {
 
     case 'datetime': {
       if (!named) return fail('notNamed');
-      if (!mentionsTime(message)) return fail('noTime');
-      const settled = settleDay(text, message, clock, { future: control.future });
-      if (!settled) return fail(control.future && checkWhen(text, clock).status === 'invalid' ? 'notFuture' : 'wrongDay');
+      let candidate = text;
+      let dateMessage = message;
+      if (!isWallClock(candidate)) {
+        // Relative phrases are accepted only when copied from this request.
+        if (!norm(message).includes(norm(text))) return fail('notInMessage');
+        candidate = relativeDateTime(text, clock, { future: control.future });
+        if (!candidate) return fail('badDate');
+        dateMessage = text;
+      }
+      if (!mentionsTime(dateMessage)) return fail('noTime');
+      const settled = settleDay(candidate, dateMessage, clock, { future: control.future });
+      if (!settled) return fail(control.future && checkWhen(candidate, clock).status === 'invalid' ? 'notFuture' : 'wrongDay');
       if (control.future) {
         const when = checkWhen(settled, clock);
         return when.status === 'ok' ? { ok: true, value: when.value, display: when.words } : fail('notFuture');

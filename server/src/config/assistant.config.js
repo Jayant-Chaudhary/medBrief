@@ -81,6 +81,7 @@ module.exports = {
   stallLimit: positiveInteger('ASSISTANT_STALL_LIMIT', 2),
   settleQuietMs: positiveInteger('ASSISTANT_SETTLE_QUIET_MS', 300),
   settleTimeoutMs: positiveInteger('ASSISTANT_SETTLE_TIMEOUT_MS', 3000),
+  progressPauseMs: positiveInteger('ASSISTANT_PROGRESS_PAUSE_MS', 500),
   snapshotTokenBudget: positiveInteger('ASSISTANT_SNAPSHOT_TOKEN_BUDGET', 1500),
   // App-help replies are short and never about health.
   maxAnswerChars: positiveInteger('ASSISTANT_MAX_ANSWER_CHARS', 300),

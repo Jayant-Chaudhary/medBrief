@@ -13,6 +13,7 @@ import {
   importMaternityReports,
 } from '../../services/clinicianService.js';
 import { useAssistantControls } from '../../components/assistant/AssistantBridge.jsx';
+import { createMaternityReaders } from '../../components/assistant/maternityReaders';
 import './MaternityCard.css';
 
 const URINE_OPTIONS = ['Negative', 'Trace', '1+', '2+', '3+', '4+', 'Not tested'];
@@ -670,6 +671,14 @@ export function MaternityCardPage() {
 
   useAssistantControls('maternity', {
     context: () => ({ patientId: loadedPatientId || null }),
+    controls: createMaternityReaders({
+      readState: () => stateRef.current,
+      patientFields: DETAIL_FIELDS.patient,
+      baselineFields: DETAIL_FIELDS.investigations,
+      deliveryFields: DELIVERY_FIELDS,
+      rowFields: ROW_FIELDS,
+      rowKinds: ROW_KIND,
+    }),
     applyMany,
     // On a patient's record these sections save as soon as they change, so the clinician confirms them first.
     confirmFill: (fields) => {

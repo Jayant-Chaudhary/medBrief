@@ -33,3 +33,21 @@ it('bridge fields report observed values independently', async () => {
   });
   expect(record.mock.calls.map(c => c[0])).toEqual([{ actionId: 'a', result: 'ok' }, { actionId: 'b', result: 'no_change' }]);
 });
+it('an already matching Patients search succeeds without another write', async () => {
+  const fill = vi.fn(), record = vi.fn();
+  await runPlan([{ fill: { page: 'patients', fields: { query: 'Synthetic Person' }, actionIds: { query: 'search' } } }], {
+    stopped: () => false, progress: () => {}, settle: async () => {}, highlight: () => {}, record,
+    waitFor: async () => ({ get: () => 'Synthetic Person', fill }),
+  });
+  expect(fill).not.toHaveBeenCalled();
+  expect(record).toHaveBeenCalledWith({ actionId: 'search', result: 'ok' });
+});
+it('an already matching declared field satisfies the goal without autosaving again', async () => {
+  const fill = vi.fn(), record = vi.fn();
+  await runPlan([{ fill: { page: 'maternity', fields: { 'visit.weight': '62' }, actionIds: { 'visit.weight': 'weight' } } }], {
+    stopped: () => false, progress: () => {}, settle: async () => {}, highlight: () => {}, record,
+    waitFor: async () => ({ get: () => '62', fill }),
+  });
+  expect(fill).not.toHaveBeenCalled();
+  expect(record).toHaveBeenCalledWith({ actionId: 'weight', result: 'ok' });
+});

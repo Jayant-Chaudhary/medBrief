@@ -567,6 +567,7 @@ async function runAgentLoop({
   if (activeChecklist.length === 0) {
     activeChecklist = await planChecklist(message, { provider, settings, memory });
   }
+  execution.initializeChecklist(activeChecklist);
 
   if (activeChecklist.length === 0) {
     return {
@@ -581,20 +582,8 @@ async function runAgentLoop({
 
   
 
-  if (results && results.length > 0) {
-    for (const r of results) {
-      activeChecklist = tickChecklistItem(activeChecklist, r, role);
-    }
-  }
-
-  const notesPanelAlreadyOpen = Boolean(seen?.elements?.some((el) => el.kind === 'textarea' && /consultancy notes/i.test(el.name)));
-  if (notesPanelAlreadyOpen && activeChecklist.length > 1) {
-    activeChecklist = activeChecklist.map((c) =>
-      !c.done && /^(?:open|show|view)\s+(?:the\s+|his\s+|her\s+)?(?:consultation\s+|consultancy\s+)?notes$/i.test(c.text.trim())
-        ? { ...c, done: true }
-        : c
-    );
-  }
+  // Verified results were applied together in handleStep. Reapplying each one
+  // separately could hide a later failed field behind an earlier success.
 
   if (round > 0 && activeChecklist.length > 0 && activeChecklist.every((c) => c.done)) {
     return {
@@ -609,15 +598,17 @@ async function runAgentLoop({
   }
 
   const hasOpenRecord = recordContext?.currentRecord?.kind || null;
+  const navigation = require('./navigationRules').nextNavigation({ checklist: activeChecklist, message: groundingMessage, patients, currentPath, currentRecord: recordContext.currentRecord, clock });
+  if (navigation) return { ...navigation, checklist: activeChecklist, continue: true, source: 'agent', prerequisite: true, note };
   let nav = await navigateRound({ message, checklist: activeChecklist, note, results, page: seen, onPage, clock, memory, hasOpenRecord, role, provider, settings });
   if (nav.status === 'done' && !nav.actions.length) {
     // One bounded retry; the model cannot certify its own execution.
     nav = await navigateRound({ message, checklist: activeChecklist, note: 'Pending items require verified actions.', results, page: seen, onPage, clock, memory, hasOpenRecord, role, provider, settings });
   }
-  if (nav.status === 'ask') return { type: 'clarify', message: 'Please specify the page, field, or patient.', checklist: activeChecklist, options: [], source: 'agent' };
+  if (nav.status === 'ask') return { type: 'clarify', message: checkAnswer(nav.question, settings.maxAnswerChars) || 'Please specify the page, field, or patient.', checklist: activeChecklist, options: [], source: 'agent' };
   if (!nav.actions.length) return execution.stop(activeChecklist, nav.status === 'cannot' ? 'the model could not produce a usable action' : 'no verified action completed it');
 
-  const validated = validateAgentActions(nav.actions, seen, groundingMessage, patients, role, { ...recordContext, writtenState, currentPath, onPage, clock });
+  const validated = validateAgentActions(nav.actions.slice(0, 1), seen, groundingMessage, patients, role, { ...recordContext, writtenState, currentPath, onPage, clock });
 
   if (validated.disambiguation) {
     return {
@@ -628,6 +619,19 @@ async function runAgentLoop({
       source: 'agent',
       attempts: 1,
     };
+  }
+
+  const currentItem = activeChecklist.findIndex(item => !item.done);
+  const proposed = [
+    ...validated.navigationSteps,
+    ...validated.pageActions,
+    ...Object.entries(validated.formStep?.fill?.fields || {}).map(([control, value]) => ({ op: 'fill', control, value, page: validated.formStep.fill.page })),
+    ...(validated.formStep?.press ? [{ ...validated.formStep.press, op: 'press' }] : []),
+  ];
+  if (proposed.some(action => execution.matchingItem(activeChecklist, action) > currentItem)) {
+    return { type: 'run', checklist: activeChecklist, source: 'agent', continue: true, steps: [{
+      label: 'This page', page: { actions: [], refused: [{ name: activeChecklist[currentItem].text, reason: 'Complete the current checklist item before starting a later item.' }] },
+    }] };
   }
 
   // Holds actions on this page when a step leaves it, and continues on the next page
@@ -707,6 +711,7 @@ async function handleStep({
   progress = [],
   mode,
   continuationToken,
+  acknowledgeOnly = false,
   startedAt,
   originRecord,
   currentRecord,
@@ -735,12 +740,18 @@ async function handleStep({
   if (mode && (!canAgent || mode !== 'agent' || !saved || saved.round !== round)) {
     return unsupported('none', 'This request has expired. Please start again.');
   }
+  if (acknowledgeOnly && !saved) return unsupported('none', 'There is no issued action to verify.');
   const initialTime = saved?.startedAt ?? startedAt ?? now();
   if (!Number.isSafeInteger(initialTime) || initialTime > now()) return execution.stop(saved?.checklist || [{ text: message, done: false }], 'the request start time is invalid');
   const deadline = initialTime + settings.requestTimeoutMs;
+  // On arrival at a form, discover its requested fields before an otherwise
+  // successful navigation result could end the request.
+  execution.prepareRequirements(saved?.checklist || [], currentPath, null, page, message);
   const verifiedResults = execution.acceptResults(saved, results);
   const verifiedChecklist = execution.applyResults(saved?.checklist || [], verifiedResults);
   if (now() >= deadline) return execution.stop(verifiedChecklist.length ? verifiedChecklist : [{ text: message, done: false }], 'the request time limit was reached');
+  const requirementError = verifiedChecklist.find(item => item.requirementError)?.requirementError;
+  if (requirementError) return execution.stop(verifiedChecklist, requirementError);
   if (verifiedChecklist.length && verifiedChecklist.every(c => c.done)) return { type: 'done', source: 'agent', checklist: verifiedChecklist, message: verifiedChecklist.map(c => '✓ ' + c.text).join('\n') };
   if (round >= settings.maxRounds) return execution.stop(verifiedChecklist, 'the round limit was reached');
   provider = execution.boundProvider(provider, deadline, settings, now);
@@ -748,7 +759,10 @@ async function handleStep({
   directory = id => execution.boundProvider({ complete: () => rawDirectory(id) }, deadline, settings, now).complete({});
   const history = saved?.history || { pages: {}, actions: {} };
   const progressed = verifiedChecklist.filter(c => c.done).length > (saved?.checklist || []).filter(c => c.done).length;
-  if (progressed) history.actions = {};
+  if (progressed) {
+    history.actions = {};
+    history.pages = {};
+  }
   for (const r of verifiedResults) {
     if (r.result === 'ok' && ['go', 'open_record'].includes(r.op)) {
       const key = continuation.digest(r.path || r.pageId || r.page);
@@ -759,6 +773,24 @@ async function handleStep({
   if (verifiedResults.some(r => r.result === 'cancelled')) return execution.stop(verifiedChecklist, 'confirmation was cancelled');
   if (Object.values(history.pages).some(n => n >= settings.maxPageVisits)) return execution.stop(verifiedChecklist, 'the same page was reached repeatedly');
   if (Object.values(history.actions).some(n => n >= settings.maxActionRepeats)) return execution.stop(verifiedChecklist, 'the same action repeated without progress');
+  // Acknowledgment is deliberately model/network-free. The browser must paint
+  // these verified ticks before requesting the next action. Keep the same round:
+  // only issuing another action consumes a round, not acknowledging one.
+  if (acknowledgeOnly) {
+    if (saved.pending?.length && !verifiedResults.length) return execution.stop(verifiedChecklist, 'the action result was not received');
+    const writtenState = [...(saved.written || [])];
+    for (const result of verifiedResults) {
+      if (result.result === 'ok' && result.field && result.hash && !writtenState.some(w => w.field === result.field && w.hash === result.hash)) writtenState.push({ field: result.field, op: result.op, hash: result.hash });
+    }
+    return {
+      type: 'checkpoint', source: 'agent', checklist: verifiedChecklist, continue: true, mode: 'agent',
+      continuationToken: continuation.issue(userId, message, {
+        ...saved, checklist: verifiedChecklist, pending: [], history, written: writtenState,
+        successes: [...new Set([...(saved.successes || []), ...verifiedResults.filter(r => r.result === 'ok').map(r => r.replay).filter(Boolean)])],
+        feedback: [...(saved.feedback || []), ...verifiedResults],
+      }),
+    };
+  }
   const isPhase6Agent = canAgent && mode === 'agent';
   const ruled = round > 0 ? null : matchIntent(message, pages);
   const hasMemoryFollowUp = canAgent && Array.isArray(memory) && memory.length > 0 && /\b(which\s+patient|go\s+back\s+to\s+the\s+last\s+patient|do\s+the\s+same|repeat\s+that|finish\s+what\s+failed|same\s+notes?\s+as\s+before|also\s+add|also\s+write)\b/i.test(message);
@@ -838,6 +870,15 @@ async function handleStep({
 
   function finish(reply) {
     const active = reply.checklist || verifiedChecklist;
+    execution.prepareRequirements(active, currentPath, current, seen, followUp?.expandedMessage || message);
+    const requirementError = active.find(item => item.requirementError)?.requirementError;
+    if (requirementError) return execution.stop(active, requirementError);
+    const patientError = require('./patientScope').patientScopeError(reply, currentPath, current, patients, followUp?.expandedMessage || message);
+    if (patientError) {
+      const prerequisite = canAgent && require('./patientScope').patientPrerequisite(active, followUp?.expandedMessage || message, patients, currentPath);
+      if (prerequisite) return finish({ ...prerequisite, prerequisite: true, checklist: active, continue: true, source: 'agent' });
+      return { type: 'clarify', message: patientError, options: [], checklist: active, source: reply.source };
+    }
     const pageActions = (reply.steps || []).flatMap(step => step.page?.actions || []);
     const patientSpecific = ['/clinician', '/clinician/maternity'].includes(currentPath) && pageActions.some(a => /notes|prescription|medicine|patient instructions|next steps|bp check/i.test((a.name || '') + ' ' + (a.section || '')));
     const groundingMsg = effectiveGroundingMessage(followUp?.expandedMessage || message, cleanMemory);
@@ -846,12 +887,12 @@ async function handleStep({
     const successes = [...(saved?.successes || []), ...verifiedResults.filter(r => r.result === 'ok').map(r => r.replay).filter(Boolean)];
     let replayed = false;
     function omitReplay(a) {
-      if (!successes.includes(execution.replayKey(a, currentPath))) return false;
+      if (!successes.includes(execution.replayKey(a, currentPath, current))) return false;
       const index = execution.matchingItem(active, a);
-      if (index >= 0) active[index] = { ...active[index], done: true };
+      if (index >= 0) active[index] = execution.applyResults(active, [{ ...a, itemIndex: index, result: 'ok', evidence: execution.evidenceTarget(a) }])[index];
       replayed = true; return true;
     }
-    if (reply.type === 'navigate' && omitReplay(reply)) reply = { ...reply, type: 'run', steps: [] };
+    if (reply.type === 'navigate' && !reply.prerequisite && omitReplay(reply)) reply = { ...reply, type: 'run', steps: [] };
     if (writtenState.length >= settings.maxWrittenEntries) return execution.stop(active, 'the write limit was reached');
     for (const step of reply.steps || []) {
       if (step.path && omitReplay({ ...step, op: step.op || 'go' })) delete step.path;
@@ -864,7 +905,7 @@ async function handleStep({
       }
       if (reply.source === 'agent' && step.fill?.fields) {
         const fillList = Object.entries(step.fill.fields).map(([control, value]) => ({
-          op: 'fill', control, value, page: step.fill.page, name: step.fill.filled?.find(f => f.id === control)?.label || control,
+          op: 'fill', control, value, page: step.fill.page, context: step.fill.context, name: step.fill.filled?.find(f => f.id === control)?.label || control,
         }));
         const guarded = writes.guard(fillList.filter(a => !omitReplay(a)), writtenState, { record: current, path: currentPath });
         const nextFields = {};
@@ -905,8 +946,10 @@ async function handleStep({
     const checklist = active.length ? active : [{ text: message, done: false }];
     // Always collect the last action's result before declaring completion.
     reply.continue = true;
-    const pending = execution.pendingActions(reply, checklist, round, currentPath);
-    return { ...reply, checklist, mode: 'agent', continuationToken: continuation.issue(userId, message, {
+    const pending = execution.pendingActions(reply, checklist, round, currentPath, current, seen, followUp?.expandedMessage || message);
+    // Execution bindings stay in signed state; public checklist items retain
+    // the existing display contract for clients and tab memory.
+    return { ...reply, checklist: checklist.map(({ text, done, reason }) => ({ text, done, ...(reason && { reason }) })), mode: 'agent', continuationToken: continuation.issue(userId, message, {
       round: round + 1, startedAt: initialTime, checklist, pending, history, originRecord: origin, written: writtenState, successes: [...new Set(successes)], refusedRounds, reasons, feedback: refusals.map(r => ({ ...r, result: 'refused' })),
     }) };
   }

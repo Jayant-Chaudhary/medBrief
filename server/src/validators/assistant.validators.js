@@ -77,6 +77,9 @@ const assistantStepSchema = z.object({
   startedAt: z.number().int().nonnegative().optional(),
   mode: z.literal('agent').optional(),
   continuationToken: z.string().max(config.continuationMaxChars).optional(),
+  // Verify the preceding action without asking the model for another action.
+  acknowledgeOnly: z.boolean().optional(),
+  includeExecutionMetadata: z.boolean().optional(),
   // Follow-up rounds of the same request: which round, and what was done so far.
   round: z.number().int().min(0).max(config.maxRounds).optional(),
   progress: z.array(label(160)).max(40).optional(),

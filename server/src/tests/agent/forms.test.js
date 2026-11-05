@@ -11,6 +11,10 @@ const patients = [
 ];
 
 describe('Slice 4: forms and buttons inside the agent loop', () => {
+  // Exercise provider-driven navigation here; deterministic prerequisites have
+  // dedicated coverage in navigationRules/relativeAppointment tests.
+  beforeEach(() => jest.spyOn(require('../../services/assistant/navigationRules'), 'nextNavigation').mockReturnValue(null));
+  afterEach(() => jest.restoreAllMocks());
   test('navigator prompt includes declared controls, options, date format and current date/time', () => {
     const messages = buildNavigatorMessages({
       message: 'set appointment for tomorrow 5 pm',
@@ -140,12 +144,11 @@ describe('Slice 4: forms and buttons inside the agent loop', () => {
           });
         }
         return JSON.stringify({
-          note: 'Fill BP, weight and press Add visit',
-          actions: [
-            { op: 'fill', control: 'visit.systolic', value: '110' },
-            { op: 'fill', control: 'visit.weight', value: '62' },
-            { op: 'press', button: 'save_visit' },
-          ],
+          note: 'Complete the next verified field or button',
+          actions: [call === 2
+            ? { op: 'fill', control: 'visit.systolic', value: '110' }
+            : call === 3 ? { op: 'fill', control: 'visit.weight', value: '62' }
+              : { op: 'press', button: 'save_visit' }],
           status: 'continue',
         });
       }),
@@ -186,7 +189,28 @@ describe('Slice 4: forms and buttons inside the agent loop', () => {
     });
 
     expect(r1.type).toBe('run');
-    const formStep = r1.steps.find((s) => s.fill || s.press);
+    const issued = [r1];
+    expect(r1.steps.some(step => step.press)).toBe(false);
+    expect(r1.steps[0].fill.fields).toEqual({ 'visit.systolic': '110', 'visit.diastolic': '70' });
+    for (let round = 2; round <= 3; round += 1) {
+      const previous = issued.at(-1);
+      const results = previous.steps.flatMap(step => [
+        ...Object.values(step.fill?.actionIds || {}).map(actionId => ({ actionId, result: 'ok' })),
+        ...(step.press ? [{ actionId: step.press.actionId, result: 'ok' }] : []),
+      ]);
+      issued.push(await assistant.handleStep({
+        message, role: 'clinician', userId: 'dr-1', timeZone: clock.timeZone,
+        currentPath: '/clinician/maternity', currentRecord: { kind: 'maternity', id: 'p-asha' },
+        page: { title: 'Maternity card', elements: [] }, round, mode: previous.mode,
+        continuationToken: previous.continuationToken, results, directory: async () => patients, settings, now, provider,
+      }));
+    }
+    // Keep the original end-state and save/Confirm assertions, accumulating
+    // fields across the now-required separate execution rounds.
+    const formStep = {
+      fill: { fields: Object.assign({}, ...issued.flatMap(reply => reply.steps.filter(step => step.fill).map(step => step.fill.fields))) },
+      press: issued.flatMap(reply => reply.steps).find(step => step.press)?.press,
+    };
     expect(formStep).toBeDefined();
     expect(formStep.fill.fields).toEqual({
       'visit.systolic': '110',

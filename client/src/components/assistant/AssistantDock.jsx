@@ -5,10 +5,13 @@ import { useAuthContext } from '../../context/AuthContext.jsx';
 import { assistantService } from '../../services/assistantService';
 import { assistantVisibleOn } from './assistantRoutes';
 import { useAssistantBridge } from './AssistantBridge.jsx';
+import { createRequestControl } from './requestControl';
+import { showVerifiedProgress } from './sequentialProgress';
+import { settlePage, pageIsLoading } from './settlePage';
 import { runPlan } from './planRunner';
 import { readPage } from './pageReader';
 import { executeAction } from './pageActions';
-import { readRecord, recordPath, hashWrittenValue } from './recordContext';
+import { readRecord, rememberRecord, recordPath, hashWrittenValue } from './recordContext';
 import { pruneMemory, buildMemoryEntry, appendMemory } from './memoryState';
 import { capturePage, observeAction } from './actionEvidence';
 import ConfirmCard from './ConfirmCard.jsx';
@@ -21,63 +24,13 @@ const UNAVAILABLE = 'The assistant is not available right now. You can still use
 const STEP_DELAY_MS = 500;
 // How long to wait for a page to load before giving up on filling its form.
 const PAGE_READY_TIMEOUT_MS = 8000;
-// Time for the page to re-render after a fill, before reading or outlining it.
-const SETTLE_MS = 50;
 // How long a filled field stays outlined.
 const FLASH_MS = 2500;
-// Before reading the page again for the next round: a panel opening or a page loading.
-const ROUND_SETTLE_MS = 700;
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function waitForSettle(quietMs = 350, timeoutMs = 4000) {
-  return new Promise((resolve) => {
-    const start = Date.now();
-    let timer = null;
-    let observer = null;
-
-    const isLoading = () => {
-      if (typeof document === 'undefined') return false;
-      const spinners = document.querySelectorAll('[role="status"][aria-label="Loading"], .animate-spin, [aria-busy="true"]');
-      return spinners.length > 0;
-    };
-
-    const cleanup = () => {
-      if (timer) clearTimeout(timer);
-      if (observer) observer.disconnect();
-    };
-
-    const schedule = () => {
-      if (timer) clearTimeout(timer);
-      if (Date.now() - start >= timeoutMs) {
-        cleanup();
-        resolve();
-        return;
-      }
-      if (isLoading()) {
-        timer = setTimeout(schedule, 100);
-        return;
-      }
-      timer = setTimeout(() => {
-        if (isLoading()) {
-          schedule();
-          return;
-        }
-        cleanup();
-        resolve();
-      }, quietMs);
-    };
-
-    if (typeof document !== 'undefined' && document.body) {
-      observer = new MutationObserver(() => {
-        schedule();
-      });
-      observer.observe(document.body, { childList: true, subtree: true, attributes: true });
-    }
-
-    schedule();
-  });
-}
+// Two frames ensure React's checklist commit reaches the screen before planning.
+const paintProgress = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 const DONE_VERB = { click: 'Pressed', type: 'Typed in', append: 'Added to', replace: 'Changed in', select: 'Chose in', check: 'Ticked' };
 
 /** What a finished round did, in labels only, for the next round's "already done". */
@@ -127,6 +80,11 @@ export default function AssistantDock({ enabled = ENABLED }) {
   // Pending Confirm cards by entry id; stopped requests by request id (a request may take several rounds).
   const confirmers = useRef(new Map());
   const stopped = useRef(new Set());
+  const controls = useRef(new Map());
+  const activeRequest = useRef(null);
+  const memoryContexts = useRef(new Map());
+  const choosing = useRef(new Set());
+  const uiTiming = useRef({ settleQuietMs: 300, settleTimeoutMs: 3000, progressPauseMs: 500 });
   // The path now, for rounds that start after the page changed.
   const pathRef = useRef(location.pathname);
   pathRef.current = location.pathname;
@@ -136,6 +94,8 @@ export default function AssistantDock({ enabled = ENABLED }) {
 
   useEffect(() => {
     if (!user) {
+      controls.current.forEach(control => control.stop());
+      memoryContexts.current.clear();
       setMemory([]);
       setSteps([]);
     }
@@ -186,23 +146,62 @@ export default function AssistantDock({ enabled = ENABLED }) {
 
   function stop(entry) {
     stopped.current.add(entry.requestId);
+    controls.current.get(entry.requestId)?.stop();
+    if (activeRequest.current === entry.requestId) setBusy(false);
     answer(entry.id, false);
+  }
+
+  function requestControl(requestId) {
+    if (!controls.current.has(requestId)) {
+      const control = createRequestControl();
+      controls.current.set(requestId, control);
+      control.onStop(reason => {
+        const message = {
+          MISSING_DEADLINE: 'The assistant backend did not provide an expiry time. Restart the backend server, refresh this page, and try again.',
+          EXPIRED: 'The assistant request timed out. Please start again.',
+          RECORD_CHANGED: 'The open page or patient changed while the assistant was working. Please start again on the intended record.',
+          INVALID_TARGET: 'The assistant could not resolve the destination. Please start again.',
+          PAGE_LOADING: 'The page did not finish loading. I stopped before the next action. Please check the page.',
+          ACK_FAILED: 'I could not verify the last action. I stopped to avoid repeating it. Please check the page before starting again.',
+          STOPPED: 'Stopped.',
+        }[reason] || 'Stopped. Please start again.';
+        stopped.current.add(requestId);
+        setSteps(current => current.map(entry => entry.requestId === requestId
+          ? { ...entry, waiting: false, running: false, outcome: 'stopped', confirm: null, reply: { type: 'unsupported', message, checklist: entry.reply?.checklist || entry.checklist } }
+          : entry));
+        if (activeRequest.current === requestId) setBusy(false);
+      });
+    }
+    return controls.current.get(requestId);
+  }
+
+  function waitForSettle(signal) {
+    return settlePage({ quietMs: uiTiming.current.settleQuietMs, timeoutMs: uiTiming.current.settleTimeoutMs, signal });
   }
 
   /** Runs the plan step by step, so the user sees each page open and each field fill. */
   async function execute(plan, entryId, requestId, names = new Map()) {
+    const control = requestControl(requestId);
+    const pageScope = () => JSON.stringify([pathRef.current, readRecord(window.location, bridge)]);
+    const expectedScope = pageScope();
     const actionResults = [];
     const results = [];
     update(entryId, { running: true, progress: 0, results: [] });
     const outcome = await runPlan(plan, {
       pageId: pageIdOf(pathRef.current),
       // Acts only if the element still has the label it had when the page was read.
-      pageAction: (action) => observeAction(() => executeAction({ ...action, name: names.get(action.ref) || action.name }), waitForSettle),
+      pageAction: (action) => {
+        if (control.stopped() || pageScope() !== expectedScope) {
+          if (!control.stopped()) control.stop('RECORD_CHANGED');
+          return { result: 'refused' };
+        }
+        return observeAction(() => executeAction({ ...action, name: names.get(action.ref) || action.name }), () => waitForSettle(control.signal));
+      },
       record: result => actionResults.push(result),
       capture: capturePage,
       arrive: async path => {
-        await waitForSettle();
-        return window.location.pathname + window.location.search === path && !document.querySelector('[aria-busy="true"], [role="status"][aria-label="Loading"]');
+        const settled = await waitForSettle(control.signal);
+        return settled && window.location.pathname + window.location.search === path && !pageIsLoading();
       },
       navigate: (path, state) => navigate(path, state ? { state } : undefined),
       // A fill after opening a page waits until that page shows the intended record
@@ -215,20 +214,29 @@ export default function AssistantDock({ enabled = ENABLED }) {
           : undefined
       ),
       pause: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-      settle: () => new Promise((resolve) => setTimeout(resolve, SETTLE_MS)),
+      settle: () => waitForSettle(control.signal),
       highlight,
       confirm: (card) => new Promise((resolve) => {
-        confirmers.current.set(entryId, resolve);
+        if (control.stopped()) { resolve(false); return; }
+        let unsubscribe = () => {};
+        const finish = yes => {
+          unsubscribe();
+          confirmers.current.delete(entryId);
+          update(entryId, { confirm: null });
+          resolve(yes && !control.stopped());
+        };
+        confirmers.current.set(entryId, finish);
         update(entryId, { confirm: card });
+        unsubscribe = control.onStop(() => finish(false));
       }),
       report: (page, button, result, errorCode) => assistantService.event(page, button, result, errorCode).catch(() => {}),
       progress: (index, result) => {
         results[index] = result;
         update(entryId, { progress: index + 1, results: [...results] });
       },
-      stopped: () => stopped.current.has(requestId),
+      stopped: () => stopped.current.has(requestId) || control.stopped(),
     }, { stepDelayMs: STEP_DELAY_MS });
-    update(entryId, { running: false, confirm: null, outcome });
+    update(entryId, { running: false, waiting: true, confirm: null, outcome });
     return { outcome, actionResults };
   }
 
@@ -238,38 +246,64 @@ export default function AssistantDock({ enabled = ENABLED }) {
    * panel had to open, a page had to load), read the page again and go on.
    */
   async function runRound({ message, requestId, round, progress, mode, continuationToken, startedAt = Date.now(), originRecord = null, written = [], checklist = [], note = '', results = [] }) {
+    const control = requestControl(requestId);
+    if (control.stopped()) return;
+    const requestPath = pathRef.current;
+    const requestRecord = JSON.stringify(readRecord(window.location, bridge));
+    memoryContexts.current.set(requestId, rememberRecord(window.location, bridge, memoryContexts.current.get(requestId)));
     const id = crypto.randomUUID();
-    setSteps((current) => [...current, { id, requestId, message, round, progress, mode, continuationToken, startedAt, originRecord, written, checklist, note, results, continued: round > 0, reply: null }]);
+    setSteps((current) => [...current.map(entry => entry.requestId === requestId ? { ...entry, waiting: false } : entry), { id, requestId, message, round, progress, mode, continuationToken, startedAt, originRecord, written, checklist, note, results, waiting: true, continued: round > 0, reply: null }]);
     const { page, names } = role === 'clinician' ? readPage() : { page: undefined, names: new Map() };
     let reply;
     setBusy(true);
     try {
       const activeMemory = pruneMemory(memory);
       if (activeMemory.length !== memory.length) setMemory(activeMemory);
-      reply = await assistantService.ask(message, pathRef.current, { page, currentRecord: readRecord(window.location, bridge), round, progress, mode, continuationToken, startedAt, originRecord, written, memory: activeMemory, checklist, note, results });
+      reply = await assistantService.ask(message, pathRef.current, { page, signal: control.signal, currentRecord: readRecord(window.location, bridge), round, progress, mode, continuationToken, startedAt, originRecord, written, memory: activeMemory, checklist, note, results });
     } catch (err) {
+      if (control.stopped()) return;
       const errNote = err?.status === 429 ? 'Too many requests. Please wait a moment.' : UNAVAILABLE;
-      update(id, { reply: { type: 'unavailable', message: errNote } });
+      update(id, { waiting: false, reply: { type: 'unavailable', message: errNote } });
       inputRef.current?.focus();
       setBusy(false);
       return;
     }
+    if (control.stopped()) return;
+    control.setDeadline(reply.expiresAt);
+    if (control.stopped()) return;
+    if (reply.uiTiming) uiTiming.current = reply.uiTiming;
+    if (requestPath !== pathRef.current || requestRecord !== JSON.stringify(readRecord(window.location, bridge))) {
+      control.stop('RECORD_CHANGED'); return;
+    }
     const currentChecklist = reply.checklist || checklist;
     const currentNote = reply.note || note;
-    update(id, { reply, names, checklist: currentChecklist, note: currentNote });
+    // Earlier rounds belong to the same request. Show the latest verified
+    // checklist on every card instead of leaving old copies unticked.
+    setSteps(current => current.map(entry => entry.requestId === requestId
+      ? { ...entry, checklist: currentChecklist, ...(entry.id === id ? { reply, names, note: currentNote } : {}) }
+      : entry));
+
+    // Paint the plan before executing it; patient choices wait for a selection.
+    await paintProgress();
+    if (control.stopped()) return;
+    if (reply.type === 'choose') { update(id, { waiting: false }); return; }
 
     let outcome = 'done';
     let actionResults = [];
     if (reply.type === 'navigate') {
       const targetPath = reply.recordTarget ? recordPath(reply.recordTarget) : reply.path;
-      if (!targetPath) { setBusy(false); return; }
-      go(targetPath, id, reply.continue);
-      await waitForSettle();
-      const arrived = window.location.pathname + window.location.search === targetPath && !document.querySelector('[aria-busy="true"], [role="status"][aria-label="Loading"]');
+      if (!targetPath) { control.stop('INVALID_TARGET'); return; }
+      if (reply.state) {
+        update(id, { chosen: targetPath });
+        navigate(targetPath, { state: reply.state });
+      } else go(targetPath, id, reply.continue);
+      const settled = await waitForSettle(control.signal);
+      const arrived = settled && window.location.pathname + window.location.search === targetPath && !pageIsLoading();
       actionResults = [{ actionId: reply.actionId, result: arrived ? 'ok' : 'no_change' }];
     } else if (reply.type === 'run') {
       ({ outcome, actionResults } = await execute(reply.steps, id, requestId, names));
     }
+    if (control.stopped()) return;
     const nextWritten = [...written];
     for (const action of (reply.steps || []).flatMap(step => step.page?.actions || [])) {
       if (!action.field || !actionResults.some(r => r.actionId === action.actionId && r.result === 'ok')) continue;
@@ -298,42 +332,95 @@ export default function AssistantDock({ enabled = ENABLED }) {
   }
 
   async function continueAfter(reply, outcome, { message, requestId, round, progress, mode, continuationToken, startedAt = Date.now(), originRecord = null, written = [], checklist = [], note = '', results = [] }) {
+    const control = requestControl(requestId);
+    if (control.stopped()) return;
     if (!reply.continue || stopped.current.has(requestId)) {
+      control.dispose();
+      setSteps(current => current.map(entry => entry.requestId === requestId ? { ...entry, waiting: false } : entry));
       if (role === 'clinician' && reply && reply.type !== 'unavailable') {
-        const endRecord = readRecord(window.location, bridge);
+        const endContext = rememberRecord(window.location, bridge, memoryContexts.current.get(requestId));
         const entry = buildMemoryEntry({
           message,
-          patient: reply.patient || (endRecord?.id ? { id: endRecord.id } : null),
-          record: endRecord,
+          patient: endContext?.patient || null,
+          record: endContext?.record || null,
           page: pageIdOf(pathRef.current),
           checklist: reply.checklist || checklist,
         });
         setMemory((prev) => appendMemory(prev, entry));
       }
+      memoryContexts.current.delete(requestId);
       setBusy(false);
-      if (outcome === 'done' && !reply.continue && window.innerWidth < 640) setOpen(false);
+      if (outcome === 'done' && !(reply.checklist || checklist).length && window.innerWidth < 640) setOpen(false);
       // Back to the message box only when the request is over: moving focus mid-request would
       // close what the page just opened (a list of templates, a menu).
       inputRef.current?.focus();
       return;
     }
-    await waitForSettle(350, 4000);
-    if (stopped.current.has(requestId)) return;
+    const settled = await waitForSettle(control.signal);
+    if (!settled && !control.stopped()) control.stop('PAGE_LOADING');
+    if (stopped.current.has(requestId) || control.stopped()) {
+      if (activeRequest.current === requestId) setBusy(false);
+      return;
+    }
+    // A fast signed receipt updates the checklist BEFORE the next model call.
+    // Never send these results again to the planning request.
+    const requestPath = pathRef.current;
+    const record = readRecord(window.location, bridge);
+    const { page } = role === 'clinician' ? readPage() : {};
+    let receipt;
+    try {
+      receipt = await assistantService.ask(message, requestPath, {
+        page, signal: control.signal, currentRecord: record, round: round + 1,
+        mode: reply.mode, continuationToken: reply.continuationToken, acknowledgeOnly: true,
+        startedAt, originRecord, written, checklist, note, results,
+      });
+    } catch {
+      if (!control.stopped()) control.stop('ACK_FAILED');
+      return;
+    }
+    if (control.stopped()) return;
+    control.setDeadline(receipt.expiresAt);
+    if (control.stopped()) return;
+    if (requestPath !== pathRef.current || JSON.stringify(record) !== JSON.stringify(readRecord(window.location, bridge))) {
+      control.stop('RECORD_CHANGED'); return;
+    }
+    if (!['checkpoint', 'done', 'unsupported'].includes(receipt.type) ||
+        (receipt.continue && (receipt.type !== 'checkpoint' || !receipt.continuationToken))) {
+      control.stop('ACK_FAILED'); return;
+    }
+    const verifiedChecklist = receipt.checklist || checklist;
+    const shown = await showVerifiedProgress({
+      publish: () => setSteps(current => {
+        const lastId = current.filter(entry => entry.requestId === requestId).at(-1)?.id;
+        return current.map(entry => entry.requestId === requestId ? {
+          ...entry, checklist: verifiedChecklist, waiting: entry.id === lastId && Boolean(receipt.continue),
+          ...(entry.id === lastId && !receipt.continue ? { reply: receipt } : {}),
+        } : entry);
+      }),
+      paint: paintProgress, pause, stopped: () => control.stopped(), delayMs: uiTiming.current.progressPauseMs,
+    });
+    if (!shown) return;
+    if (!receipt.continue) {
+      await continueAfter(receipt, outcome, { message, requestId, round, progress, startedAt, originRecord, written, checklist: verifiedChecklist, note });
+      return;
+    }
     await runRound({
       message,
       requestId,
       round: round + 1,
       progress,
-      mode: reply.mode, continuationToken: reply.continuationToken, startedAt, originRecord, written,
-      checklist,
+      mode: receipt.mode, continuationToken: receipt.continuationToken, startedAt, originRecord, written,
+      checklist: verifiedChecklist,
       note,
-      results,
+      results: [],
     });
   }
 
   async function choose(option, entry) {
+    if (requestControl(entry.requestId).stopped() || choosing.current.has(entry.id)) return;
+    choosing.current.add(entry.id);
     const reply = { ...entry.reply, type: 'run', steps: option.steps };
-    update(entry.id, { reply, progress: 0 });
+    update(entry.id, { reply, progress: 0, chosen: true });
     const { outcome, actionResults } = await execute(option.steps, entry.id, entry.requestId, entry.names);
     await continueAfter(reply, outcome, { ...entry, results: actionResults });
   }
@@ -343,7 +430,9 @@ export default function AssistantDock({ enabled = ENABLED }) {
     const message = text.trim();
     if (!message || busy) return;
     setText('');
-    runRound({ message, requestId: crypto.randomUUID(), round: 0, progress: [], originRecord: readRecord(window.location, bridge) });
+    const requestId = crypto.randomUUID();
+    activeRequest.current = requestId;
+    runRound({ message, requestId, round: 0, progress: [], originRecord: readRecord(window.location, bridge) });
   }
 
   return (
@@ -407,18 +496,26 @@ export default function AssistantDock({ enabled = ENABLED }) {
                   : 'Try “open my reports”, “mere reports dikhao” or “go to my profile”.'}
               </li>
             )}
-            {steps.map((step) => (
+            {steps.map((step, index) => (
               <li key={step.id} className="space-y-1.5">
                 {step.continued
                   ? <p className="text-xs uppercase tracking-wide text-ink-soft">Continuing on the page</p>
                   : <p className="ml-auto w-fit max-w-[85%] rounded-2xl bg-canvas px-3 py-2 text-sm">{step.message}</p>}
+                {!steps.slice(index + 1).some(entry => entry.requestId === step.requestId) && (
+                  <RequestChecklist items={step.checklist || step.reply?.checklist || []} />
+                )}
                 <Reply
                   step={step}
-                  onChoose={(path) => go(path, step.id)}
+                  onChoose={(path) => { if (!requestControl(step.requestId).stopped()) go(path, step.id); }}
                   onPickPatient={(option) => choose(option, step)}
                   onAnswer={(yes) => answer(step.id, yes)}
                   onStop={() => stop(step)}
                 />
+                {step.waiting && !step.running && (
+                  <button type="button" onClick={() => stop(step)} className="rounded-full border border-line px-3 py-1 text-sm text-ink-soft">
+                    Stop
+                  </button>
+                )}
               </li>
             ))}
           </ol>
@@ -452,6 +549,20 @@ const MORE_NOTE = 'I couldn’t do all of that, so please do the last step yours
 const FILLED_NOTE = 'Filled in the date and time. Check them, then press Create visit and invite yourself.';
 const CHECK_NOTE = 'Check the highlighted fields before you save.';
 const FILL_FAILED_NOTE = 'I could not fill in the form, so please enter the details yourself.';
+
+function RequestChecklist({ items }) {
+  if (!items.length) return null;
+  return (
+    <ul aria-label="Request progress" className="mb-2 space-y-1 rounded-lg border border-line bg-canvas p-2 text-xs">
+      {items.map((item, i) => (
+        <li key={item.id || i} className={`flex items-start gap-1.5 ${item.done ? 'text-primary' : 'text-ink-soft'}`}>
+          {item.done ? <Check size={13} className="mt-0.5 shrink-0" /> : <span className="inline-block w-[13px] shrink-0 text-center">·</span>}
+          <span className={item.done ? 'line-through opacity-70' : ''}>{item.text || item.item}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function Line({ done, children }) {
   return (
@@ -507,21 +618,9 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
   const { reply, chosen, progress = 0, results = [], confirm, running } = step;
   if (!reply) return <p className="text-sm text-ink-soft">{step.continued ? 'Reading the page…' : 'Working…'}</p>;
 
-  const checklist = step.checklist || reply.checklist || [];
-
   if (reply.type === 'unsupported') {
     return (
       <div className="space-y-1 text-sm text-ink-soft">
-        {checklist.length > 0 && (
-          <ul className="mb-2 space-y-1 rounded-lg border border-line bg-canvas p-2 text-xs">
-            {checklist.map((item, i) => (
-              <li key={i} className={`flex items-start gap-1.5 ${item.done ? 'text-primary' : 'text-ink-soft'}`}>
-                {item.done ? <Check size={13} className="mt-0.5 shrink-0" /> : <span className="inline-block w-[13px] shrink-0 text-center">·</span>}
-                <span className={item.done ? 'line-through opacity-70' : ''}>{item.text || item.item}</span>
-              </li>
-            ))}
-          </ul>
-        )}
         <p>{reply.message || 'Couldn’t complete this request.'}</p>
       </div>
     );
@@ -544,16 +643,6 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
     const saves = reply.steps.some((item) => item.press && item.press.effect !== 'ui');
     return (
       <div className="space-y-1 text-sm">
-        {checklist.length > 0 && (
-          <ul className="mb-2 space-y-1 rounded-lg border border-line bg-canvas p-2 text-xs">
-            {checklist.map((item, i) => (
-              <li key={i} className={`flex items-start gap-1.5 ${item.done ? 'text-primary' : 'text-ink-soft'}`}>
-                {item.done ? <Check size={13} className="mt-0.5 shrink-0" /> : <span className="inline-block w-[13px] shrink-0 text-center">·</span>}
-                <span className={item.done ? 'line-through opacity-70' : ''}>{item.text || item.item}</span>
-              </li>
-            ))}
-          </ul>
-        )}
         <ol className="space-y-1">
           {reply.steps.map((item, index) => {
             const started = index < progress;
@@ -603,6 +692,7 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
               key={option.steps[0]?.path ?? option.label}
               type="button"
               onClick={() => onPickPatient(option)}
+              disabled={running || step.chosen}
               className="rounded-xl border border-line px-3 py-2 text-left hover:border-primary"
             >
               <span className="block font-medium text-ink">{option.label}</span>
@@ -626,11 +716,12 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
   }
 
   if (reply.type === 'clarify') {
+    const options = reply.options || [];
     return (
       <div className="space-y-1.5 text-sm">
-        <p className="text-ink-soft">Did you mean:</p>
-        <div className="flex flex-wrap gap-2">
-          {reply.options.map((option) => (
+        <p className="text-ink-soft">{reply.message || (options.length ? 'Did you mean:' : 'Please clarify what you want to do.')}</p>
+        {options.length > 0 && <div className="flex flex-wrap gap-2">
+          {options.map((option) => (
             <button
               key={option.path}
               type="button"
@@ -641,7 +732,7 @@ function Reply({ step, onChoose, onPickPatient, onAnswer, onStop }) {
               {option.label}
             </button>
           ))}
-        </div>
+        </div>}
       </div>
     );
   }

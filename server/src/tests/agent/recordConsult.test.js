@@ -42,7 +42,9 @@ describe('Record Consultation & Safety Guards (T4 - Server)', () => {
       role: 'clinician',
       userId: 'dr-1',
       provider: new FakeProvider(new Error('The recording-window rule must not call a provider')),
-      directory: async () => [],
+      directory: async () => [{ id: 'synthetic-p', fullName: 'Synthetic Patient' }],
+      currentRecord: { kind: 'visit', id: 'synthetic-v' },
+      recordLookup: async () => ({ id: 'synthetic-v', patient_id: 'synthetic-p' }),
       currentPath: '/clinician',
       page: {
         title: 'Clinician Dashboard',

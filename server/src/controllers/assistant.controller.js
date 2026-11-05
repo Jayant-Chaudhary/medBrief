@@ -3,6 +3,7 @@ const assistant = require('../services/assistant/assistant.service');
 const { createRateLimiter } = require('../services/assistant/rateLimit');
 const { findButton } = require('../services/assistant/controls.registry');
 const log = require('../utils/logger').child({ scope: 'assistant' });
+const continuation = require('../services/assistant/continuation');
 
 const allow = createRateLimiter({ limit: config.rateLimitPerMinute });
 
@@ -35,6 +36,7 @@ async function step(req, res, next) {
       memory: req.validated.memory,
       mode: req.validated.mode,
       continuationToken: req.validated.continuationToken,
+      acknowledgeOnly: req.validated.acknowledgeOnly,
       checklist: req.validated.checklist,
       note: req.validated.note,
       results: req.validated.results,
@@ -69,7 +71,13 @@ async function step(req, res, next) {
       errorCode,
       durationMs: Date.now() - started,
     });
-    res.json({ ...reply, source });
+    const state = continuation.read(req.validated.continuationToken, req.user.id, req.validated.message);
+    const requestStart = Math.min(state?.startedAt ?? req.validated.startedAt ?? started, started);
+    const executionMetadata = req.validated.includeExecutionMetadata ? {
+      expiresAt: requestStart + config.requestTimeoutMs,
+      uiTiming: { settleQuietMs: config.settleQuietMs, settleTimeoutMs: config.settleTimeoutMs, progressPauseMs: config.progressPauseMs },
+    } : {};
+    res.json({ ...reply, source, ...executionMetadata });
   } catch (err) {
     log.warn('assistant failed', { reqId: req.id, errorCode: 'ASSISTANT_FAILED' });
     next(Object.assign(new Error('Assistant request failed'), { status: 500, code: 'ASSISTANT_FAILED' }));

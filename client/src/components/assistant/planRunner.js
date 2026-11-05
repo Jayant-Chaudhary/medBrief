@@ -50,6 +50,10 @@ export async function runPlan(plan, io, { stepDelayMs = 500 } = {}) {
         // With a context, only that record's page will do (never the one open before).
         const { page, context } = fill || press;
         actions = await io.waitFor(page, context);
+        const boundContext = JSON.stringify(actions.context?.() ?? null);
+        const registered = actions;
+        actions = { ...registered, contextStillValid: () => JSON.stringify(registered.context?.() ?? null) === boundContext };
+
       } catch {
         if (fill) for (const id of Object.values(fill.actionIds || {})) io.record?.({ actionId: id, result: 'not_found' });
         if (press) io.record?.({ actionId: press.actionId, result: 'not_found' });
@@ -60,11 +64,13 @@ export async function runPlan(plan, io, { stepDelayMs = 500 } = {}) {
     }
 
     if (fill) {
+      if (io.stopped()) return 'stopped';
       const outcome = await fillFields(actions, fill, io, i, result);
       if (outcome !== 'done') return outcome;
     }
 
     if (press) {
+      if (io.stopped()) return 'stopped';
       const outcome = await pressButton(actions, press, io, i, result);
       if (outcome !== 'done') return outcome;
     }
@@ -147,6 +153,7 @@ async function runPageActions(actions, io, index, result) {
       io.report(io.pageId, PAGE_ACTION, 'confirmed');
     }
     for (let k = 0; k < group.length; k += 1) {
+      if (io.stopped()) return 'stopped';
       try {
         const actual = await io.pageAction(group[k]);
         io.record?.({ actionId: group[k].actionId, result: actual?.result || 'no_change' });
@@ -176,6 +183,7 @@ async function runPageActions(actions, io, index, result) {
  * they change (a patient's record), the user confirms them first.
  */
 async function fillFields(actions, fill, io, index, result) {
+  if (io.stopped() || actions.contextStillValid?.() === false) return 'stopped';
   const gate = actions.confirmFill?.(fill.fields);
   if (gate?.ids?.length) {
     const rows = (fill.filled || []).filter((f) => gate.ids.includes(f.id)).map(({ label, value }) => ({ label, value }));
@@ -192,9 +200,14 @@ async function fillFields(actions, fill, io, index, result) {
     io.report(fill.page, SAVE_DETAILS, 'confirmed');
   }
 
+  if (io.stopped() || actions.contextStillValid?.() === false) return 'stopped';
   const before = Object.fromEntries(Object.keys(fill.fields).map(id => [id, actions.get?.(id)]));
   try {
-    await actions.fill(fill.fields);
+    if (io.stopped() || actions.contextStillValid?.() === false) return 'stopped';
+    // If the actual bridge state already equals the requested value, the goal
+    // is satisfied. Do not invoke a setter or trigger another autosave.
+    const changes = Object.fromEntries(Object.entries(fill.fields).filter(([id, value]) => before[id] === undefined || String(before[id]) !== String(value)));
+    if (Object.keys(changes).length) await actions.fill(changes);
   } catch {
     for (const id of Object.values(fill.actionIds || {})) io.record?.({ actionId: id, result: 'refused' });
     if (gate?.ids?.length) io.report(fill.page, SAVE_DETAILS, 'failed', 'FILL_FAILED');
@@ -207,7 +220,7 @@ async function fillFields(actions, fill, io, index, result) {
   await io.settle();
   for (const [id, value] of Object.entries(fill.fields)) {
     const after = actions.get?.(id);
-    const result = after !== undefined && String(after) === String(value) && String(before[id]) !== String(after) ? 'ok' : 'no_change';
+    const result = after !== undefined && String(after) === String(value) ? 'ok' : 'no_change';
     io.record?.({ actionId: fill.actionIds?.[id], result });
   }
   io.highlight(Object.keys(fill.fields));
@@ -224,12 +237,14 @@ async function pressButton(actions, press, io, index, result) {
     return 'failed';
   };
   await io.settle();
+  if (io.stopped() || actions.contextStillValid?.() === false) return 'stopped';
   // The page decides whether the button can be pressed now (for example, no patient chosen yet).
   if (!actions.hasButton(press.id)) return fail('unavailable');
 
   if (press.effect === 'ui') {
     try {
       const before = io.capture?.();
+      if (io.stopped() || actions.contextStillValid?.() === false) return 'stopped';
       const ok = await actions.press(press.id);
       await io.settle();
       io.record?.({ actionId: press.actionId, result: ok === true || (before !== undefined && io.capture?.() !== before) ? 'ok' : 'no_change' });
@@ -243,6 +258,7 @@ async function pressButton(actions, press, io, index, result) {
   // Saves or sends: the user confirms exactly what the page will submit.
   let changed = false;
   for (;;) {
+    if (io.stopped() || actions.contextStillValid?.() === false) return 'stopped';
     const rows = actions.summary(press.id);
     result.press = 'confirming';
     io.progress(index, { ...result });
@@ -255,14 +271,17 @@ async function pressButton(actions, press, io, index, result) {
       return 'cancelled';
     }
     await io.settle();
+    if (io.stopped() || actions.contextStillValid?.() === false) return 'stopped';
     if (JSON.stringify(actions.summary(press.id)) === JSON.stringify(rows)) break;
     changed = true;
   }
 
+  if (io.stopped() || actions.contextStillValid?.() === false) return 'stopped';
   io.report(press.page, press.id, 'confirmed');
   let ok;
   const before = io.capture?.();
   try {
+    if (io.stopped() || actions.contextStillValid?.() === false) return 'stopped';
     ok = await actions.press(press.id);
   } catch {
     ok = false;
