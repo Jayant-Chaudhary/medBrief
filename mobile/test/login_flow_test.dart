@@ -77,31 +77,43 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Sign in'), findsOneWidget);
   });
 
-  testWidgets('returning invite never asks for or resets password', (
-    tester,
-  ) async {
-    repository.invite = const AppointmentInvite(
-      email: 'asha@example.com',
-      name: 'Asha',
-      isUsed: false,
-      isExpired: false,
-      isReturningPatient: true,
-    );
-    await launch(tester);
-    await tester.tap(find.text('I have a clinic invitation'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byType(TextField),
-      'https://clinic.example/invite/${'a' * 64}',
-    );
-    await tester.tap(find.text('Continue'));
-    await tester.pumpAndSettle();
-    expect(find.text('Confirm password'), findsNothing);
-    await tester.tap(find.text('Go to sign in'));
-    await tester.pumpAndSettle();
-    expect(repository.acceptCalls, 0);
-    expect(find.text('asha@example.com'), findsOneWidget);
-  });
+  testWidgets(
+    'returning invite accepts with the current password and never resets it',
+    (tester) async {
+      repository.invite = const AppointmentInvite(
+        email: 'asha@example.com',
+        name: 'Asha',
+        isUsed: false,
+        isExpired: false,
+        isReturningPatient: true,
+      );
+      await launch(tester);
+      await tester.tap(find.text('I have a clinic invitation'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byType(TextField),
+        'https://clinic.example/invite/${'a' * 64}',
+      );
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      // One field for the existing password; nothing that sets a new one.
+      expect(find.text('Confirm password'), findsNothing);
+      expect(find.text('Go to sign in'), findsNothing);
+      await tester.tap(find.text('Accept appointment'));
+      await tester.pumpAndSettle();
+      expect(find.text('Enter your current password.'), findsOneWidget);
+      expect(repository.acceptCalls, 0);
+      await tester.enterText(find.byType(TextFormField), 'current-pass');
+      await tester.tap(find.text('Accept appointment'));
+      await tester.pumpAndSettle();
+      expect(repository.acceptCalls, 1);
+      expect(find.text('Appointment accepted'), findsOneWidget);
+      await tester.tap(find.text('Go to sign in'));
+      await tester.pumpAndSettle();
+      expect(find.text('asha@example.com'), findsOneWidget);
+      expect(repository.signInCalls, 0);
+    },
+  );
 
   testWidgets(
     'new invitation validates confirmation and creates account once',

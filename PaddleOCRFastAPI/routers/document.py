@@ -48,6 +48,8 @@ def _warm_up():
         ocr_extractor.verify_gpu_status()
         with ocr_extractor._ocr_lock:
             ocr_extractor.get_ocr()
+            if ocr_extractor.image_autorotate_enabled():
+                ocr_extractor.get_orientation_classifier()
         warmup_state["status"] = "ready"
     except Exception as exc:  # the service still serves digital PDFs
         logger.exception("OCR warm-up failed")

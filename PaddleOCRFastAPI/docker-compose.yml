@@ -11,6 +11,7 @@ services:
       - TZ=Asia/Hong_Kong
       - PADDLE_PDX_MODEL_SOURCE=BOS
       - PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+      # - OCR_IMAGE_AUTOROTATE=false          # photos are auto-rotated upright by default
       # - OCR_DET_MODEL=PP-OCRv6_medium_det   # on a GPU host
       # - OCR_REC_MODEL=PP-OCRv6_medium_rec
     ports:

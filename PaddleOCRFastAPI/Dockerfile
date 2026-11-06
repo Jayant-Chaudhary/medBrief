@@ -41,7 +41,7 @@ RUN python3 -m pip install --upgrade pip && \
 # since hosts such as Railway start each deploy on a fresh disk. Only
 # ocr_extractor.py is copied first so edits elsewhere keep this layer cached.
 COPY ocr/ocr_extractor.py /app/pipeline/ocr_extractor.py
-RUN python3 -c "import sys; sys.path.insert(0, '/app/pipeline'); import ocr_extractor; ocr_extractor.get_ocr()"
+RUN python3 -c "import sys; sys.path.insert(0, '/app/pipeline'); import ocr_extractor; ocr_extractor.get_ocr(); ocr_extractor.get_orientation_classifier()"
 
 COPY PaddleOCRFastAPI/ /app
 COPY ocr/*.py /app/pipeline/

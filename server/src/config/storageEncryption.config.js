@@ -6,6 +6,7 @@
  */
 
 const logger = require('../utils/logger').child({ scope: 'storage-encryption-config' });
+const { requireSecret } = require('./runtimeEnv');
 
 function normalizePem(keyStr) {
   if (!keyStr) return null;
@@ -28,7 +29,10 @@ const rsaPublicKey = normalizePem(env.STORAGE_ENCRYPTION_RSA_PUBLIC_KEY);
 const rsaPrivateKey = normalizePem(env.STORAGE_ENCRYPTION_RSA_PRIVATE_KEY);
 const keyId = env.STORAGE_ENCRYPTION_KEY_ID || 'v1';
 const allowLegacyFallback = env.STORAGE_ENCRYPTION_ALLOW_LEGACY_FALLBACK !== 'false';
-const proxyHmacSecret = env.STORAGE_PROXY_HMAC_SECRET || env.SESSION_TOKEN_SECRET || 'dev-storage-hmac-secret-change-in-prod';
+const proxyHmacSecret = requireSecret(
+  ['STORAGE_PROXY_HMAC_SECRET', 'SESSION_TOKEN_SECRET'],
+  'dev-storage-hmac-secret-change-in-prod',
+);
 const signedUrlTtlSec = Number(env.STORAGE_SIGNED_URL_TTL_SEC || 600); // 10 minutes default
 
 if (!rsaPublicKey && !isTestOrDev) {

@@ -172,12 +172,76 @@ describe('Storage Envelope Encryption Service', () => {
       }).toThrow('Unsupported cipher suite ID');
     });
 
-    test('auto-uses ephemeral keypair in test/dev environment if options omitted', () => {
+    test('auto-uses ephemeral keypair under NODE_ENV=test if options omitted', () => {
       const encrypted = storageEncryption.encrypt('Dev fallback plaintext');
       expect(storageEncryption.isEncrypted(encrypted)).toBe(true);
 
       const decrypted = storageEncryption.decrypt(encrypted);
       expect(decrypted.toString('utf8')).toBe('Dev fallback plaintext');
+    });
+  });
+
+  describe('missing key configuration outside tests', () => {
+    const originalEnv = process.env.NODE_ENV;
+    afterEach(() => {
+      process.env.NODE_ENV = originalEnv;
+    });
+
+    test.each(['development', 'production'])(
+      'encrypt throws ERR_ENCRYPTION_CONFIG_MISSING instead of using an ephemeral key (%s)',
+      (nodeEnv) => {
+        process.env.NODE_ENV = nodeEnv;
+        expect(() => storageEncryption.encrypt('synthetic data')).toThrow(
+          expect.objectContaining({ code: 'ERR_ENCRYPTION_CONFIG_MISSING' })
+        );
+      }
+    );
+
+    test('decrypt throws ERR_ENCRYPTION_CONFIG_MISSING in development without a private key', () => {
+      const encrypted = storageEncryption.encrypt('synthetic data', { publicKey: testKeyPair.publicKey });
+      process.env.NODE_ENV = 'development';
+      expect(() => storageEncryption.decrypt(encrypted)).toThrow(
+        expect.objectContaining({ code: 'ERR_ENCRYPTION_CONFIG_MISSING' })
+      );
+    });
+  });
+
+  describe('verifyKeyPair', () => {
+    test('returns ok for a matching pair', () => {
+      expect(
+        storageEncryption.verifyKeyPair({
+          publicKey: testKeyPair.publicKey,
+          privateKey: testKeyPair.privateKey,
+        })
+      ).toEqual({ ok: true });
+    });
+
+    test('reports a mismatched pair without leaking key material', () => {
+      const other = crypto.generateKeyPairSync('rsa', {
+        modulusLength: 2048,
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      });
+      const result = storageEncryption.verifyKeyPair({
+        publicKey: testKeyPair.publicKey,
+        privateKey: other.privateKey,
+      });
+      expect(result).toEqual({ ok: false, code: 'ERR_ENCRYPTION_KEYPAIR_MISMATCH' });
+      expect(JSON.stringify(result)).not.toContain('BEGIN');
+    });
+
+    test('accepts base64-encoded PEM keys, as stored in .env', () => {
+      const b64 = (pem) => Buffer.from(pem).toString('base64');
+      expect(
+        storageEncryption.verifyKeyPair({
+          publicKey: b64(testKeyPair.publicKey),
+          privateKey: b64(testKeyPair.privateKey),
+        })
+      ).toEqual({ ok: true });
+    });
+
+    test('reports missing configuration when no keys are set', () => {
+      expect(storageEncryption.verifyKeyPair()).toEqual({ ok: false, code: 'ERR_ENCRYPTION_CONFIG_MISSING' });
     });
   });
 

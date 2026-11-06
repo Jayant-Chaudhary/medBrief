@@ -1,4 +1,4 @@
-const { assertAppointmentAccess, clinicianHasPatient } = require('../services/access.service');
+const { assertAppointmentAccess, clinicianHasPatient, resolvePatientScope } = require('../services/access.service');
 const {
   recordCheckin,
   recordAdHocConcern,
@@ -82,15 +82,26 @@ async function submitQuickPulse(req, res, next) {
 }
 
 /**
+ * The patient a check-in read is about. A patient naming someone else is
+ * refused outright; a clinician must name a patient they treat.
+ */
+async function checkinReadScope(req) {
+  const asked = req.query.patientId;
+  if (req.user.role !== 'clinician' && asked && asked !== req.user.id) {
+    return { ok: false, status: 403, error: 'Not authorized for this patient' };
+  }
+  return resolvePatientScope(req);
+}
+
+/**
  * Get cadence and due status for check-ins (patient or clinician).
  */
 async function getStatus(req, res, next) {
   try {
-    const patientId = req.query.patientId || req.user.id;
-
-    if (patientId !== req.user.id && req.user.role !== 'clinician') {
-      return res.status(403).json({ error: 'Not authorized to view other patient status' });
-    }
+    // Patients get their own; a clinician must name a patient they treat.
+    const scope = await checkinReadScope(req);
+    if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
+    const { patientId } = scope;
 
     const status = await getCheckinStatus({ patientId });
     res.json(status);
@@ -104,11 +115,9 @@ async function getStatus(req, res, next) {
  */
 async function getHistory(req, res, next) {
   try {
-    const patientId = req.query.patientId || req.user.id;
-
-    if (patientId !== req.user.id && req.user.role !== 'clinician') {
-      return res.status(403).json({ error: 'Not authorized to view other patient history' });
-    }
+    const scope = await checkinReadScope(req);
+    if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
+    const { patientId } = scope;
 
     const lookbackDays = req.query.lookbackDays ? Number(req.query.lookbackDays) : undefined;
     const history = await getPatientCheckinHistory({ patientId, lookbackDays });

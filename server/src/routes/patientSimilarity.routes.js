@@ -3,6 +3,7 @@ const authGuard = require('../middleware/authGuard');
 const roleGuard = require('../middleware/roleGuard');
 const controller = require('../controllers/patientSimilarity.controller');
 const config = require('../config/patientSimilarity.config');
+const { isDevOrTest } = require('../config/runtimeEnv');
 
 const router = express.Router();
 
@@ -25,7 +26,8 @@ function similarityEnabledGuard(req, res, next) {
  * In production, strict clinician authentication is always required.
  */
 function demoOrClinicianAuth(req, res, next) {
-  const isNonProd = process.env.NODE_ENV !== 'production';
+  // Explicit development/test only; an unset NODE_ENV requires login.
+  const isNonProd = isDevOrTest();
   const hasAuthHeader = Boolean(req.headers.authorization);
 
   if (isNonProd && !hasAuthHeader) {

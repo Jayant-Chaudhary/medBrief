@@ -1,6 +1,6 @@
 {
   "info": {
-    "name": "MedBrief Community \u2014 synthetic manual smoke tests",
+    "name": "MedBrief Community — synthetic manual smoke tests",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "description": "Run requests individually in order against a test setup. No real credentials or private service keys are included. Do not Run Collection against a live clinic: this collection includes writes. Optional help/outreach writes require allowSafetyTest=true. Read docs/postman/README.md before use."
   },
@@ -57,17 +57,21 @@
           ]
         },
         {
-          "name": "02 Login with a synthetic patient account",
+          "name": "02 Sign in a synthetic patient through Supabase Auth",
           "request": {
             "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "apikey",
+                "value": "{{supabaseAnonKey}}"
               }
             ],
-            "url": "{{baseUrl}}/api/auth/login",
-            "description": "Use an existing synthetic patient login. Saves the session access token locally. Do not use a service-role key as the Bearer token.",
+            "url": "{{supabaseUrl}}/auth/v1/token?grant_type=password",
+            "description": "Signs in directly with Supabase Auth, as the web and mobile apps do (the server has no login endpoint). Set supabaseUrl and supabaseAnonKey (the public anon key, never the service-role key) in your LOCAL Postman environment. Saves the session access token locally.",
             "auth": {
               "type": "noauth"
             },
@@ -87,7 +91,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.environment.get(\"testEmail\") || !pm.environment.get(\"testPassword\")) throw new Error(\"Set testEmail and testPassword in your LOCAL Postman environment, or skip login and set accessToken yourself.\");"
+                  "if (!pm.environment.get(\"testEmail\") || !pm.environment.get(\"testPassword\")) throw new Error(\"Set testEmail and testPassword in your LOCAL Postman environment, or skip login and set accessToken yourself.\");",
+                  "if (!pm.environment.get(\"supabaseUrl\") || !pm.environment.get(\"supabaseAnonKey\")) throw new Error(\"Set supabaseUrl and supabaseAnonKey (public anon key) in your LOCAL Postman environment.\");"
                 ]
               }
             },
@@ -98,7 +103,7 @@
                 "exec": [
                   "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
                   "if (pm.response.code === 200) {",
-                  "  const token = pm.response.json().session?.access_token;",
+                  "  const token = pm.response.json().access_token;",
                   "  pm.test(\"Returns a session access token\", () => pm.expect(token).to.be.a(\"string\").and.not.empty);",
                   "  if (token) pm.environment.set(\"accessToken\", token);",
                   "}"
@@ -225,7 +230,7 @@
       ]
     },
     {
-      "name": "2 Posts and replies \u2014 run worker between writes and reads",
+      "name": "2 Posts and replies — run worker between writes and reads",
       "item": [
         {
           "name": "07 Create a synthetic post",
@@ -319,7 +324,7 @@
           ]
         },
         {
-          "name": "10 Published post detail \u2014 after worker",
+          "name": "10 Published post detail — after worker",
           "request": {
             "method": "GET",
             "header": [],
@@ -395,7 +400,7 @@
           ]
         },
         {
-          "name": "12 Read published replies \u2014 after worker",
+          "name": "12 Read published replies — after worker",
           "request": {
             "method": "GET",
             "header": [],
@@ -487,7 +492,7 @@
       ]
     },
     {
-      "name": "4 OPTIONAL Synthetic outreach \u2014 explicit enable required",
+      "name": "4 OPTIONAL Synthetic outreach — explicit enable required",
       "item": [
         {
           "name": "OPTIONAL Create a synthetic help case on own post",

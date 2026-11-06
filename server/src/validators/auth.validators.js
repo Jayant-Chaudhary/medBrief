@@ -15,9 +15,4 @@ const signupSchema = z.object({
   phone: z.string().optional(),
 });
 
-const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1),
-});
-
-module.exports = { acceptInviteSchema, signupSchema, loginSchema };
+module.exports = { acceptInviteSchema, signupSchema };

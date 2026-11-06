@@ -17,7 +17,7 @@ No new Android-specific API or database is required:
 | Look up clinic invitation | `GET /api/auth/invite/:token` |
 | Set up a new invited account | `POST /api/auth/accept-invite` |
 
-The Node `/api/auth/login` endpoint also exists, but the website signs in directly
+There is no Node `/api/auth/login` endpoint; the website signs in directly
 through Supabase. Flutter follows that established path so the SDK manages token
 refresh and session lifecycle. Account credentials work on both clients.
 
@@ -61,11 +61,25 @@ cd ../server
 npm run dev
 ```
 
-For local Wi-Fi hosting (phone and computer on same Wi-Fi network), set
-`API_BASE_URL` to your computer's local IP (e.g. `http://192.168.31.82:4000`).
-For the Android emulator, `http://10.0.2.2:4000` reaches Express on the host.
-For a USB-connected physical phone with reverse proxy, use `adb reverse tcp:4000 tcp:4000`
-and set `API_BASE_URL` to `http://127.0.0.1:4000`. Hosted API builds should use HTTPS.
+Local development defaults to `API_BASE_URL=http://127.0.0.1:4000`. Connect an
+Android phone over USB, enable USB debugging, and run these commands from `mobile/`:
+
+```bash
+adb reverse tcp:4000 tcp:4000
+flutter run --dart-define-from-file=config.json
+```
+
+This forwards the phone's port 4000 to the computer's backend without depending
+on a Wi-Fi IP or requiring the phone and computer to share a network. Run the
+`adb reverse` command again after reconnecting the phone. If multiple devices
+are attached, select the same device with `adb -s <DEVICE_ID> reverse tcp:4000 tcp:4000`
+and `flutter run -d <DEVICE_ID> --dart-define-from-file=config.json`.
+The phone still needs internet access (Wi-Fi or mobile data) for Supabase.
+After changing `config.json`, stop and rerun Flutter; these values are compiled
+into the app.
+
+For the Android emulator without port forwarding, set `API_BASE_URL` to
+`http://10.0.2.2:4000`. Hosted API builds should use HTTPS.
 Only debug and profile Android builds allow cleartext HTTP for local development.
 
 Running without configuration displays the login layout with sign-in disabled;

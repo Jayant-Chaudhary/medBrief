@@ -1,5 +1,5 @@
 const supabaseAdmin = require('../config/supabaseAdminClient');
-const { findAuthUserByEmail } = require('../services/authUsers.service');
+const { findAuthUserByEmail, verifyPassword } = require('../services/authUsers.service');
 const logger = require('../utils/logger');
 
 /**
@@ -67,6 +67,16 @@ async function acceptInvite(req, res, next) {
     let authUser = await findAuthUserByEmail(invite.patient_email);
     const isReturningPatient = Boolean(authUser);
 
+    // Accepting links this account to the clinician, which opens the
+    // patient's records to them. A returning patient consents by confirming
+    // their own current password; the invite token alone is not enough.
+    if (isReturningPatient) {
+      const passwordOk = await verifyPassword(invite.patient_email, password);
+      if (!passwordOk) {
+        return res.status(401).json({ error: 'That password is not correct for this account.' });
+      }
+    }
+
     if (!authUser) {
       const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
         email: invite.patient_email,
@@ -80,19 +90,21 @@ async function acceptInvite(req, res, next) {
       authUser = created.user;
     }
 
-    // A returning patient already has a password. Setting one from an invite
-    // token would let anyone holding a forwarded invite email take over an
-    // existing account, and would silently break the patient's own login on
-    // every new appointment. They are linked to the appointment and told to
-    // sign in instead.
+    // A returning patient's password is checked above, never set: setting it
+    // from an invite token would let anyone holding a forwarded invite email
+    // take over the account.
 
     // Create the profile only if there isn't one. Upserting would overwrite a
     // returning patient's own name and phone with the invite's values.
     const { data: existingProfile } = await supabaseAdmin
       .from('profiles')
-      .select('id, full_name')
+      .select('id, full_name, role')
       .eq('id', authUser.id)
       .maybeSingle();
+
+    if (existingProfile && existingProfile.role !== 'patient') {
+      return res.status(409).json({ error: 'This email belongs to a staff account and cannot accept a patient invite.' });
+    }
 
     if (!existingProfile) {
       const { error: profileError } = await supabaseAdmin.from('profiles').insert({
@@ -134,7 +146,7 @@ async function acceptInvite(req, res, next) {
 
     res.status(200).json({
       message: isReturningPatient
-        ? 'This appointment has been added to your existing account. Sign in with your current password.'
+        ? 'This appointment has been added to your account.'
         : 'Account ready. You can now log in with your new password.',
       email: invite.patient_email,
       appointmentId: invite.appointments.id,
@@ -227,41 +239,6 @@ async function signup(req, res, next) {
 }
 
 /**
- * @desc   Authenticate existing user
- * @route  POST /auth/login
- */
-async function login(req, res, next) {
-  try {
-    const { email, password } = req.validated;
-
-    // Use admin or public client for password authentication
-    const { data, error } = await supabaseAdmin.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      return res.status(401).json({ error: error.message });
-    }
-
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('*')
-      .eq('id', data.user.id)
-      .single();
-
-    res.status(200).json({
-      message: 'Login successful',
-      session: data.session,
-      user: data.user,
-      profile: profile || null,
-    });
-  } catch (err) {
-    next(err);
-  }
-}
-
-/**
  * @desc   Log out current session
  * @route  POST /auth/logout
  */
@@ -277,6 +254,6 @@ async function getMe(req, res) {
   res.status(200).json({ user: req.user });
 }
 
-module.exports = { acceptInvite, signup, login, logout, getMe,
+module.exports = { acceptInvite, signup, logout, getMe,
   getInvite,
 };
