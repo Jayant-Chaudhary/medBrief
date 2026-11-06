@@ -1,20 +1,7 @@
 import { supabase } from './supabaseClient.js';
 
 export function getApiBaseUrl() {
-  const envUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
-  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
-    const host = window.location.hostname;
-    if (host !== 'localhost' && host !== '127.0.0.1') {
-      try {
-        const parsed = new URL(envUrl);
-        parsed.hostname = host;
-        return parsed.origin;
-      } catch {
-        return `http://${host}:4000`;
-      }
-    }
-  }
-  return envUrl;
+  return import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
 }
 
 export const BASE_URL = getApiBaseUrl();
