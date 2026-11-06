@@ -204,6 +204,10 @@ export function ClinicianDashboard() {
   );
 
   const [activeDashboardTab, setActiveDashboardTab] = useState('overview'); // 'overview' | 'flowsheet' | 'consultation'
+  const requestedTab = searchParams.get('tab');
+  useEffect(() => {
+    if (requestedTab === 'flowsheet') setActiveDashboardTab('flowsheet');
+  }, [selectedAppointmentId, requestedTab]);
   const [consultationSubView, setConsultationSubView] = useState('both'); // 'both' | 'notes' | 'rx'
   const [similarityData, setSimilarityData] = useState(null);
   const [similarityLoading, setSimilarityLoading] = useState(false);

@@ -49,8 +49,23 @@
 
 /* Assistant button: the MedBrief mark in gold and silver (AssistantMark.jsx). */
 .assistant-button {
-  background: radial-gradient(circle at 30% 25%, #3b3b47, #15151b 70%);
-  border: 1px solid rgb(230 200 120 / 0.55);
+  background: radial-gradient(circle at 30% 25%, #0f766e, #042f2e 80%);
+  border: 1.5px solid rgb(254 240 138 / 0.8);
+}
+.assistant-highlight-ring {
+  background: conic-gradient(from 0deg, #2dd4bf, #fef08a, #38bdf8, #2dd4bf);
+  filter: blur(3px);
+  animation: assistant-ring-pulse 3s ease-in-out infinite;
+}
+@keyframes assistant-ring-pulse {
+  0%, 100% {
+    transform: scale(0.96);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.14);
+    opacity: 0.95;
+  }
 }
 .assistant-mark {
   position: relative;

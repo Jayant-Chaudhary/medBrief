@@ -33,6 +33,7 @@ const execution = require('./execution');
 const writes = require('./writes');
 const { resolveRecord, appointmentOwner } = require('./recordContext');
 const { sanitizeMemory, effectiveGroundingMessage, resolveMemoryFollowUp, formatMemoryForPrompt } = require('./memory');
+const { detectClinicalQuery, queryPatientMetric, formatMetricAnswer } = require('./patientQuery.service');
 
 const NOT_FOUND = 'I could not find a patient with that name among your patients. Try the full name, or open Patients to search.';
 const ONE_PATIENT = 'I can only work with one patient per request. Please ask about each patient separately.';
@@ -92,18 +93,18 @@ function planSchema(role, maxSteps, onPage = null, message = '', page = null) {
   const buttonIds = [...new Set(forms.flatMap((id) => pressableButtons(id).map((b) => b.id)))];
   const formProperties = forms.length
     ? {
-        fields: {
-          type: 'array',
-          maxItems: MAX_FIELDS,
-          items: {
-            type: 'object',
-            properties: { control: { type: 'string', enum: controlIds }, value: { type: 'string', maxLength: 200 } },
-            required: ['control', 'value'],
-            additionalProperties: false,
-          },
+      fields: {
+        type: 'array',
+        maxItems: MAX_FIELDS,
+        items: {
+          type: 'object',
+          properties: { control: { type: 'string', enum: controlIds }, value: { type: 'string', maxLength: 200 } },
+          required: ['control', 'value'],
+          additionalProperties: false,
         },
-        press: { type: 'string', enum: [...buttonIds, 'none'] },
-      }
+      },
+      press: { type: 'string', enum: [...buttonIds, 'none'] },
+    }
     : {};
   return {
     type: 'object',
@@ -188,24 +189,24 @@ function buildMessages(message, role, clock, onPage = null, page = null, progres
     `- Unused fields: page "none", patient "", which "none", when ""${forms.length ? ', fields [], press "none"' : ''}, steps [] or options [].`,
     ...(forms.length
       ? [
-          '- fill_form values are copied exactly from the user message. Never make a value up; leave out fields the user gave no value for.',
-          '- A button that saves or sends goes in the last step only, at most one per request.',
-          '- An existing patient: open_new_appointment. A new patient with an email: fill_form on new_appointment with patientFullName and patientEmail.',
-        ]
+        '- fill_form values are copied exactly from the user message. Never make a value up; leave out fields the user gave no value for.',
+        '- A button that saves or sends goes in the last step only, at most one per request.',
+        '- An existing patient: open_new_appointment. A new patient with an email: fill_form on new_appointment with patientFullName and patientEmail.',
+      ]
       : []),
     ...(forms.includes('maternity')
       ? [
-          '- Maternity card: values from today\'s antenatal check go in visit.* fields; first-attendance tests go in baseline.*;',
-          '  lab tests in lab.*, scans in scan.*, injections in vaccine.*, the birth in delivery.*. If the user names a patient,',
-          '  open_maternity_card first. Copy every number exactly as typed; split "BP 110/70" into visit.systolic and visit.diastolic.',
-        ]
+        '- Maternity card: values from today\'s antenatal check go in visit.* fields; first-attendance tests go in baseline.*;',
+        '  lab tests in lab.*, scans in scan.*, injections in vaccine.*, the birth in delivery.*. If the user names a patient,',
+        '  open_maternity_card first. Copy every number exactly as typed; split "BP 110/70" into visit.systolic and visit.diastolic.',
+      ]
       : []),
     ...(role === 'clinician' && clock
       ? [
-          `- Now is ${nowInWords(clock.now, clock.timeZone)}. For "when" and date fields write the requested date and time as`,
-          '  YYYY-MM-DDTHH:mm in that time zone (24-hour clock), working out words like "tomorrow" or "kal" from now.',
-          '  Only when the user gave both a day and a time; otherwise "".',
-        ]
+        `- Now is ${nowInWords(clock.now, clock.timeZone)}. For "when" and date fields write the requested date and time as`,
+        '  YYYY-MM-DDTHH:mm in that time zone (24-hour clock), working out words like "tomorrow" or "kal" from now.',
+        '  Only when the user gave both a day and a time; otherwise "".',
+      ]
       : []),
     ...(onBookingForm
       ? ['- The New appointment form is open now. A date, time or question with no patient name is for this form: use fill_form on new_appointment.']
@@ -231,53 +232,53 @@ function buildMessages(message, role, clock, onPage = null, page = null, progres
 
   const roleExamples = role === 'patient'
     ? [
-        ...example("open Test Person's maternity card", { action: 'unsupported', ...none }),
-      ]
+      ...example("open Test Person's maternity card", { action: 'unsupported', ...none }),
+    ]
     : [
-        ...example('open new visit', run([step({ page: 'new_appointment' })])),
-        ...example('new visit for Test Person tomorrow at 5 pm', run([step({ do: 'open_new_appointment', patient: 'Test Person', when: `${tomorrow}T17:00` })])),
-        ...example("open Test Person's maternity card", run([step({ do: 'open_maternity_card', patient: 'Test Person' })])),
-        ...example('go to the schedule and then open the next visit for Test Person', run([step({ page: 'schedule' }), step({ do: 'open_patient_visit', patient: 'Test Person', which: 'next' })])),
-        ...example('find Test Person', run([step({ do: 'find_patient', patient: 'Test Person' })])),
-        ...example(`book Test Person on 14 March ${exampleYear} at 4 pm`, run([step({ do: 'open_new_appointment', patient: 'Test Person', when: `${exampleYear}-03-14T16:00` })])),
-        ...example('new appointment for Test Person next week', run([step({ do: 'open_new_appointment', patient: 'Test Person' })])),
-        ...(onBookingForm ? example('kal 11 baje', run([fill([{ control: 'scheduledAt', value: `${tomorrow}T11:00` }])])) : []),
-        ...(forms.includes('new_appointment')
-          ? [
-              ...example(
-                `new appointment for Test Person on 14 March ${exampleYear} at 4 pm and send the invite`,
-                run([step({ do: 'open_new_appointment', patient: 'Test Person', when: `${exampleYear}-03-14T16:00` }), fill([], 'create_visit')])
-              ),
-              ...example(
-                `book new patient Riya Test, riya@example.test, on 14 March ${exampleYear} at 4 pm and send the invite`,
-                run([fill([
-                  { control: 'patientFullName', value: 'Riya Test' },
-                  { control: 'patientEmail', value: 'riya@example.test' },
-                  { control: 'scheduledAt', value: `${exampleYear}-03-14T16:00` },
-                ], 'create_visit')])
-              ),
-            ]
-          : []),
-        ...(forms.includes('maternity')
-          ? [
-              ...example('baseline Hb 10.5, blood group O negative, G2 P1', run([fillCard([
-                { control: 'baseline.hb', value: '10.5' }, { control: 'baseline.blood', value: 'O negative' },
-                { control: 'patient.gravida', value: '2' }, { control: 'patient.para', value: '1' },
-              ])])),
-              ...example(
-                "open Test Person's maternity card and record blood pressure 110/70 and weight 62 kg and add the visit",
-                run([
-                  step({ do: 'open_maternity_card', patient: 'Test Person' }),
-                  fillCard([
-                    { control: 'visit.systolic', value: '110' },
-                    { control: 'visit.diastolic', value: '70' },
-                    { control: 'visit.weight', value: '62' },
-                  ], 'save_visit'),
-                ])
-              ),
-            ]
-          : []),
-      ];
+      ...example('open new visit', run([step({ page: 'new_appointment' })])),
+      ...example('new visit for Test Person tomorrow at 5 pm', run([step({ do: 'open_new_appointment', patient: 'Test Person', when: `${tomorrow}T17:00` })])),
+      ...example("open Test Person's maternity card", run([step({ do: 'open_maternity_card', patient: 'Test Person' })])),
+      ...example('go to the schedule and then open the next visit for Test Person', run([step({ page: 'schedule' }), step({ do: 'open_patient_visit', patient: 'Test Person', which: 'next' })])),
+      ...example('find Test Person', run([step({ do: 'find_patient', patient: 'Test Person' })])),
+      ...example(`book Test Person on 14 March ${exampleYear} at 4 pm`, run([step({ do: 'open_new_appointment', patient: 'Test Person', when: `${exampleYear}-03-14T16:00` })])),
+      ...example('new appointment for Test Person next week', run([step({ do: 'open_new_appointment', patient: 'Test Person' })])),
+      ...(onBookingForm ? example('kal 11 baje', run([fill([{ control: 'scheduledAt', value: `${tomorrow}T11:00` }])])) : []),
+      ...(forms.includes('new_appointment')
+        ? [
+          ...example(
+            `new appointment for Test Person on 14 March ${exampleYear} at 4 pm and send the invite`,
+            run([step({ do: 'open_new_appointment', patient: 'Test Person', when: `${exampleYear}-03-14T16:00` }), fill([], 'create_visit')])
+          ),
+          ...example(
+            `book new patient Riya Test, riya@example.test, on 14 March ${exampleYear} at 4 pm and send the invite`,
+            run([fill([
+              { control: 'patientFullName', value: 'Riya Test' },
+              { control: 'patientEmail', value: 'riya@example.test' },
+              { control: 'scheduledAt', value: `${exampleYear}-03-14T16:00` },
+            ], 'create_visit')])
+          ),
+        ]
+        : []),
+      ...(forms.includes('maternity')
+        ? [
+          ...example('baseline Hb 10.5, blood group O negative, G2 P1', run([fillCard([
+            { control: 'baseline.hb', value: '10.5' }, { control: 'baseline.blood', value: 'O negative' },
+            { control: 'patient.gravida', value: '2' }, { control: 'patient.para', value: '1' },
+          ])])),
+          ...example(
+            "open Test Person's maternity card and record blood pressure 110/70 and weight 62 kg and add the visit",
+            run([
+              step({ do: 'open_maternity_card', patient: 'Test Person' }),
+              fillCard([
+                { control: 'visit.systolic', value: '110' },
+                { control: 'visit.diastolic', value: '70' },
+                { control: 'visit.weight', value: '62' },
+              ], 'save_visit'),
+            ])
+          ),
+        ]
+        : []),
+    ];
 
   const examples = [
     ...example(`open ${first.label.toLowerCase()}`, run([step({ page: first.id })])),
@@ -580,7 +581,7 @@ async function runAgentLoop({
     };
   }
 
-  
+
 
   // Verified results were applied together in handleStep. Reapplying each one
   // separately could hide a later failed field behind an earlier success.
@@ -629,9 +630,11 @@ async function runAgentLoop({
     ...(validated.formStep?.press ? [{ ...validated.formStep.press, op: 'press' }] : []),
   ];
   if (proposed.some(action => execution.matchingItem(activeChecklist, action) > currentItem)) {
-    return { type: 'run', checklist: activeChecklist, source: 'agent', continue: true, steps: [{
-      label: 'This page', page: { actions: [], refused: [{ name: activeChecklist[currentItem].text, reason: 'Complete the current checklist item before starting a later item.' }] },
-    }] };
+    return {
+      type: 'run', checklist: activeChecklist, source: 'agent', continue: true, steps: [{
+        label: 'This page', page: { actions: [], refused: [{ name: activeChecklist[currentItem].text, reason: 'Complete the current checklist item before starting a later item.' }] },
+      }]
+    };
   }
 
   // Holds actions on this page when a step leaves it, and continues on the next page
@@ -715,6 +718,7 @@ async function handleStep({
   startedAt,
   originRecord,
   currentRecord,
+  patientChoice,
   written = [],
   memory = [],
   recordLookup = appointmentOwner,
@@ -724,11 +728,25 @@ async function handleStep({
   pageHash = '',
   provider = getProvider(),
   directory = listClinicianPatients,
+  metricLookup = queryPatientMetric,
   settings = config,
   now = Date.now,
 }) {
   const pages = pagesFor(role);
   if (!pages.length) return { ...unsupported('none'), attempts: 0 };
+
+  if (role === 'clinician' && round === 0) {
+    const earlyQuery = detectClinicalQuery(message);
+    if (earlyQuery.isQuery && earlyQuery.isDiagnostic) {
+      return {
+        type: 'unsupported',
+        message: 'I can look up recorded test results, vitals, and investigations for you, but I do not diagnose or interpret clinical normality.',
+        source: 'clinical_record',
+        attempts: 0,
+      };
+    }
+  }
+
   if (/\b(?:delete\s+all|remove\s+all|diagnos\w*|what\s+(?:is\s+the\s+)?(?:safe\s+)?dos(?:e|age)|dos(?:e|age)\s+of\s+\w+\s+is\s+safe|is\s+her\s+hb\s+normal|can\s+i\s+eat\s+papaya|papita\s+kha\s+sakti|sign\s*out\s+of)\b/i.test(String(message || ''))) return { ...unsupported('rules'), attempts: 0 };
 
 
@@ -741,7 +759,11 @@ async function handleStep({
     return unsupported('none', 'This request has expired. Please start again.');
   }
   if (acknowledgeOnly && !saved) return unsupported('none', 'There is no issued action to verify.');
-  const initialTime = saved?.startedAt ?? startedAt ?? now();
+  const choiceState = patientChoice ? continuation.read(patientChoice.token, userId, message) : null;
+  if (patientChoice && (role !== 'clinician' || round !== 0 || !choiceState?.clinicalChoice?.ids?.includes(patientChoice.id))) {
+    return unsupported('none', 'This patient choice has expired. Please ask again.');
+  }
+  const initialTime = saved?.startedAt ?? choiceState?.startedAt ?? startedAt ?? now();
   if (!Number.isSafeInteger(initialTime) || initialTime > now()) return execution.stop(saved?.checklist || [{ text: message, done: false }], 'the request start time is invalid');
   const deadline = initialTime + settings.requestTimeoutMs;
   // On arrival at a form, discover its requested fields before an otherwise
@@ -830,22 +852,140 @@ async function handleStep({
   const lookup = id => execution.boundProvider({ complete: () => recordLookup(id, userId) }, deadline, settings, now).complete({});
   let origin = await resolveRecord(saved ? saved.originRecord : originRecord, patients, userId, lookup);
   let current = await resolveRecord(currentRecord, patients, userId, lookup);
-  if (!current && followUp?.record) {
-    current = await resolveRecord(followUp.record, patients, userId, lookup);
+  let remembered = null;
+  if (followUp?.record) {
+    const resolved = await resolveRecord(followUp.record, patients, userId, lookup);
+    if (resolved?.patientId === followUp.patient?.id) remembered = resolved;
+    if (!current) current = remembered;
+  }
+
+  // Clinical Factual Q&A: answer questions about any patient's recorded metrics/labs
+  if (role === 'clinician' && round === 0 && !followUp && detectClinicalQuery(message, patients).isQuery) {
+    if (!patients.length) {
+      patients = await Promise.resolve(directory(userId)).catch(() => []);
+    }
+    const clinicalQuery = detectClinicalQuery(message, patients);
+    if (clinicalQuery.isQuery) {
+      if (clinicalQuery.isDiagnostic) {
+        return {
+          type: 'unsupported',
+          message: 'I can look up recorded test results, vitals, and investigations for you, but I do not diagnose or interpret clinical normality.',
+          source: 'clinical_record',
+          attempts: 0,
+        };
+      }
+
+      let targetPatient = null;
+
+      // 1. If a specific patient name was typed in the question
+      if (clinicalQuery.candidateName) {
+          const resolved = resolvePatient(clinicalQuery.candidateName, patients);
+          if (patientChoice) {
+            const matches = resolved.status === 'one' ? [resolved.patient] : resolved.status === 'many' ? resolved.matches : [];
+            targetPatient = choiceState.clinicalChoice.metric === clinicalQuery.metricTerm && matches.find(p => p.id === patientChoice.id);
+            if (!targetPatient) return { type: 'clarify', message: NOT_FOUND, options: [], source: 'clinical_record', attempts: 0 };
+          } else if (resolved.status === 'one') {
+            targetPatient = resolved.patient;
+          } else if (resolved.status === 'many') {
+            // Resolve identity before reading any clinical values. Neither data
+            // availability nor an open record disambiguates a shared name.
+            const token = continuation.issue(userId, message, { startedAt: initialTime,
+              clinicalChoice: { ids: resolved.matches.map(p => p.id), metric: clinicalQuery.metricTerm } });
+            return { type: 'choose', prompt: 'Which patient do you mean?', source: 'clinical_record', attempts: 0,
+              options: resolved.matches.map(p => ({ label: p.fullName, detail: describePatient(p), patientChoice: { id: p.id, token } })) };
+          } else {
+            return {
+              type: 'clarify',
+              message: NOT_FOUND,
+              options: [],
+              source: 'clinical_record',
+              attempts: 0,
+            };
+          }
+      } else {
+        // No name typed ("what is her Hb?"). The patient last asked about and
+        // the record on screen can differ; never guess between the two.
+        const lastSubject = cleanMemory[cleanMemory.length - 1]?.patient;
+        const remembered = lastSubject ? patients.find(p => p.id === lastSubject.id) : null;
+        const onScreen = current?.patientId ? patients.find(p => p.id === current.patientId) : null;
+        if (patientChoice) {
+          targetPatient = choiceState.clinicalChoice.metric === clinicalQuery.metricTerm
+            ? patients.find(p => p.id === patientChoice.id) || null : null;
+        } else if (remembered && onScreen && remembered.id !== onScreen.id) {
+          const choices = [remembered, onScreen];
+          const token = continuation.issue(userId, message, { startedAt: initialTime,
+            clinicalChoice: { ids: choices.map(p => p.id), metric: clinicalQuery.metricTerm } });
+          return { type: 'choose', prompt: 'Which patient do you mean?', source: 'clinical_record', attempts: 0,
+            options: choices.map(p => ({ label: p.fullName, detail: describePatient(p), patientChoice: { id: p.id, token } })) };
+        } else if (remembered && !current?.patientId) {
+          targetPatient = remembered;
+        }
+      }
+      if (patientChoice && !targetPatient) return unsupported('none', 'This patient choice has expired. Please ask again.');
+
+      // 2. If no name was typed, use currently active patient record on screen
+      if (!targetPatient && current?.patientId) {
+        const pMatch = patients.find(p => p.id === current.patientId);
+        targetPatient = pMatch || { id: current.patientId, fullName: 'the patient' };
+      }
+
+      // 3. If neither name nor active patient is available, ask which patient
+      if (!targetPatient) {
+        return {
+          type: 'clarify',
+          message: "Which patient's record would you like me to check?",
+          options: [],
+          source: 'clinical_record',
+          attempts: 0,
+        };
+      }
+
+      // 4. Query all sources (visits, investigations, uploaded lab reports, vitals)
+      let record;
+      try {
+        record = await execution.boundProvider({ complete: () => metricLookup(userId, targetPatient.id, clinicalQuery.metricTerm) }, deadline, settings, now).complete({});
+      } catch (err) {
+        return { type: 'unavailable', message: 'I could not read the patient records. Please try again.',
+          source: 'clinical_record', attempts: 0, errorCode: err.code === 'MODEL_TIMEOUT' ? 'PATIENT_QUERY_TIMEOUT' : 'PATIENT_QUERY_FAILED' };
+      }
+      const appointmentId = current?.kind === 'visit' && current.patientId === targetPatient.id
+        ? current.id : targetPatient.lastVisit?.appointmentId || targetPatient.nextVisit?.appointmentId;
+      const answer = formatMetricAnswer(targetPatient.fullName, clinicalQuery.metricTerm, record, targetPatient.id, { timeZone: clock.timeZone, appointmentId });
+
+      return {
+        type: 'answer',
+        text: answer.text,
+        recordPath: answer.recordPath,
+        recordLabel: answer.recordLabel,
+        // The query subject can differ from the record currently on screen.
+        // Return only identity/context, never the retrieved value, for tab memory.
+        memoryContext: {
+          patient: { id: targetPatient.id, name: clinicalQuery.candidateName || targetPatient.fullName },
+          record: current?.patientId === targetPatient.id
+            ? { kind: current.kind, id: current.id }
+            : appointmentId ? { kind: 'visit', id: appointmentId } : null,
+        },
+        source: 'clinical_record',
+        attempts: 0,
+      };
+    }
   }
   const writtenState = [...(saved?.written || [])];
   for (const result of verifiedResults) {
     if (result.result === 'ok' && result.field && result.hash && !writtenState.some(w => w.field === result.field && w.hash === result.hash)) writtenState.push({ field: result.field, op: result.op, hash: result.hash });
   }
-  if (followUp?.kind === 'return_patient' && current) {
+  const returnToMemory = followUp?.kind === 'return_patient';
+  const inheritOtherPatient = followUp?.kind === 'inherit_context' && current?.patientId !== followUp.patient?.id;
+  if (returnToMemory || inheritOtherPatient) {
+    if (!remembered) return { type: 'clarify', message: 'Please open the remembered patient\'s record before continuing.', options: [], source: 'memory', attempts: 0 };
     return finish({
       type: 'navigate',
-      path: current.kind === 'maternity' ? '/clinician/maternity?patientId=' + encodeURIComponent(current.id) : current.kind === 'new_appointment' ? '/clinician/appointments/new?patient=' + encodeURIComponent(current.id) : '/clinician?appointment=' + encodeURIComponent(current.id),
+      path: remembered.kind === 'maternity' ? '/clinician/maternity?patientId=' + encodeURIComponent(remembered.id) : remembered.kind === 'new_appointment' ? '/clinician/appointments/new?patient=' + encodeURIComponent(remembered.id) : '/clinician?appointment=' + encodeURIComponent(remembered.id),
       label: "Open " + (followUp.patient?.fullName || 'patient') + "'s record",
-      op: 'open_record',
-      kind: current.kind === 'visit' ? 'last_visit' : current.kind,
-      recordId: current.id,
-      recordTarget: current,
+      op: returnToMemory ? 'return_record' : 'open_record',
+      kind: remembered.kind === 'visit' ? 'last_visit' : remembered.kind,
+      recordId: remembered.id,
+      recordTarget: remembered,
       checklist: followUp.checklist,
       source: 'agent',
       attempts: 0,
@@ -942,16 +1082,18 @@ async function handleStep({
     if (replayed && active.length && active.every(c => c.done)) return { type: 'done', checklist: active, source: 'agent', steps: [], message: 'Completed.' };
     if (now() >= deadline) return execution.stop(active.length ? active : [{ text: message, done: false }], 'the request time limit was reached');
     if (!canAgent || (!reply.continue && reply.source !== 'agent')) return reply;
-    if (!['run','navigate','choose'].includes(reply.type)) return reply;
+    if (!['run', 'navigate', 'choose'].includes(reply.type)) return reply;
     const checklist = active.length ? active : [{ text: message, done: false }];
     // Always collect the last action's result before declaring completion.
     reply.continue = true;
     const pending = execution.pendingActions(reply, checklist, round, currentPath, current, seen, followUp?.expandedMessage || message);
     // Execution bindings stay in signed state; public checklist items retain
     // the existing display contract for clients and tab memory.
-    return { ...reply, checklist: checklist.map(({ text, done, reason }) => ({ text, done, ...(reason && { reason }) })), mode: 'agent', continuationToken: continuation.issue(userId, message, {
-      round: round + 1, startedAt: initialTime, checklist, pending, history, originRecord: origin, written: writtenState, successes: [...new Set(successes)], refusedRounds, reasons, feedback: refusals.map(r => ({ ...r, result: 'refused' })),
-    }) };
+    return {
+      ...reply, checklist: checklist.map(({ text, done, reason }) => ({ text, done, ...(reason && { reason }) })), mode: 'agent', continuationToken: continuation.issue(userId, message, {
+        round: round + 1, startedAt: initialTime, checklist, pending, history, originRecord: origin, written: writtenState, successes: [...new Set(successes)], refusedRounds, reasons, feedback: refusals.map(r => ({ ...r, result: 'refused' })),
+      })
+    };
   }
   async function agent() {
     if (!patients.length) patients = await Promise.resolve(directory(userId)).catch(() => []);
@@ -959,9 +1101,11 @@ async function handleStep({
     const groundingMsg = effectiveGroundingMessage(activeMsg, cleanMemory);
     const initialChecklist = verifiedChecklist.length ? verifiedChecklist : (followUp?.checklist || []);
     const activeCurrent = current || (followUp?.patient ? { kind: followUp.record?.kind || 'visit', id: followUp.record?.id || followUp.patient.id, patientId: followUp.patient.id } : null);
-    return finish(await runAgentLoop({ message: activeMsg, groundingMessage: groundingMsg, memory: cleanMemory, role, userId, timeZone, currentPath, page,
+    return finish(await runAgentLoop({
+      message: activeMsg, groundingMessage: groundingMsg, memory: cleanMemory, role, userId, timeZone, currentPath, page,
       round, progress, checklist: initialChecklist, note, results: [...verifiedResults, ...(saved?.feedback || [])], pageHash,
-      provider, directory, settings, clock, onPage, seen, patients, recordContext: { originRecord: origin, currentRecord: activeCurrent }, writtenState }));
+      provider, directory, settings, clock, onPage, seen, patients, recordContext: { originRecord: origin, currentRecord: activeCurrent }, writtenState
+    }));
   }
   if (isPhase6Agent || isMulti) return agent();
 
@@ -1005,7 +1149,7 @@ async function handleStep({
 
   const { finished, ...result } = await resolve(message);
   if (canAgent && page && result.type === 'unsupported' && result.message === config.unsupportedMessage &&
-      !/\b(delete|remove|untick|discard|archive|diagnos\w*|dosage|safe dose|treat\w*|cure|record audio|consent|sign out|upload)\b/i.test(message)) return agent();
+    !/\b(delete|remove|untick|discard|archive|diagnos\w*|dosage|safe dose|treat\w*|cure|record audio|consent|sign out|upload)\b/i.test(message)) return agent();
   return finish(result);
 }
 
