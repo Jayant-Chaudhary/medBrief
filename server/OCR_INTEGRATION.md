@@ -76,7 +76,8 @@ OCR service (environment):
 | --- | --- | --- |
 | `OCR_DET_MODEL` / `OCR_REC_MODEL` | `PP-OCRv6_small_det` / `_rec` | use `*_medium_*` on a GPU host |
 | `OCR_DEVICE` | auto | `cpu` forces CPU |
-| `OCR_DOC_ORIENTATION` / `OCR_DOC_UNWARPING` | off | enable for rotated or curled phone photos (slow) |
+| `OCR_IMAGE_AUTOROTATE` | on | photos (PNG/JPEG) are read upright: EXIF orientation is applied, then a light page classifier (`OCR_ORIENTATION_MODEL`, default `PP-LCNet_x1_0_doc_ori`) corrects 90/180/270° turns. PDFs are unaffected |
+| `OCR_DOC_ORIENTATION` / `OCR_DOC_UNWARPING` | off | PaddleOCR's full page preprocessor, for all inputs including PDFs (slow). Enabling orientation here disables `OCR_IMAGE_AUTOROTATE` so a page is not rotated twice |
 | `OCR_WARMUP` | on | load models at startup |
 | `OCR_MAX_UPLOAD_BYTES` | 64 MB | upload cap |
 | `CORS_ALLOW_ORIGINS` | none | browsers are not expected to call the service |
