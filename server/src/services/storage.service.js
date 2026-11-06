@@ -23,9 +23,9 @@ async function uploadFile({ bucket, ownerId, buffer, originalName, contentType }
   const extension = path.extname(originalName || '').toLowerCase() || '.bin';
   const storagePath = `${ownerId}/${crypto.randomUUID()}${extension}`;
 
-  const payloadToStore = storageEncryption.isEncrypted(buffer)
-    ? buffer
-    : storageEncryption.encrypt(buffer);
+  // Always encrypt: an uploaded file that merely begins with the envelope magic
+  // bytes must not be stored as-is.
+  const payloadToStore = storageEncryption.encrypt(buffer);
 
   const { error } = await supabaseAdmin.storage
     .from(bucket)

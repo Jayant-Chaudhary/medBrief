@@ -159,9 +159,8 @@ async function ingestChunk({
     const ext = getExtensionFromCodec(codec);
     storagePath = `consults/${sessionId}/${device}/${parsedSeq}.${ext}`;
 
-    const payloadToStore = storageEncryption.isEncrypted(audioBuffer)
-      ? audioBuffer
-      : storageEncryption.encrypt(audioBuffer);
+    // Always encrypt device uploads; never trust a leading envelope header.
+    const payloadToStore = storageEncryption.encrypt(audioBuffer);
 
     try {
       const { error: uploadErr } = await supabaseAdmin.storage
