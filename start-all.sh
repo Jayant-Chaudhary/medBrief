@@ -15,7 +15,10 @@
 set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PRIVATE_ENV_DIR="${MEDBRIEF_PRIVATE_DIR:-/home/jayant/medbrief-private}"
+PRIVATE_ENV_DIR="${MEDBRIEF_PRIVATE_DIR:-$HOME/medbrief-private}"
+if [ ! -d "$PRIVATE_ENV_DIR" ] && [ -d "/home/jayant/medbrief-private" ]; then
+  PRIVATE_ENV_DIR="/home/jayant/medbrief-private"
+fi
 LOG_DIR="$ROOT_DIR/.logs"
 mkdir -p "$LOG_DIR"
 
@@ -29,8 +32,12 @@ MAGENTA='\033[0;35m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-# Ensure Node 24 is used (required for --env-file support)
-if [ -s "/home/jayant/.nvm/nvm.sh" ]; then
+# Ensure Node 20+ / 24 is used (required for --env-file support)
+if [ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]; then
+  # shellcheck disable=SC1091
+  source "${NVM_DIR:-$HOME/.nvm}/nvm.sh"
+  nvm use 24 >/dev/null 2>&1 || true
+elif [ -s "/home/jayant/.nvm/nvm.sh" ]; then
   # shellcheck disable=SC1091
   source "/home/jayant/.nvm/nvm.sh"
   nvm use 24 >/dev/null 2>&1 || true

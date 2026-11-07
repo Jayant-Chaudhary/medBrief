@@ -1,321 +1,278 @@
-# Health-On (Maternal Health Platform)
+# Health-On (MedBrief) — Maternal Health & Clinical Decision Support Platform
 
-Welcome to **Health-On** (also internally referred to as MedBrief), a comprehensive platform designed for maternal health clinics. The platform streamlines patient onboarding, appointment tracking, vitals logging, pre-visit questionnaires, longitudinal prenatal check-ins, automated clinical briefs, and digitized physical lab reports using an Optical Character Recognition (OCR) pipeline.
+[![React](https://img.shields.io/badge/React-18.3-blue.svg?logo=react)](https://reactjs.org/)
+[![Vite](https://img.shields.io/badge/Vite-5.3-646CFF.svg?logo=vite)](https://vitejs.dev/)
+[![Node.js](https://img.shields.io/badge/Node.js-20%2B%20%7C%2024-green.svg?logo=node.js)](https://nodejs.org/)
+[![Express](https://img.shields.io/badge/Express-4.19-lightgrey.svg?logo=express)](https://expressjs.com/)
+[![Flutter](https://img.shields.io/badge/Flutter-3.22%2B-02569B.svg?logo=flutter)](https://flutter.dev/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg?logo=fastapi)](https://fastapi.tiangolo.com/)
+[![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL%20%7C%20RLS-3ECF8E.svg?logo=supabase)](https://supabase.com/)
+[![PaddleOCR](https://img.shields.io/badge/OCR-PaddleOCR%20v4-orange.svg)](https://github.com/PaddlePaddle/PaddleOCR)
+[![Faster-Whisper](https://img.shields.io/badge/STT-Faster--Whisper-red.svg)](https://github.com/SYSTRAN/faster-whisper)
 
-This project is structured as a monorepo containing the frontend web client, mobile patient app, backend server, a dedicated Python-based OCR microservice, and database configurations.
-
-## Architecture & Tech Stack
-
-The application follows a modern full-stack architecture:
-
-- **Client (Clinician & Web Dashboard)**
-  - **Framework**: React 18 with Vite
-  - **Styling**: Tailwind CSS & Lucide React for icons
-  - **Routing**: React Router DOM
-  - **Integration**: `@supabase/supabase-js` for authentication and real-time updates
-  - **Testing**: Vitest with `@testing-library/react`
-
-- **Mobile (Patient Companion App)**
-  - **Framework**: Flutter (Android-first)
-  - **State & Architecture**: Clean MVC repository/controller architecture with Riverpod-ready reactive patterns
-  - **Design System**: Warm maternal theme with accessible high-contrast typography, guided progressive wizards, and haptic feedback
-  - **Testing**: Flutter Test suite (`flutter test`)
-
-- **Server (Backend API)**
-  - **Framework**: Node.js & Express.js
-  - **AI Engine**: Google Gemini API (`gemini-flash-lite-latest`) with deterministic clinical rule-based fallback
-  - **Validation**: Zod schema validation on all incoming payload boundaries
-  - **Testing**: Jest & Supertest
-  - **Features**: Business logic, interval-scoped check-in synthesis, OCR dictionary normalization, and appointment invites
-
-- **OCR Service (PaddleOCRFastAPI)**
-  - **Framework**: FastAPI (Python)
-  - **Engine**: PaddleOCR for extracting text from physical medical reports
-  - **Containerization**: Docker support included
-
-- **Database (Supabase / Postgres)**
-  - **Type**: Relational PostgreSQL via Supabase
-  - **Security**: Strict Row-Level Security (RLS) policies on every table protecting patient PHI
-  - **Storage**: Supabase Storage (private buckets) for lab reports, prescriptions, and media
+Welcome to **Health-On** (internally designated **MedBrief**), a comprehensive maternal healthcare platform and clinical decision-support ecosystem. Built specifically for prenatal and postpartum care, Health-On bridges the gap between expectant mothers and clinical care teams through continuous surveillance, intelligent pre-visit triage, ambient consultation recording, automated lab digitization, and zero-knowledge peer support.
 
 ---
 
-## Repository Structure
+## 📚 Root Documentation Suite
+
+For quick navigation directly from GitHub, explore the core technical documents located in the repository root:
+
+| Document | Purpose |
+|---|---|
+| **[SETUP.md](./SETUP.md)** | **Complete Installation & Setup Guide**: Step-by-step setup for Windows (PowerShell/CMD) and Linux (Ubuntu/Debian), environment configuration, database migrations, and troubleshooting. |
+| **[ARCHITECTURE.md](./ARCHITECTURE.md)** | **System Architecture & Technical Specification**: Component topology, data flow sequence diagrams, database schemas, and cryptographic security models. |
+| **[FEATURES.md](./FEATURES.md)** | **Core Features Deep Dive**: In-depth clinical and technical breakdowns of all 8 major platform capabilities. |
+| **[AGENTS.md](./AGENTS.md)** | **Standing Rules & Safety Directives**: Clinical compliance, zero-PHI logging rules, and development protocols. |
+
+---
+
+## Architecture & System Overview
+
+Health-On operates as a coordinated monorepo of specialized microservices, a web clinician dashboard, a mobile patient companion app, and a secure PostgreSQL datastore with Row-Level Security (RLS).
+
+```mermaid
+flowchart TD
+    subgraph Clients["User Applications"]
+        WebDoctor["React Clinician Portal\n(Vite + Tailwind, Port 5173)"]
+        MobilePatient["Flutter Mobile App\n(Android, Port 4000 reverse)"]
+    end
+
+    subgraph Backend["Core API & Orchestration"]
+        NodeAPI["Node.js / Express API\n(HTTP & WebSockets, Port 4000)"]
+        Synthesizer["AI Brief & Check-In Synthesis\n(Gemini Flash-Lite / Rule Engine)"]
+        Assistant["Clinical In-App Assistant\n(Action Routing & Form Autofill)"]
+        AudioOrch["Consultation Audio Orchestrator\n(Dual-Device Ingestion & Gap Recovery)"]
+    end
+
+    subgraph Microservices["Specialized Microservices"]
+        OCR["PaddleOCR Service\n(FastAPI / Python, Port 8000)"]
+        WhisperSTT["Faster-Whisper STT Service\n(FastAPI / CUDA GPU, Port 8001)"]
+        RedisCache["Redis Audio Buffer Cache\n(Docker, Port 6379)"]
+        CommunityIdent["Community Identity Service\n(Isolated Port 4101)"]
+        CommunitySafety["Community Safety & Moderation\n(Gemini / Ollama, Port 4102)"]
+    end
+
+    subgraph Storage["Data & Security Layer"]
+        SupabaseDB[("Supabase PostgreSQL\n(Strict RLS on all tables)")]
+        SupabaseStorage[("Supabase Private Storage\n(Encrypted audio chunks & lab reports)")]
+    end
+
+    WebDoctor <-->|REST & Socket.IO| NodeAPI
+    MobilePatient <-->|HTTPS API & Audio Chunks| NodeAPI
+
+    NodeAPI --> Synthesizer
+    NodeAPI --> Assistant
+    NodeAPI --> AudioOrch
+
+    NodeAPI <-->|Document Parsing| OCR
+    AudioOrch <-->|Speech-to-Text| WhisperSTT
+    AudioOrch <-->|Chunk Caching| RedisCache
+    NodeAPI <-->|Identity Isolation| CommunityIdent
+    NodeAPI <-->|Content Screening| CommunitySafety
+
+    NodeAPI <-->|PostgreSQL Queries & RLS| SupabaseDB
+    AudioOrch <-->|Persistent Chunks & Notes| SupabaseStorage
+```
+
+---
+
+## Core Modules & Capabilities
+
+### 1. AI-Powered Prenatal Surveillance & Check-In Cadence
+Continuous prenatal monitoring between scheduled hospital visits designed to minimize survey fatigue while flagging acute complications (such as preeclampsia, intrauterine growth restriction, or depression):
+- **Tier 1 — Routine Weekly Milestone Review (Every 7 Days)**: A 4-step progressive wizard dynamically tailored to gestational age (Trimester 1 morning sickness & hyperemesis, Trimester 2 quickening & fetal movement, Trimester 3/Term labor vs Braxton Hicks, mental health screening via EPDS/GAD-2, vitamin adherence).
+- **Tier 2 — 30-Second Quick Pulse (Every 2–4 Days)**: 1-to-5 visual comfort scale with one-tap symptom chips (`Nausea`, `Pelvic pressure`, `Swelling`, `Headache`, `Fatigue`, `Heartburn`).
+- **Tier 3 — 24/7 Ad-Hoc Concern Logger**: Always accessible for unscheduled issues, pain, spotting, or reduced fetal kicks.
+- **Emergency Intercept Shield**: Immediate detection of red-flag symptoms (severe unilateral headache, visual scotoma, epigastric pain, bleeding) with instant emergency guidance and clinic hotline triggers.
+
+### 2. Pre-Visit 30-Second AI Clinical Brief
+Clinicians spend less than 30 seconds before entering the consultation room understanding the patient's longitudinal trajectory:
+- **Interval-Scoped Synthesis**: Summarizes strictly what occurred *between* the previous appointment and the upcoming visit.
+- **Triage Priority Badging**: Automatically classifies status as **Red** (urgent attention needed), **Amber** (review required), or **Green** (reassuring progression).
+- **Trajectory Trend Analysis**: Highlights whether symptoms (e.g. swelling or nausea) are worsening, stable, or resolving.
+- **Deterministic Offline Fallback**: If LLM provider limits or network disconnects occur, an offline clinical rule matching engine synthesizes the brief deterministically with 100% operational uptime.
+
+### 3. Ambient Dual-Device Consultation Audio & Clinical Notes Drafter
+Ambient recording inside the examination room without altering doctor-patient interaction:
+- **Dual-Device Synchronized Recording**: Both doctor (web browser) and patient (mobile app) can record simultaneously to overcome directional noise and distance.
+- **Streaming Audio Chunks**: 15–25 second chunks uploaded idempotently with cryptographic hashing and pause detection (`SILENCE_DBFS = -45 dB`).
+- **Resilient Gap Recovery**: Automatic reconciliation for dropped network packets or delayed chunks.
+- **STT Provider Agnostic**: Seamlessly switches between local CUDA-accelerated **Faster-Whisper** (`port 8001`) and **Sarvam AI** cloud speech models.
+- **Automated SOAP Notes Draft**: Automatically drafts structured clinical consultation notes (Subjective, Objective, Assessment, Plan) with immediate clinician review, editing, and approval.
+
+### 4. Automated Lab Report Digitization (OCR)
+- **FastAPI + PaddleOCR Microservice**: Extracts machine-printed and scanned physical paper reports (CBC, iron panels, glucose tolerance, urine protein).
+- **Metric Normalization Dictionary**: Normalizes hospital-specific variations (e.g. `"HGB"`, `"Hb"`, `"Hgb"` $\rightarrow$ `"hemoglobin"`) into standardized units and reference ranges.
+- **Safety Triage**: Unmatched or low-confidence metrics are flagged for human clinician verification before landing in the longitudinal patient timeline.
+
+### 5. Longitudinal Vitals & Clinical Alerting
+- Real-time charting for Systolic/Diastolic Blood Pressure, Maternal Pulse, Fundal Height, Fetal Heart Rate (FHR), and Maternal Weight.
+- Visual clinical threshold alerts (e.g., blood pressure $\ge$ 140/90 mmHg for preeclampsia surveillance; abnormal fetal heart rate ranges).
+- Integration with Android Health Connect for connected home BP cuffs and scales.
+
+### 6. Clinical In-App Assistant
+- Embedded agentic AI assistant capable of multi-round reasoning, reading active screen contents, navigating patient records, and safely autofilling appointment details and checklists.
+- Operates under strict clinician confirmation: the assistant prepares the data, but the clinician clicks the final button.
+
+### 7. Post-Visit Action Checklists & Medication Decision Support
+- Digital consultation notes, prescribed medications, and follow-up lab orders instantly translate into an interactive checklist on the patient's mobile device.
+- Cross-references gestational safety categories, known maternal allergies, and contraindications before prescriptions are finalized.
+
+### 8. Anonymous Peer-Support Community Subsystem
+- **Zero-Knowledge 3-Tier Identity Isolation**: Complete architectural decoupling between Supabase Auth IDs, internal community pseudonyms, and public handles. Doctors and moderators cannot deanonymize users without a formal multi-party reveal audit.
+- **Automated AI Safety & Moderation**: Dual moderation pipeline using Google Gemini or local Ollama to sanitize PII (phone numbers, addresses, personal names) and screen for distress before publication.
+- **Background Notification Sweeper**: Push notification worker delivering empathetic check-in reminders and community replies.
+
+---
+
+## Monorepo Directory Map
 
 ```text
 health-on-project/
-├── client/                 # React clinician & patient web portal
-├── mobile/                 # Flutter mobile patient companion application
-├── server/                 # Node.js Express backend API & AI synthesis engine
-├── PaddleOCRFastAPI/       # FastAPI microservice for document OCR
-├── supaBase/               # Database migrations, RLS policies, and seed data
-├── docs/                   # Architecture, audit, and feature documentation
-│   ├── consult-audio/      # Consultation audio recording & transcription pipeline
-│   └── prenatal-checkin/   # Detailed prenatal check-in & AI brief documentation
-├── ocr/                    # Additional OCR related scripts/tools
-└── readme.md               # Monorepo overview and developer setup
+├── client/                     # Clinician web dashboard (React 18, Vite, Tailwind CSS)
+│   ├── src/components/         # Reusable UI, consult audio review, clinical brief cards
+│   ├── src/pages/              # Clinician, patient portal, and appointment routes
+│   └── .env.example            # Web client environment template
+├── server/                     # Core backend API (Node.js, Express, Socket.IO)
+│   ├── src/controllers/        # Express request controllers (checkin, audio, OCR, auth)
+│   ├── src/services/           # Synthesis engines, AI drafters, envelope encryption
+│   ├── src/community/          # Zero-knowledge community identity & safety services
+│   ├── src/config/             # Centralized runtime configuration & threshold limits
+│   ├── scripts/                # Database verification, key generation, migration utilities
+│   └── .env.example            # Master backend environment template
+├── mobile/                     # Patient companion mobile app (Flutter / Android)
+│   ├── lib/                    # MVC architecture, check-in wizards, audio recorder
+│   ├── android/                # Native Android manifests, permissions, audio services
+│   ├── test/                   # Flutter unit & widget tests
+│   └── config.example.json     # Mobile configuration template
+├── PaddleOCRFastAPI/           # Document OCR microservice (FastAPI + PaddleOCR)
+│   ├── main.py                 # FastAPI server exposing /ocr/predict endpoints
+│   ├── Dockerfile              # Multi-stage container definition
+│   └── requirements.txt        # Python dependency manifest
+├── whisper-service/            # Local Speech-to-Text microservice (Faster-Whisper)
+│   ├── main.py                 # Streaming & batch audio transcription endpoints
+│   ├── run.sh                  # Local execution script with CUDA LD_LIBRARY_PATH
+│   └── requirements.txt        # Python dependencies (fastapi, faster-whisper, av)
+├── supabase/                   # Supabase database configuration
+│   ├── migrations/             # Timestamped SQL migrations with RLS policies
+│   ├── seed/                   # Synthetic development seed data
+│   └── config.toml             # Supabase CLI configuration
+├── docs/                       # Specifications, walk-throughs & architecture audits
+│   ├── consult-audio/          # Audio pipeline implementation plans & walk-throughs
+│   ├── prenatal-checkin/       # In-depth clinical brief and check-in documentation
+│   └── SETUP.md                # Dedicated full setup guide for Windows & Linux
+├── tools/                      # Diagnostic CLI tools (whisper tests, audio simulation)
+├── setup.sh                    # Linux / macOS automated environment setup script
+├── setup.bat                   # Windows CMD automated setup script
+├── setup.ps1                   # Windows PowerShell automated setup script
+├── start-all.sh                # Linux / macOS all-in-one multi-service launcher
+├── start-all.bat               # Windows all-in-one multi-service launcher
+├── SETUP.md                    # Comprehensive Windows & Linux setup instructions
+└── README.md                   # Monorepo overview and documentation root
 ```
 
 ---
 
-## Features & Modules
+## Safety, Privacy & Clinical Compliance Principles
 
-### 1. Role-Based Access & Security
-- Discrete authentication flows and permission layers for `patient` and `clinician`.
-- Strict PostgreSQL Row-Level Security (RLS) policies ensure patients only access their own records and clinicians only access their assigned clinic patients.
+> [!IMPORTANT]
+> Every developer and agent contributing to this repository must strictly adhere to these core safety mandates:
 
-### 2. Appointment Management
-- Clinicians schedule upcoming visits with automated magic-link invites sent via email.
-- Complete appointment status lifecycle (`scheduled` → `confirmed` → `completed` → `cancelled`).
-
-### 3. Pre-Visit Questionnaires & Checklists
-- Pre-appointment questionnaires completed by patients prior to appointments to highlight immediate visit concerns.
-- Post-appointment follow-up action checklists for medications and diagnostic tests.
-
-### 4. Automated Lab Report Digitization (OCR)
-- Patients upload physical lab photos (e.g., Complete Blood Count, iron panels).
-- PaddleOCR microservice parses raw document text into standardized clinical metrics (e.g., mapping `"HGB"` to `"hemoglobin"`).
-- Automated AI triage flags low-confidence parses for clinician verification.
-
-### 5. Longitudinal Vitals Tracking
-- Ongoing timeline tracking systolic/diastolic blood pressure, pulse, weight, fundal height, and fetal heart rate.
-- Visual alerts for clinical thresholds (e.g., blood pressure > 140/90 mmHg for preeclampsia surveillance).
+1. **Flags and Prioritises — Never Diagnoses**:
+   - The platform strictly generates triage flags, longitudinal trajectories, and discussion topics. No AI output, UI label, or notification may state a clinical diagnosis.
+2. **Zero Protected Health Information (PHI) in Telemetry**:
+   - No patient names, audio files, transcript texts, or health measurements may appear in application console logs, error payloads, or analytics. Telemetry is restricted to anonymized IDs, counts, timestamps, and HTTP status codes.
+3. **Synthetic Test Data Only**:
+   - All automated test suites, fixtures, seed files, and mock payloads strictly use synthetic placeholder data. Real patient records are never used in test environments.
+4. **Row-Level Security (RLS) & Envelope Encryption**:
+   - Every single database table enforces PostgreSQL Row-Level Security. Uploaded medical reports and audio chunks are protected with envelope encryption (AES-256-GCM with RSA-4096 key wrapping).
+5. **Deterministic Offline Resilience**:
+   - When AI providers or network uplinks are degraded, critical clinical operations (such as pre-visit brief generation) smoothly fall back to deterministic clinical rule matching without service interruption.
 
 ---
 
-### 6. AI-Powered Prenatal Check-In & Pre-Visit Clinical Brief
+## Quick Start & Setup
 
-A continuous, multi-tier prenatal surveillance system keeping expectant mothers connected with their care team between physical visits, paired with an automated AI synthesis engine that prepares a **30-second Pre-Visit Clinical Brief** for the doctor before every appointment.
+For full, step-by-step instructions for **Windows** and **Linux** machines, refer to the dedicated setup guide:
 
-For the in-depth specification, research foundation, database schema, and API contracts, see [docs/prenatal-checkin/PRENATAL_CHECKIN_AND_AI_BRIEF.md](./docs/prenatal-checkin/PRENATAL_CHECKIN_AND_AI_BRIEF.md).
+👉 **[Read the Full Windows & Linux Setup Guide (SETUP.md)](./SETUP.md)**
 
-#### A. Patient Experience & 3-Tier Check-In Cadence (Flutter Mobile)
+### Automated One-Command Setup
 
-Expectant mothers interact with three intuitive check-in modalities designed to capture timely data while preventing survey fatigue:
-
-1. **Tier 1 — Routine Weekly Milestone Review (Every 7 Days)**
-   - Guided 4-step progressive wizard taking under 2 minutes.
-   - Questions dynamically adapt to gestational age (Trimester 1, 2, 3, and Term):
-     - **Physical Sensations**: Gestational-week filtered surveillance (nausea/hyperemesis in T1; quickening & fetal movement in T2/T3; Braxton Hicks vs active labor in Term; edema, lightheadedness, and pain).
-     - **Emotional Well-Being**: Validated perinatal mental health screening based on Edinburgh Postnatal Depression Scale (EPDS) and GAD-2 anxiety measures.
-     - **Daily Routine & Vitamins**: Daily adherence tracking for prenatal vitamins (folic acid, iron, calcium), hydration, and sleep quality.
-     - **Agenda for Today**: Free-text prompt allowing the mother to record questions or topics she wants to discuss with her doctor.
-
-2. **Tier 2 — Quick 30-Second Pulse Check (Every 2–4 Days)**
-   - A lightweight heartbeat check between weekly reviews.
-   - 1-to-5 visual emoji comfort scale (`Very uncomfortable` to `Feeling great`).
-   - One-tap quick symptom chips (`None`, `Nausea`, `Back pain`, `Pelvic pressure`, `Swelling`, `Headache`, `Fatigue`, `Heartburn`).
-   - Optional short note for the doctor.
-
-3. **Tier 3 — 24/7 Ad-Hoc Concern Logger (Always Available)**
-   - Unscheduled spontaneous reporting anytime a patient experiences a new symptom, ache, or question (e.g., *"Today I felt stomach aches regularly after lunch"* or asking about dietary choices).
-   - Allows logging severity (`mild`, `moderate`, `severe`) and categorizing concerns.
-
-4. **Dynamic Home Cadence State Engine**
-   - The mobile Home Tab calculates patient check-in recency in real time:
-     - When a 7-day milestone is due: surfaces **"Weekly Check-In Due"** (`Start 2m`).
-     - When interval pulse is due: surfaces **"Quick Pulse Due"** (`Quick Check 30s`).
-     - When all check-ins for the day are complete: displays a reassuring green card **"You're all caught up! Check-in recorded today • Next pulse in X days"** (clean confirmation badge without duplicate buttons).
-     - Directly beneath, the **"Have a concern right now? Log Concern"** card remains accessible 24/7.
-
-5. **Real-Time Immediate Emergency Intercept**
-   - If a mother reports critical danger signs (e.g., vaginal bleeding, blurred vision, sudden facial swelling, fluid leakage, or absent fetal movement), the survey halts immediately.
-   - Displays a prominent red emergency triage card with hospital guidance and a 1-tap dial button for the clinic or emergency services.
-
----
-
-#### B. Doctor Experience & Interval-Scoped AI Brief (React Web Portal)
-
-Doctors do not have time to comb through raw logs or past transcripts during 12-minute appointments. The platform automatically condenses interval data into a prioritized 30-second brief:
-
-```text
-┌────────────────────────────────────────────────────────────────────────────────┐
-│ ✦ Pre-Visit Clinical Brief  • ROUTINE BASELINE   Interval: 9 days since visit  │
-├───────────────────────┬────────────────────────┬───────────────────────────────┤
-│ ∿ Physical Sensations │ ☲ Emotional Well-Being │ 💊 Daily Routine & Meds       │
-│ Back pain noted on    │ Positive mood (4/5).   │ Consistent daily adherence    │
-│ ad-hoc log 2026-11-03.│ Mild anxiety (2/5).    │ to prenatal vitamins.         │
-│ Comfort rating 2/5.   │ Sleep restfulness 4/5. │                               │
-├───────────────────────┴────────────────────────┴───────────────────────────────┤
-│ ❓ Patient's Agenda for Today                                                  │
-│ "Is it okay to have a lot of peanuts?"                                         │
-├────────────────────────────────────────────────────────────────────────────────┤
-│ 📋 Suggested Clinical Focus                                                    │
-│ Address persistent musculoskeletal back pain. Answer dietary peanut question.  │
-└────────────────────────────────────────────────────────────────────────────────┘
+**On Linux / macOS:**
+```bash
+./setup.sh
 ```
 
-- **Smart Visit-to-Visit Interval Scoping**:
-  - The backend dynamically identifies the patient's **last completed physical visit** (`status = 'completed'`) and synthesizes all check-ins, pulses, vitals, and ad-hoc concerns recorded between that date and the upcoming appointment.
-- **Historical Snapshot Preservation**:
-  - Past completed visits retain an immutable snapshot of their historical summaries in `visit_ai_summaries`, ensuring an unalterable medical audit trail.
-- **Google Gemini Synthesis Engine (`gemini-flash-lite-latest`)**:
-  - Synthesizes complex multi-day longitudinal check-in data into structured JSON:
-    - **Priority Tier**: `CRITICAL ATTENTION`, `PRIORITY WATCH`, or `ROUTINE BASELINE`.
-    - **Obstetric Alerts**: Immediate surfacing of elevated blood pressure or red flags.
-    - **3-Pillar Trajectories**: Physical sensations, emotional well-being, and medication adherence.
-    - **Patient's Agenda**: Direct verbatim patient questions highlighted prominently so doctors address patient concerns first.
-    - **Suggested Clinical Focus**: Concrete talking points and physical examination focus areas for the clinician.
-- **Deterministic Rule-Based Fallback**:
-  - If the Gemini API key is not configured or network limits are hit, an offline clinical rule engine extracts all flags and trajectories deterministically, ensuring 100% operational uptime.
-- **On-Demand Re-Synthesis**:
-  - Clinicians can click **Refresh** on the brief card to re-synthesize live if a patient submitted a last-minute pulse or concern in the waiting room.
+**On Windows (PowerShell):**
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\setup.ps1
+```
+
+**On Windows (Command Prompt):**
+```cmd
+setup.bat
+```
+
+### Starting All Services
+
+**On Linux / macOS:**
+```bash
+./start-all.sh
+# Options: ./start-all.sh --core-only | --with-ocr | --with-redis | --status | --stop
+```
+
+**On Windows:**
+```cmd
+start-all.bat
+```
+*(Or `.\start-all.ps1` in PowerShell)*
 
 ---
 
-### 7. Post-Visit Summaries & Action Items
-- Clinicians record digital consultation notes, updated diagnoses, and prescriptions.
-- Action items are pushed to the patient mobile app as a simple interactive checklist.
+## Automated Verification & Testing
 
----
+Verify that your local environment is functioning correctly by running the automated test suites:
 
-## Getting Started
-
-### Prerequisites
-
-- **Node.js**: v20+
-- **Flutter SDK**: 3.22+ (for mobile app)
-- **Python**: 3.9+ (for OCR microservice)
-- **Supabase**: Cloud project or local Supabase CLI
-- **Google Gemini API Key**: (Optional for AI synthesis, automatic offline fallback included)
-
----
-
-### 1. Database Setup (Supabase)
-
-Run the SQL migration scripts in order within the Supabase SQL Editor:
-
-1. `supaBase/migrations/20261103000000_pregnancy_checkin_ai.sql` — Creates `patient_checkin_sessions`, `patient_checkin_answers`, `visit_ai_summaries`, and RLS security policies.
-2. `supaBase/migrations/20261103100000_pregnancy_checkin_cadence.sql` — Adds multi-tier cadence support (`routine_weekly`, `quick_pulse`, `ad_hoc_concern`), comfort ratings, and interval tracking.
-
----
-
-### 2. Backend Server Setup (`server/`)
-
-Navigate to the `server` directory and install dependencies:
-
+### Backend Test Suite (Node.js & Express)
 ```bash
 cd server
-npm install
-```
-
-Configure your environment variables in `server/.env` (see `server/.env.example`):
-
-```env
-PORT=5000
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
-GEMINI_API_KEY=your-gemini-api-key
-GEMINI_MODEL=gemini-flash-lite-latest
-```
-
-Run automated backend tests (14 tests covering cadence, emergency intercepts, and interval scoping):
-
-```bash
 npm test
 ```
+*Runs 26 test suites (430+ unit and integration tests) covering check-in synthesis, consultation audio state machines, RLS validation, and role guards.*
 
-Start the development API server:
-
-```bash
-npm run dev
-```
-
----
-
-### 3. Patient Mobile App Setup (`mobile/`)
-
-Navigate to the `mobile` directory and install Flutter packages:
-
-```bash
-cd mobile
-flutter pub get
-```
-
-Run the automated widget and flow tests (7 tests covering question filtering, wizards, quick pulse, and cadence cards):
-
-```bash
-flutter test test/checkin_flow_test.dart
-```
-
-Launch the mobile app on an Android emulator or connected device:
-
-```bash
-flutter run
-```
-
----
-
-### 4. Clinician Web Client Setup (`client/`)
-
-Navigate to the `client` directory and install dependencies:
-
+### Frontend Test Suite (React & Vitest)
 ```bash
 cd client
-npm install
-```
-
-Run web component tests (8 tests covering brief cards, priority tiers, and interval display):
-
-```bash
 npm test
 ```
+*Runs React component tests covering clinical brief cards, priority tiers, and consultation audio modals.*
 
-Start the Vite development web server:
-
+### Mobile Test Suite (Flutter)
 ```bash
-npm run dev
+cd mobile
+flutter test
 ```
-
----
-
-### 5. Document OCR Microservice (`PaddleOCRFastAPI/`)
-
-Navigate to the `PaddleOCRFastAPI` directory and start using a virtual environment:
-
-```bash
-cd PaddleOCRFastAPI
-python -m venv venv
-# On Windows:
-venv\Scripts\activate
-# On Linux/macOS:
-source venv/bin/activate
-
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-```
-
-Alternatively, launch via Docker Compose:
-
-```bash
-docker-compose up --build
-```
-
----
-
-## Safety & Clinical Compliance Principles
-
-1. **Flags and Prioritises, Never Diagnoses**:
-   - The platform strictly provides clinical triage flags, symptom trajectories, and suggested discussion topics. No AI output or UI label ever generates a medical diagnosis.
-2. **Zero PHI in Logs or Errors**:
-   - No audio, transcript text, patient names, or health values are ever written to console logs, analytics, or error reporters. Only anonymized IDs, counts, and error status codes are emitted.
-3. **Synthetic Test Data Only**:
-   - All automated test suites, fixtures, and local seeds strictly use synthetic placeholder patient data.
-4. **Resilient Offline Architecture**:
-   - The clinical brief system operates seamlessly even in low-bandwidth or offline environments via deterministic clinical rule matching.
+*Tests multi-tier check-in wizard flows, comfort score pickers, and interval calculations.*
 
 ---
 
 ## Documentation Links
 
-- **Prenatal Check-In & AI Pre-Visit Brief Architecture**: [docs/prenatal-checkin/PRENATAL_CHECKIN_AND_AI_BRIEF.md](./docs/prenatal-checkin/PRENATAL_CHECKIN_AND_AI_BRIEF.md)
-- **Consultation Audio Pipeline**: [docs/consult-audio/IMPLEMENTATION.md](./docs/consult-audio/IMPLEMENTATION.md)
-- **Mobile Companion Guide**: [mobile/README.md](./mobile/README.md)
-- **Database Schema Deep-Dive**: [docs/folderstructure](./docs/folderstructure)
-- **Deployment Guide (Railway)**: [docs/deploy-railway.md](./docs/deploy-railway.md)
+- **[SETUP.md](./SETUP.md)** — Exhaustive Windows & Linux setup instructions.
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** — System architecture, topology, database models, and security.
+- **[FEATURES.md](./FEATURES.md)** — Comprehensive deep dive into the 8 core clinical features.
+- **[AGENTS.md](./AGENTS.md)** — Standing agent guidelines and clinical safety principles.
+- **[docs/prenatal-checkin/PRENATAL_CHECKIN_AND_AI_BRIEF.md](./docs/prenatal-checkin/PRENATAL_CHECKIN_AND_AI_BRIEF.md)** — Prenatal check-in architecture and clinical brief schema.
+- **[docs/consult-audio/IMPLEMENTATION.md](./docs/consult-audio/IMPLEMENTATION.md)** — Dual-device consultation audio pipeline technical specifications.
+- **[docs/consult-audio/LOCAL_TESTING_GUIDE.md](./docs/consult-audio/LOCAL_TESTING_GUIDE.md)** — Audio pipeline local testing runbook.
+- **[mobile/README.md](./mobile/README.md)** — Flutter mobile companion application guide.
+- **[docs/deploy-railway.md](./docs/deploy-railway.md)** — Cloud deployment instructions on Railway / Render.
 
 ---
 
 ## License
 
-Please refer to the `LICENSE` file in individual subdirectories if applicable.
+This project is licensed under the Apache License 2.0 or individual software licenses specified within component subdirectories.

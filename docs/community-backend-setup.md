@@ -395,7 +395,7 @@ needed for clients outside your development network.
 For React, set `VITE_API_BASE_URL` in `client/.env` to the new reachable API URL and
 restart Vite. Keep `CLIENT_APP_URL` in `server/.env` aligned with the dashboard origin
 for CORS and invitation links. OCR is separate; community tests do not need it. See
-[startup.md](../startup.md) for OCR, dashboard and Android startup details.
+[SETUP.md](../SETUP.md) for OCR, dashboard and Android startup details.
 
 Android push additionally needs the same Firebase project configuration in
 `mobile/android/app/google-services.json` when building the app, the private service
