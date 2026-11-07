@@ -122,6 +122,7 @@ if (process.env.NODE_ENV !== 'test') {
   const transcriptionWorker = require('./services/consultAudio/transcriptionWorker');
   const audioCache = require('./services/consultAudio/audioCache.service');
   const orchestratorService = require('./services/consultAudio/orchestrator.service');
+  const communitySupervisor = require('./community/communitySupervisor');
 
   process.on('unhandledRejection', (reason) => {
     logger.error('unhandled promise rejection', { err: reason instanceof Error ? reason : new Error(String(reason)) });
@@ -136,6 +137,7 @@ if (process.env.NODE_ENV !== 'test') {
     transcriptionWorker.stopWorker();
     orchestratorService.stop();
     audioCache.close();
+    communitySupervisor.stop();
     server.close(() => {
       logger.info('HTTP server closed');
       process.exit(0);
@@ -165,6 +167,7 @@ if (process.env.NODE_ENV !== 'test') {
     void audioCache.start();
     transcriptionWorker.startWorker();
     void orchestratorService.start();
+    void communitySupervisor.start();
   });
 }
 

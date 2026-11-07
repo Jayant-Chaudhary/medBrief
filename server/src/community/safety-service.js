@@ -30,9 +30,24 @@ function createSafetyService({db,screen,secret}) {
  }));
  app.use((req,res)=>res.status(404).json({error:'not_found'})); app.use(safeErrors); return app;
 }
-if(require.main===module) {
- const screen=localScreening();
- if(process.env.COMMUNITY_LLM_BYPASS==='true') process.stderr.write('Community LLM bypass enabled for synthetic testing; pattern removal and rules remain active.\n');
- createSafetyService({db:createDatabase(process.env.COMMUNITY_WORKER_DATABASE_URL),screen,secret:process.env.COMMUNITY_SAFETY_SERVICE_KEY}).listen(Number(process.env.COMMUNITY_SAFETY_PORT||4102),'127.0.0.1');
+function startSafetyServer(options = {}) {
+  const env = options.env || process.env;
+  const screen = localScreening(env);
+  if (env.COMMUNITY_LLM_BYPASS === 'true') {
+    process.stderr.write('Community LLM bypass enabled for synthetic testing; pattern removal and rules remain active.\n');
+  }
+  const app = createSafetyService({
+    db: createDatabase(env.COMMUNITY_WORKER_DATABASE_URL),
+    screen,
+    secret: env.COMMUNITY_SAFETY_SERVICE_KEY,
+  });
+  const port = Number(options.port || env.COMMUNITY_SAFETY_PORT || 4102);
+  const host = options.host || '127.0.0.1';
+  return app.listen(port, host);
 }
-module.exports={createSafetyService};
+
+if (require.main === module) {
+  startSafetyServer();
+}
+
+module.exports = { createSafetyService, startSafetyServer };

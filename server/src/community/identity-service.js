@@ -31,10 +31,27 @@ function createIdentityService({db,verifySession,secret}) {
   }));
   app.use(safeErrors); return app;
 }
-if (require.main===module) {
-  validateIdentityEnvironment(process.env);
-  const supabase=createClient(process.env.SUPABASE_URL,process.env.SUPABASE_ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
-  const app=createIdentityService({db:createDatabase(process.env.COMMUNITY_IDENTITY_DATABASE_URL),secret:process.env.COMMUNITY_IDENTITY_SERVICE_KEY,verifySession:async token=>{const {data,error}=await supabase.auth.getUser(token); return error?null:data.user?.id;}});
-  app.listen(Number(process.env.COMMUNITY_IDENTITY_PORT||4101),'127.0.0.1');
+function startIdentityServer(options = {}) {
+  const env = options.env || process.env;
+  validateIdentityEnvironment(env);
+  const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const app = createIdentityService({
+    db: createDatabase(env.COMMUNITY_IDENTITY_DATABASE_URL),
+    secret: env.COMMUNITY_IDENTITY_SERVICE_KEY,
+    verifySession: async (token) => {
+      const { data, error } = await supabase.auth.getUser(token);
+      return error ? null : data.user?.id;
+    },
+  });
+  const port = Number(options.port || env.COMMUNITY_IDENTITY_PORT || 4101);
+  const host = options.host || '127.0.0.1';
+  return app.listen(port, host);
 }
-module.exports={createIdentityService,validateIdentityEnvironment};
+
+if (require.main === module) {
+  startIdentityServer();
+}
+
+module.exports = { createIdentityService, validateIdentityEnvironment, startIdentityServer };
