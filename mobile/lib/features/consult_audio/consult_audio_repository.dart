@@ -153,6 +153,18 @@ class ConsultAudioRepository {
     );
   }
 
+  /// Leaves the consultation room before recording starts.
+  Future<void> leaveSession({
+    required String sessionId,
+    required String scopedToken,
+  }) async {
+    await _request(
+      '/api/consults/$sessionId/leave',
+      method: 'POST',
+      bearerToken: scopedToken,
+    );
+  }
+
   /// Records the device's authoritative capture zero millisecond timestamp.
   Future<void> recordCaptureStarted({
     required String sessionId,

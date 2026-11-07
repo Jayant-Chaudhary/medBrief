@@ -22,9 +22,12 @@ const logger = require('../utils/logger');
 async function createSession(req, res, next) {
   try {
     const appointmentId = req.body.appointmentId || req.body.appointment_id;
+    // The doctor can always start alone; a session waits for the patient only
+    // when the caller asks for that explicitly.
     const patientRequired = req.body.patientRequired !== undefined
       ? req.body.patientRequired
-      : (req.body.patient_required !== undefined ? req.body.patient_required : true);
+      : (req.body.patient_required !== undefined ? req.body.patient_required : false);
+    const forceNew = req.body.forceNew === true || req.body.force_new === true || req.body.forceNew === 'true';
     const languageCode = req.body.languageCode || req.body.language_code || null;
 
     if (!appointmentId) {
@@ -35,8 +38,9 @@ async function createSession(req, res, next) {
     const result = await sessionService.createSession({
       appointmentId,
       doctorId,
-      patientRequired: patientRequired !== false,
+      patientRequired: patientRequired === true || patientRequired === 'true',
       languageCode,
+      forceNew,
     });
 
     res.status(201).json(result);
@@ -144,6 +148,25 @@ async function startConsultation(req, res, next) {
     });
 
     res.status(200).json({ ok: true, session });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/consults/:id/leave
+ * Patient leaves the room before recording starts.
+ */
+async function leaveSession(req, res, next) {
+  try {
+    if (req.sessionToken?.role !== 'patient') {
+      return res.status(403).json({ error: 'Only the patient device can leave the room' });
+    }
+    const result = await sessionService.leaveSession({
+      sessionId: req.params.id,
+      userId: req.sessionToken.userId,
+    });
+    res.status(200).json(result);
   } catch (err) {
     next(err);
   }
@@ -489,13 +512,34 @@ async function generateDraft(req, res, next) {
   }
 }
 
+/**
+ * POST /api/consults/:id/refresh-code
+ * Doctor requests a fresh room code for an open session.
+ */
+async function refreshRoomCode(req, res, next) {
+  try {
+    const { id: sessionId } = req.params;
+    const doctorUserId = req.user?.id || req.sessionToken?.userId;
+    if (!doctorUserId) {
+      return res.status(401).json({ error: 'Unauthenticated' });
+    }
+
+    const result = await sessionService.refreshSessionRoomCode({ sessionId, doctorUserId });
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createSession,
+  refreshRoomCode,
   joinSession,
   recordConsent,
   getServerTime,
   markDeviceReady,
   startConsultation,
+  leaveSession,
   endConsultation,
   recordCaptureStarted,
   getSessionState,

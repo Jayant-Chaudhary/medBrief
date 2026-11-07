@@ -105,6 +105,17 @@ function emitStatusUpdate(sessionId, statusPayload) {
   ioInstance.to(roomName).emit('status', statusPayload);
 }
 
+/**
+ * Push hint that a device joined, became ready or left. Metadata only; clients
+ * still confirm through GET /state, so a missed event changes nothing.
+ * @param {'device_joined'|'device_ready'|'device_left'} eventName
+ */
+function emitDeviceEvent(sessionId, eventName, device) {
+  if (!ioInstance) return;
+  const roomName = `session:${sessionId}`;
+  ioInstance.to(roomName).emit(eventName, { sessionId, device });
+}
+
 function emitNotesReady(sessionId) {
   if (!ioInstance) return;
   const roomName = `session:${sessionId}`;
@@ -136,6 +147,7 @@ module.exports = {
   emitEndRequested,
   emitStatusUpdate,
   emitNotesReady,
+  emitDeviceEvent,
   emitGapRecorded,
   emitTranscriptUpdated,
 };

@@ -31,6 +31,8 @@ function errorHandler(err, req, res, next) {
 
   res.status(status).json({
     error: err.message || 'Internal Server Error',
+    // Machine-readable app codes (ERR_*) only; never driver or library codes.
+    ...(typeof err.code === 'string' && /^ERR_[A-Z_]+$/.test(err.code) && { code: err.code }),
     ...(req.id && { requestId: req.id }),
     ...(process.env.NODE_ENV === 'development' && { details: err.stack }),
   });

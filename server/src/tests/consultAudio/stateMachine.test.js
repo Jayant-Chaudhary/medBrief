@@ -7,6 +7,7 @@ const {
   ALLOWED_TRANSITIONS,
   isValidTransition,
   assertCanTransition,
+  patientParticipates,
 } = require('../../services/consultAudio/stateMachine');
 
 describe('Consult Audio State Machine', () => {
@@ -161,11 +162,13 @@ describe('Consult Audio State Machine', () => {
       expect(result.error).toMatch(/patient consent/i);
     });
 
-    test('a patient who joins an optional-device room must also consent', () => {
+    test('a patient in an optional-device room who has not consented does not block the doctor', () => {
       const result = assertCanTransition({session:{...baseSession, patient_required:false},
         consents:[{role:'doctor'}], devices:[{device:'doctor',status:'ready'},{device:'patient',status:'ready'}],
         toState:STATES.READY});
-      expect(result.valid).toBe(false);
+      expect(result.valid).toBe(true);
+      // Their device is never recorded: it does not participate without consent.
+      expect(patientParticipates([{role:'doctor'}], [{device:'patient',status:'ready'}])).toBe(false);
     });
 
     test('rejects transition to RECORDING if current state is not READY', () => {

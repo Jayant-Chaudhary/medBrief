@@ -41,7 +41,8 @@ describe('Patient consultation access and single-use join', () => {
     expect(results.find(r => r.status === 'rejected').reason.status).toBe(409);
     for (const chain of updates) {
       expect(chain.eq).toHaveBeenCalledWith('room_code', 'SYN123');
-      expect(chain.in).toHaveBeenCalledWith('status', ['created', 'waiting']);
+      // Joining stays open while the doctor is already ready, never once recording starts.
+      expect(chain.in).toHaveBeenCalledWith('status', ['created', 'waiting', 'ready']);
     }
   });
   test('a scoped session token cannot read state after its user loses membership', async () => {

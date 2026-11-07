@@ -91,7 +91,9 @@ consultRouter.post('/join', authGuard, roleGuard('patient'), controller.joinSess
 consultRouter.post('/:id/consent', sessionTokenGuard, controller.recordConsent);
 consultRouter.post('/:id/devices/:device/ready', sessionTokenGuard, controller.markDeviceReady);
 consultRouter.post('/:id/start', doctorSessionOrAuthGuard, controller.startConsultation);
+consultRouter.post('/:id/refresh-code', doctorSessionOrAuthGuard, controller.refreshRoomCode);
 consultRouter.post('/:id/end', doctorSessionOrAuthGuard, controller.endConsultation);
+consultRouter.post('/:id/leave', sessionTokenGuard, controller.leaveSession);
 consultRouter.post('/:id/devices/:device/capture-started', sessionTokenGuard, controller.recordCaptureStarted);
 consultRouter.post('/:id/chunks', sessionTokenGuard, rawAudioParser, controller.uploadChunk);
 consultRouter.post('/:id/devices/:device/final', sessionTokenGuard, controller.recordFinalMarker);

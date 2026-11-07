@@ -978,6 +978,17 @@ export function ClinicianDashboard() {
           }}
           onConsultationFinished={() => {
             showToast('Consultation audio recorded and queued for transcription.', 'success');
+            setActiveDashboardTab('consultation');
+            consultDraft.refresh();
+          }}
+          onInsertNotes={async (notesText) => {
+            if (!notesText) return;
+            const current = data?.notes?.text?.trim() || '';
+            const combined = current ? `${current}\n\n${notesText}` : notesText;
+            await handleSaveNotes(combined);
+            showToast('AI Draft inserted into Consultation Notes.', 'success');
+            setActiveDashboardTab('consultation');
+            consultDraft.refresh();
           }}
         />
       </div>

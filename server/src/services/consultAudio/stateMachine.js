@@ -23,8 +23,9 @@ const STATES = {
 
 const ALLOWED_TRANSITIONS = {
   [STATES.CREATED]: [STATES.WAITING, STATES.READY, STATES.CANCELLED, STATES.FAILED],
-  [STATES.WAITING]: [STATES.READY, STATES.CANCELLED, STATES.FAILED],
-  [STATES.READY]: [STATES.RECORDING, STATES.WAITING, STATES.CANCELLED, STATES.FAILED],
+  // -> CREATED: the patient left the room before recording started.
+  [STATES.WAITING]: [STATES.READY, STATES.CREATED, STATES.CANCELLED, STATES.FAILED],
+  [STATES.READY]: [STATES.RECORDING, STATES.WAITING, STATES.CREATED, STATES.CANCELLED, STATES.FAILED],
   [STATES.RECORDING]: [STATES.ENDING, STATES.CANCELLED, STATES.FAILED],
   [STATES.ENDING]: [STATES.PROCESSING, STATES.FAILED],
   [STATES.PROCESSING]: [STATES.DRAFT_READY, STATES.FAILED],
@@ -32,6 +33,22 @@ const ALLOWED_TRANSITIONS = {
   [STATES.CANCELLED]: [],   // Terminal state
   [STATES.FAILED]: [],      // Terminal state
 };
+
+/** A patient device that is in the room (not one that left or was dropped). */
+function activePatientDevice(devices = []) {
+  return (devices || []).find((d) => d.device === 'patient' && d.status !== 'gone') || null;
+}
+
+/**
+ * Whether the patient's device takes part in recording: it joined, is ready,
+ * and the patient consented. A doctor can always record alone unless the
+ * session was explicitly created with patient_required.
+ */
+function patientParticipates(consents = [], devices = []) {
+  const device = activePatientDevice(devices);
+  const consent = (consents || []).some((c) => c.role === 'patient');
+  return Boolean(device && device.status === 'ready' && consent);
+}
 
 /**
  * Checks whether a state transition is syntactically allowed in the graph.
@@ -57,6 +74,12 @@ function assertCanTransition({ session, consents = [], devices = [], toState }) 
     return { valid: false, error: 'Session not found' };
   }
 
+  // Preconditions for moving to RECORDING:
+  // Must be in READY state before recording can start
+  if (toState === STATES.RECORDING && session.status !== STATES.READY) {
+    return { valid: false, error: `Cannot start recording from state '${session.status}', must be 'ready'` };
+  }
+
   if (!isValidTransition(session.status, toState)) {
     return {
       valid: false,
@@ -79,14 +102,15 @@ function assertCanTransition({ session, consents = [], devices = [], toState }) 
       return { valid: false, error: 'Doctor device must be ready' };
     }
 
-    const patientDeviceJoined = deviceList.some((d) => d.device === 'patient');
-    if (session.patient_required || patientDeviceJoined) {
+    // A patient in the room who is not ready yet does not block the doctor;
+    // only an explicitly patient-required session waits for them.
+    if (session.patient_required) {
       const patientConsent = consentList.find((c) => c.role === 'patient');
       if (!patientConsent) {
         return { valid: false, error: 'Patient consent required before session is ready' };
       }
 
-      const patientDevice = deviceList.find((d) => d.device === 'patient');
+      const patientDevice = activePatientDevice(deviceList);
       if (!patientDevice || patientDevice.status !== 'ready') {
         return { valid: false, error: 'Patient device must be ready' };
       }
@@ -95,22 +119,18 @@ function assertCanTransition({ session, consents = [], devices = [], toState }) 
 
   // Preconditions for moving to RECORDING
   if (toState === STATES.RECORDING) {
-    if (session.status !== STATES.READY) {
-      return { valid: false, error: `Cannot start recording from state '${session.status}', must be 'ready'` };
-    }
-
     const doctorConsent = consentList.find((c) => c.role === 'doctor');
     if (!doctorConsent) {
       return { valid: false, error: 'Cannot record without doctor consent' };
     }
 
-    const patientDeviceJoined = deviceList.some((d) => d.device === 'patient');
-    if (session.patient_required || patientDeviceJoined) {
+    if (session.patient_required) {
       const patientConsent = consentList.find((c) => c.role === 'patient');
       if (!patientConsent) {
         return { valid: false, error: 'Cannot record without patient consent' };
       }
-      if (!deviceList.some((d) => d.device === 'patient' && d.status === 'ready')) {
+      const patientDevice = activePatientDevice(deviceList);
+      if (!patientDevice || patientDevice.status !== 'ready') {
         return { valid: false, error: 'Patient device must be ready before recording' };
       }
     }
@@ -198,6 +218,8 @@ async function transitionSession({ sessionId, toState, patch = {}, socketEmitter
 module.exports = {
   STATES,
   ALLOWED_TRANSITIONS,
+  activePatientDevice,
+  patientParticipates,
   isValidTransition,
   assertCanTransition,
   transitionSession,

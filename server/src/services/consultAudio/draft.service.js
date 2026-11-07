@@ -25,6 +25,22 @@ const {
 } = require('./drafting/tracerVerification');
 const logger = require('../../utils/logger');
 
+/** Marks a draft whose model was never called (no speech in the transcript). */
+const NOT_CALLED_MODEL_VERSION = 'not-called';
+
+function emptyDraftResult(provider) {
+  return {
+    provider: provider.name,
+    modelVersion: NOT_CALLED_MODEL_VERSION,
+    doctorNotes: { chief_complaint: '', vitals_observed: '', assessment: '', plan_and_recommendations: [] },
+    patientSummary: { summary_text: '', action_checklist: [], warning_signs: [] },
+    clinicalFlags: [],
+    droppedUncitedFlags: 0,
+    droppedUncitedRecommendations: 0,
+    latencyMs: 0,
+  };
+}
+
 /**
  * Generates clinical notes draft for a consultation session.
  *
@@ -82,13 +98,19 @@ async function generateDraftForSession(sessionId, options = {}) {
   // 3. Build tracer catalog for verified numbers
   const tracerCatalog = buildTracerCatalog(structuredContext);
 
-  // 4. Generate draft using configured provider
+  // 4. Generate draft using configured provider. With no speech captured
+  // (silence, or every chunk failed) the model is not called: notes drafted
+  // from intake records alone would describe a conversation that never took
+  // place. An empty draft is saved for the doctor to write by hand.
   const provider = getDraftProvider(options.provider, options.providerOptions);
-  const draftResult = await provider.generateDraft({
-    transcript: speechSegments,
-    structuredContext,
-    tracerCatalog,
-  });
+  const noSpeech = speechSegments.length === 0;
+  const draftResult = noSpeech
+    ? emptyDraftResult(provider)
+    : await provider.generateDraft({
+      transcript: speechSegments,
+      structuredContext,
+      tracerCatalog,
+    });
 
   // 5. Run deterministic post-checks (citations exist? numbers verified or disclaimed?)
   const postCheck = postCheckDraft({
@@ -111,6 +133,9 @@ async function generateDraftForSession(sessionId, options = {}) {
     clinical_flags: draftResult.clinicalFlags,
     tracers_used: postCheck.tracersUsed || [],
     review_reasons: [
+      ...(noSpeech ? ['no_speech_captured'] : []),
+      ...(!noSpeech && !draftResult.doctorNotes?.assessment ? ['missing_assessment'] : []),
+      ...(!noSpeech && !draftResult.patientSummary?.summary_text ? ['missing_patient_summary'] : []),
       ...(postCheck.reviewReasons || []),
       ...(draftResult.droppedUncitedFlags > 0 ? ['uncited_flag_dropped'] : []),
       ...(draftResult.droppedUncitedRecommendations > 0 ? ['uncited_recommendation_dropped'] : []),

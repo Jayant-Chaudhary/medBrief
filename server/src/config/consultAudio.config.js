@@ -88,6 +88,10 @@ module.exports = {
   // Qwen3 'thinking' mode is slow for structured notes; off by default (Ollama /api/chat only).
   localLlmThink: env.LOCAL_LLM_THINK === 'true',
   draftTimeoutMs: Number(env.DRAFT_TIMEOUT_MS || 60000),
+  // Automatic drafting after a visit: extra attempts after the first failure,
+  // and the wait before each (multiplied by the attempt number).
+  draftAutoRetries: Number(env.DRAFT_AUTO_RETRIES || 2),
+  draftRetryDelayMs: Number(env.DRAFT_RETRY_DELAY_MS || 15000),
 
   // Audio Retention
   audioRetentionAfterReviewHours: Number(env.AUDIO_RETENTION_AFTER_REVIEW_HOURS || 24),

@@ -101,6 +101,71 @@ describe('Clinical Notes Draft Service (Phase 8)', () => {
       expect(socketService.emitNotesReady).toHaveBeenCalledWith(sessionId);
     });
 
+    const processingTables = (savedDraft) => mockTables(supabaseAdmin, {
+      consult_sessions: ok({
+        id: sessionId, appointment_id: appointmentId, doctor_id: doctorUserId,
+        patient_id: patientUserId, status: STATES.PROCESSING,
+      }),
+      consult_drafts: ok(savedDraft),
+      questionnaire_responses: ok([]),
+      pregnancy_episodes: ok(null),
+      lab_reports: ok([]),
+      session_consents: ok([]),
+      session_devices: ok([]),
+    });
+
+    test('with no speech captured, saves an empty draft for manual notes without calling the model', async () => {
+      const { FakeDraftProvider } = require('../../services/consultAudio/drafting/draftProviderFactory');
+      const modelCall = jest.spyOn(FakeDraftProvider.prototype, 'generateDraft');
+      // Silence and failed chunks leave only gap rows in the merged timeline.
+      sessionService.getSessionTranscript.mockResolvedValue({
+        segments: [{ type: 'gap', id: 'gap-1', device: 'patient' }],
+      });
+      const chains = processingTables({ id: 'draft-empty', status: 'needs_review' });
+
+      const draft = await draftService.generateDraftForSession(sessionId, { provider: 'fake' });
+
+      expect(draft.id).toBe('draft-empty');
+      expect(modelCall).not.toHaveBeenCalled();
+      const saved = chains.consult_drafts[0].insert.mock.calls[0][0];
+      expect(saved.review_reasons).toContain('no_speech_captured');
+      expect(saved.model_version).toBe('not-called');
+      expect(saved.provider).toBe('fake');
+      expect(saved.doctor_notes.assessment).toBe('');
+      expect(saved.clinical_flags).toEqual([]);
+      // The session leaves 'processing' so the doctor is not left waiting.
+      expect(chains.consult_sessions.some((c) => c.update.mock.calls.some(
+        ([patch]) => patch.status === STATES.DRAFT_READY
+      ))).toBe(true);
+      modelCall.mockRestore();
+    });
+
+    test('an empty assessment from the model is saved with a review reason instead of failing', async () => {
+      const { FakeDraftProvider } = require('../../services/consultAudio/drafting/draftProviderFactory');
+      const modelCall = jest.spyOn(FakeDraftProvider.prototype, 'generateDraft').mockResolvedValue({
+        provider: 'fake', modelVersion: 'fake-draft-model:v1',
+        doctorNotes: { chief_complaint: '', vitals_observed: '', assessment: '', plan_and_recommendations: [] },
+        patientSummary: { summary_text: '', action_checklist: [], warning_signs: [] },
+        clinicalFlags: [], latencyMs: 1,
+      });
+      sessionService.getSessionTranscript.mockResolvedValue({
+        segments: [{ id: 'seg-1', segment_id: 'seg-1', device: 'doctor', speaker: 'doctor', text: 'Synthetic greeting.' }],
+      });
+      const chains = processingTables({ id: 'draft-partial', status: 'needs_review' });
+
+      await draftService.generateDraftForSession(sessionId, { provider: 'fake' });
+
+      const saved = chains.consult_drafts[0].insert.mock.calls[0][0];
+      expect(saved.review_reasons).toEqual(expect.arrayContaining(['missing_assessment', 'missing_patient_summary']));
+      expect(saved.review_reasons).not.toContain('no_speech_captured');
+      modelCall.mockRestore();
+    });
+
+    test('the notes schema accepts an empty assessment', () => {
+      const { DoctorNotesSchema } = require('../../services/consultAudio/drafting/draftSchemas');
+      expect(DoctorNotesSchema.parse({ assessment: '' }).assessment).toBe('');
+    });
+
     test('rejects draft generation if session is not in processing or draft_ready state', async () => {
       const mockSession = {
         id: sessionId,

@@ -14,15 +14,48 @@ const BASE_URL = getApiBaseUrl();
 
 /**
  * Creates a consultation audio session for an appointment.
+ * When forceNew is true, creates a brand new session, allowing the doctor to re-record.
  */
-export async function createConsultSession(appointmentId) {
+export async function createConsultSession(appointmentId, { patientRequired = false, forceNew = false } = {}) {
   return request('/api/consults', {
     method: 'POST',
     body: {
       appointmentId,
       appointment_id: appointmentId,
+      patientRequired,
+      patient_required: patientRequired,
+      forceNew,
+      force_new: forceNew,
     },
   });
+}
+
+/**
+ * Doctor refreshes room code for an open consultation session.
+ */
+export async function refreshConsultRoomCode({ sessionId, token } = {}) {
+  if (!sessionId) {
+    throw new Error('Valid sessionId is required to refresh room code');
+  }
+
+  if (token) {
+    const res = await fetch(`${BASE_URL}/api/consults/${sessionId}/refresh-code`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to refresh room code (${res.status})`);
+    }
+
+    return res.json();
+  }
+
+  return request(`/api/consults/${sessionId}/refresh-code`, { method: 'POST' });
 }
 
 function assertValidSession(sessionId, token) {
@@ -189,6 +222,7 @@ export function connectConsultationSocket({ sessionId, token, onEvent }) {
 
   forward('device_joined');
   forward('device_ready');
+  forward('device_left');
   forward('session_started');
   forward('end_requested');
   forward('status');

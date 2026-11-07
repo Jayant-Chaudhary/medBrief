@@ -23,12 +23,14 @@ const DoctorRecommendationSchema = z.object({
 const DoctorNotesSchema = z.object({
   chief_complaint: z.string().default(''),
   vitals_observed: z.string().default(''),
-  assessment: z.string().min(1, 'Assessment is required'),
+  // May come back empty for a short or off-topic visit. The draft is still
+  // saved; draft.service adds a review reason so the doctor writes it.
+  assessment: z.string().default(''),
   plan_and_recommendations: z.array(DoctorRecommendationSchema).default([]),
 });
 
 const PatientSummarySchema = z.object({
-  summary_text: z.string().min(1, 'Summary text is required'),
+  summary_text: z.string().default(''),
   action_checklist: z.array(z.string()).default([]),
   warning_signs: z.array(z.string()).default([]),
 });
