@@ -42,6 +42,7 @@ module.exports = {
 
   // LLM screening controls
   llmBypass: env.COMMUNITY_LLM_BYPASS === 'true',
+  llmTimeoutMs: Number(env.COMMUNITY_LLM_TIMEOUT_MS || 30000),
   ollamaUrl: env.OLLAMA_URL || 'http://127.0.0.1:11434',
   communityModel: env.COMMUNITY_MODEL || '',
   communityModelVersion: env.COMMUNITY_MODEL_VERSION || '',
