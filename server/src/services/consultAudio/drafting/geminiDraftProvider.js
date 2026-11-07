@@ -59,6 +59,7 @@ class GeminiDraftProvider extends DraftProviderInterface {
       this.modelVersion,
       'gemini-3.5-flash-lite',
       'gemini-flash-lite-latest',
+      'gemini-3.5-flash',
     ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
     let lastError;

@@ -88,53 +88,13 @@ describe('Auth API', () => {
   });
 
   describe('POST /auth/login', () => {
-    const validLoginPayload = {
-      email: 'test@example.com',
-      password: 'password123',
-    };
-
-    it('should login user and return session', async () => {
-      const mockSession = { access_token: 'valid-token' };
-      const mockUser = { id: 'user-123', email: 'test@example.com' };
-      const mockProfile = { id: 'user-123', role: 'patient', full_name: 'Test User' };
-
-      supabaseAdmin.auth.signInWithPassword.mockResolvedValue({
-        data: { session: mockSession, user: mockUser },
-        error: null,
-      });
-
-      supabaseAdmin.from.mockImplementation((table) => {
-        if (table === 'profiles') {
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockReturnThis(),
-            single: jest.fn().mockResolvedValue({ data: mockProfile, error: null }),
-          };
-        }
-      });
-
+    it('is not served: clients sign in with Supabase Auth directly', async () => {
       const response = await request(app)
         .post('/api/auth/login')
-        .send(validLoginPayload);
+        .send({ email: 'test@example.com', password: 'password123' });
 
-      expect(response.status).toBe(200);
-      expect(response.body.message).toBe('Login successful');
-      expect(response.body.session).toEqual(mockSession);
-      expect(response.body.profile).toEqual(mockProfile);
-    });
-
-    it('should return 401 on invalid credentials', async () => {
-      supabaseAdmin.auth.signInWithPassword.mockResolvedValue({
-        data: null,
-        error: { message: 'Invalid credentials' },
-      });
-
-      const response = await request(app)
-        .post('/api/auth/login')
-        .send(validLoginPayload);
-
-      expect(response.status).toBe(401);
-      expect(response.body.error).toBe('Invalid credentials');
+      expect(response.status).toBe(404);
+      expect(supabaseAdmin.auth.signInWithPassword).not.toHaveBeenCalled();
     });
   });
 

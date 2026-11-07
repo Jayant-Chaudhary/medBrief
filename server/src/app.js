@@ -103,10 +103,26 @@ app.use((req, res) => res.status(404).json({ error: 'Endpoint not found', reques
 app.use(errorHandler);
 
 if (process.env.NODE_ENV !== 'test') {
+  // Refuse to start with a mismatched storage keypair: every file stored under
+  // it would be unreadable. Missing keys are reported here; uploads then fail
+  // with ERR_ENCRYPTION_CONFIG_MISSING instead of using a throwaway key.
+  const storageKeyCheck = require('./services/crypto/storageEncryption.service').verifyKeyPair();
+  if (storageKeyCheck.code === 'ERR_ENCRYPTION_KEYPAIR_MISMATCH') {
+    logger.error('Storage encryption public/private keys do not match; refusing to start', {
+      code: storageKeyCheck.code,
+    });
+    process.exit(1);
+  } else if (!storageKeyCheck.ok) {
+    logger.warn('Storage encryption keys are not configured; file uploads and downloads will fail', {
+      code: storageKeyCheck.code,
+    });
+  }
+
   const { checkFfmpegInstalled } = require('./utils/audioConverter');
   const transcriptionWorker = require('./services/consultAudio/transcriptionWorker');
   const audioCache = require('./services/consultAudio/audioCache.service');
   const orchestratorService = require('./services/consultAudio/orchestrator.service');
+  const communitySupervisor = require('./community/communitySupervisor');
 
   process.on('unhandledRejection', (reason) => {
     logger.error('unhandled promise rejection', { err: reason instanceof Error ? reason : new Error(String(reason)) });
@@ -121,6 +137,7 @@ if (process.env.NODE_ENV !== 'test') {
     transcriptionWorker.stopWorker();
     orchestratorService.stop();
     audioCache.close();
+    communitySupervisor.stop();
     server.close(() => {
       logger.info('HTTP server closed');
       process.exit(0);
@@ -150,6 +167,7 @@ if (process.env.NODE_ENV !== 'test') {
     void audioCache.start();
     transcriptionWorker.startWorker();
     void orchestratorService.start();
+    void communitySupervisor.start();
   });
 }
 

@@ -32,6 +32,7 @@ async function start() {
   if (pollIntervalId) return;
 
   await resumePendingEndingSessions();
+  if (process.env.NODE_ENV !== 'test') void resumeProcessingWithoutDraft();
 
   const pollIntervalMs = config.orchestratorPollMs || 1000;
   pollIntervalId = setInterval(async () => {
@@ -379,18 +380,7 @@ async function finalizeEndingSession(sessionId, { isOverdue = false, autoDraft =
     });
 
     if (autoDraft) {
-      try {
-        const draftService = require('./draft.service');
-        draftService.generateDraftForSession(sessionId).catch((err) => {
-          logger.warn('Auto draft generation deferred or encountered error', {
-            scope: 'consult-orchestrator',
-            sessionId,
-            errorCode: 'ERR_AUTO_DRAFT',
-          });
-        });
-      } catch (_err) {
-        // Safe fallback in test environments
-      }
+      void draftWithRetries(sessionId);
     }
 
     return updatedSession;
@@ -403,6 +393,74 @@ async function finalizeEndingSession(sessionId, { isOverdue = false, autoDraft =
     throw err;
   } finally {
     finalizingSessions.delete(sessionId);
+  }
+}
+
+/** Sessions with a drafting attempt in flight, so retries never overlap. */
+const draftingSessions = new Set();
+
+/**
+ * Drafts notes for a processing session, retrying a few times. A failed
+ * draft used to leave the session in 'processing' for good. If every attempt
+ * fails, the session stays in 'processing' and the doctor can ask again from
+ * the dashboard. Logs error names and codes only, never model output.
+ */
+async function draftWithRetries(sessionId, { retries = config.draftAutoRetries, delayMs = config.draftRetryDelayMs } = {}) {
+  if (!sessionId || draftingSessions.has(sessionId)) return null;
+  draftingSessions.add(sessionId);
+  const draftService = require('./draft.service');
+  try {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, delayMs * attempt).unref?.());
+      try {
+        return await draftService.generateDraftForSession(sessionId);
+      } catch (err) {
+        // A session that moved on (draft made by a manual request) needs no retry.
+        if (err?.status === 400 || err?.status === 404) return null;
+        logger.warn('Auto draft generation failed', {
+          scope: 'consult-orchestrator',
+          sessionId,
+          attempt: attempt + 1,
+          errorCode: 'ERR_AUTO_DRAFT',
+          errorName: err?.name || 'Error',
+          upstreamStatus: Number(String(err?.message || '').match(/\((\d{3})\)/)?.[1]) || undefined,
+        });
+      }
+    }
+    return null;
+  } finally {
+    draftingSessions.delete(sessionId);
+  }
+}
+
+/**
+ * After a restart, drafts notes for sessions left in 'processing' without one
+ * (the process stopped mid-draft, or every earlier attempt failed).
+ */
+async function resumeProcessingWithoutDraft() {
+  try {
+    const { data: processing, error } = await supabaseAdmin
+      .from('consult_sessions')
+      .select('id')
+      .eq('status', STATES.PROCESSING);
+    if (error || !processing?.length) return 0;
+
+    let resumed = 0;
+    for (const { id } of processing) {
+      const { data: drafts } = await supabaseAdmin
+        .from('consult_drafts')
+        .select('id')
+        .eq('session_id', id)
+        .limit(1);
+      if (drafts?.length) continue;
+      void draftWithRetries(id);
+      resumed += 1;
+    }
+    if (resumed) logger.info('Resumed drafting for processing sessions', { scope: 'consult-orchestrator', resumed });
+    return resumed;
+  } catch (_err) {
+    logger.error('Failed to resume processing sessions', { scope: 'consult-orchestrator', errorCode: 'ERR_RESUME_PROCESSING' });
+    return 0;
   }
 }
 
@@ -556,5 +614,7 @@ module.exports = {
   checkCompleteness,
   finalizeEndingSession,
   resumePendingEndingSessions,
+  resumeProcessingWithoutDraft,
+  draftWithRetries,
   handleLateChunkTranscribed,
 };

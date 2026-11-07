@@ -51,7 +51,53 @@ class _ConsultAudioPageState extends State<ConsultAudioPage> {
           body: SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: switch (stage) {
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: _buildStage(stage)),
+                  if (widget.controller.canLeaveRoom) ...[
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      key: const Key('leave-room'),
+                      onPressed: widget.controller.leaving ? null : _confirmLeave,
+                      icon: const Icon(Icons.logout),
+                      label: const Text('Leave this room'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmLeave() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Leave this room?'),
+        content: const Text(
+          'Your phone will stop waiting for this visit. To join again, ask your doctor for the new code.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Stay'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await widget.controller.leaveRoom();
+  }
+
+  Widget _buildStage(PatientConsultStage stage) {
+    return switch (stage) {
                 PatientConsultStage.entry => _buildEntryView(),
                 PatientConsultStage.joining => _buildLoadingView(
                   'Connecting to consultation room...',
@@ -70,12 +116,7 @@ class _ConsultAudioPageState extends State<ConsultAudioPage> {
                 PatientConsultStage.pending => _buildPendingView(),
                 PatientConsultStage.completed => _buildCompletedView(),
                 PatientConsultStage.error => _buildErrorView(),
-              },
-            ),
-          ),
-        );
-      },
-    );
+              };
   }
 
   Widget _buildEntryView() {

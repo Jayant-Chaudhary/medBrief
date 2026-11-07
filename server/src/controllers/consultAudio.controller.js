@@ -12,6 +12,7 @@ const draftService = require('../services/consultAudio/draft.service');
 const { verifySessionToken } = require('../services/consultAudio/token.service');
 const { convertTo16kHzMonoWav } = require('../utils/audioConverter');
 const providerFactory = require('../services/consultAudio/stt/providerFactory');
+const { takeSttTestSlot } = require('../services/consultAudio/sttTestLimiter.service');
 const logger = require('../utils/logger');
 
 /**
@@ -21,9 +22,12 @@ const logger = require('../utils/logger');
 async function createSession(req, res, next) {
   try {
     const appointmentId = req.body.appointmentId || req.body.appointment_id;
+    // The doctor can always start alone; a session waits for the patient only
+    // when the caller asks for that explicitly.
     const patientRequired = req.body.patientRequired !== undefined
       ? req.body.patientRequired
-      : (req.body.patient_required !== undefined ? req.body.patient_required : true);
+      : (req.body.patient_required !== undefined ? req.body.patient_required : false);
+    const forceNew = req.body.forceNew === true || req.body.force_new === true || req.body.forceNew === 'true';
     const languageCode = req.body.languageCode || req.body.language_code || null;
 
     if (!appointmentId) {
@@ -34,8 +38,9 @@ async function createSession(req, res, next) {
     const result = await sessionService.createSession({
       appointmentId,
       doctorId,
-      patientRequired: patientRequired !== false,
+      patientRequired: patientRequired === true || patientRequired === 'true',
       languageCode,
+      forceNew,
     });
 
     res.status(201).json(result);
@@ -143,6 +148,25 @@ async function startConsultation(req, res, next) {
     });
 
     res.status(200).json({ ok: true, session });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/consults/:id/leave
+ * Patient leaves the room before recording starts.
+ */
+async function leaveSession(req, res, next) {
+  try {
+    if (req.sessionToken?.role !== 'patient') {
+      return res.status(403).json({ error: 'Only the patient device can leave the room' });
+    }
+    const result = await sessionService.leaveSession({
+      sessionId: req.params.id,
+      userId: req.sessionToken.userId,
+    });
+    res.status(200).json(result);
   } catch (err) {
     next(err);
   }
@@ -313,9 +337,24 @@ async function getSessionByAppointment(req, res, next) {
  */
 async function testAudioStt(req, res, next) {
   try {
+    const userId = req.user?.id || req.sessionToken?.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthenticated' });
+
+    // A normal login token is not tied to a session: check the caller runs it.
+    if (req.params.id && !req.sessionToken) {
+      await sessionService.assertSessionParticipant(req.params.id, userId, { doctorOnly: true });
+    }
+
     const audioBuffer = req.body && Buffer.isBuffer(req.body) ? req.body : null;
     if (!audioBuffer || audioBuffer.length === 0) {
       return res.status(400).json({ error: 'Audio buffer is required for STT test' });
+    }
+
+    // Counted only for requests that would reach the paid provider.
+    const slot = takeSttTestSlot(userId);
+    if (!slot.allowed) {
+      res.set('Retry-After', String(slot.retryAfterSec));
+      return res.status(429).json({ error: 'Too many speech-to-text tests. Try again later.' });
     }
 
     const startTimer = Date.now();
@@ -345,7 +384,6 @@ async function testAudioStt(req, res, next) {
     logger.error('Pre-consultation STT test failed', {
       scope: 'consult-audio-test',
       errorCode: err.code || 'ERR_STT_TEST_FAILED',
-      errorMessage: err.message,
     });
     next(err);
   }
@@ -390,6 +428,11 @@ async function recordDeviceGap(req, res, next) {
 async function getDeviceGaps(req, res, next) {
   try {
     const { id: sessionId, device } = req.params;
+    // Scoped tokens are already bound to this session by the route guard; a
+    // normal login token is not, so check the caller belongs to the session.
+    if (!req.sessionToken) {
+      await sessionService.assertSessionParticipant(sessionId, req.user?.id);
+    }
     const gaps = await gapService.getGaps({ sessionId, device });
     res.status(200).json({ ok: true, gaps });
   } catch (err) {
@@ -456,8 +499,33 @@ async function reviewDraft(req, res, next) {
 async function generateDraft(req, res, next) {
   try {
     const { id: sessionId } = req.params;
-    const draft = await draftService.generateDraftForSession(sessionId, req.body || {});
+    const doctorUserId = req.user?.id || req.sessionToken?.userId;
+    if (!doctorUserId) return res.status(401).json({ error: 'Unauthenticated' });
+
+    // The provider and its options come from server config only. Taking them
+    // from the request let a caller pick the endpoint or API key the
+    // transcript and clinical context are sent to.
+    const draft = await draftService.generateDraftForSession(sessionId, { doctorUserId });
     res.status(201).json(draft);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/consults/:id/refresh-code
+ * Doctor requests a fresh room code for an open session.
+ */
+async function refreshRoomCode(req, res, next) {
+  try {
+    const { id: sessionId } = req.params;
+    const doctorUserId = req.user?.id || req.sessionToken?.userId;
+    if (!doctorUserId) {
+      return res.status(401).json({ error: 'Unauthenticated' });
+    }
+
+    const result = await sessionService.refreshSessionRoomCode({ sessionId, doctorUserId });
+    res.status(200).json(result);
   } catch (err) {
     next(err);
   }
@@ -465,11 +533,13 @@ async function generateDraft(req, res, next) {
 
 module.exports = {
   createSession,
+  refreshRoomCode,
   joinSession,
   recordConsent,
   getServerTime,
   markDeviceReady,
   startConsultation,
+  leaveSession,
   endConsultation,
   recordCaptureStarted,
   getSessionState,

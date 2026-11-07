@@ -6,6 +6,7 @@
  */
 
 const env = process.env;
+const { requireSecret } = require('./runtimeEnv');
 
 function positiveInteger(name, fallback) {
   const value = Number(env[name] ?? fallback);
@@ -27,11 +28,15 @@ module.exports = {
   roomCodeTtlMin: Number(env.ROOM_CODE_TTL_MIN || 10),
   roomCodeLength: Number(env.ROOM_CODE_LENGTH || 6),
   maxJoinAttempts: Number(env.MAX_JOIN_ATTEMPTS || 5),
+
+  // Pre-consultation STT test: calls per user per window (it uses paid provider credit)
+  sttTestMaxPerWindow: Number(env.STT_TEST_MAX_PER_WINDOW || 5),
+  sttTestWindowMs: Number(env.STT_TEST_WINDOW_MS || 10 * 60 * 1000),
   endDeadlineSec: Number(env.END_DEADLINE_SEC || 15),
   orchestratorPollMs: Number(env.ORCHESTRATOR_POLL_MS || 1000),
 
   // Scoped Session Tokens
-  sessionTokenSecret: env.SESSION_TOKEN_SECRET || 'dev-consult-session-secret-change-in-prod',
+  sessionTokenSecret: requireSecret('SESSION_TOKEN_SECRET', 'dev-consult-session-secret-change-in-prod'),
   sessionTokenTtlSec: Number(env.SESSION_TOKEN_TTL_SEC || 7200), // 2 hours
 
   // Consent Version
@@ -83,6 +88,10 @@ module.exports = {
   // Qwen3 'thinking' mode is slow for structured notes; off by default (Ollama /api/chat only).
   localLlmThink: env.LOCAL_LLM_THINK === 'true',
   draftTimeoutMs: Number(env.DRAFT_TIMEOUT_MS || 60000),
+  // Automatic drafting after a visit: extra attempts after the first failure,
+  // and the wait before each (multiplied by the attempt number).
+  draftAutoRetries: Number(env.DRAFT_AUTO_RETRIES || 2),
+  draftRetryDelayMs: Number(env.DRAFT_RETRY_DELAY_MS || 15000),
 
   // Audio Retention
   audioRetentionAfterReviewHours: Number(env.AUDIO_RETENTION_AFTER_REVIEW_HOURS || 24),

@@ -304,6 +304,60 @@ describe('Check-In & AI Summarization API', () => {
       const res = await send('get', '/api/checkin/history?patientId=other-patient-uuid');
       expect(res.status).toBe(403);
     });
+
+    describe('as a clinician', () => {
+      beforeEach(() => signInAs(mockClinician));
+
+      it('refuses a clinician with no appointment with the patient', async () => {
+        const chains = mockTables(supabaseAdmin, {
+          profiles: profileRow('clinician'),
+          appointments: ok([]),
+        });
+
+        const res = await send('get', `/api/checkin/history?patientId=${mockPatient.id}`);
+
+        expect(res.status).toBe(403);
+        expect(chains.patient_checkin_sessions).toBeUndefined();
+      });
+
+      it('refuses an unverified clinician before looking at the patient', async () => {
+        mockTables(supabaseAdmin, { profiles: profileRow('clinician', { verified: false }) });
+
+        const res = await send('get', `/api/checkin/history?patientId=${mockPatient.id}`);
+        expect(res.status).toBe(403);
+      });
+
+      it('requires a clinician to name the patient', async () => {
+        mockTables(supabaseAdmin, { profiles: profileRow('clinician') });
+
+        const res = await send('get', '/api/checkin/history');
+        expect(res.status).toBe(400);
+      });
+
+      it('returns history for a patient the clinician treats', async () => {
+        const chains = mockTables(supabaseAdmin, {
+          profiles: profileRow('clinician'),
+          appointments: ok([{ id: appointmentId }]),
+          patient_checkin_sessions: ok([]),
+        });
+
+        const res = await send('get', `/api/checkin/history?patientId=${mockPatient.id}`);
+
+        expect(res.status).toBe(200);
+        expect(chains.appointments[0].eq).toHaveBeenCalledWith('clinician_id', mockClinician.id);
+        expect(chains.appointments[0].eq).toHaveBeenCalledWith('patient_id', mockPatient.id);
+      });
+
+      it('applies the same rule to check-in status', async () => {
+        mockTables(supabaseAdmin, {
+          profiles: profileRow('clinician'),
+          appointments: ok([]),
+        });
+
+        const res = await send('get', `/api/checkin/status?patientId=${mockPatient.id}`);
+        expect(res.status).toBe(403);
+      });
+    });
   });
 
   describe('GET /api/checkin/summary/:appointmentId', () => {

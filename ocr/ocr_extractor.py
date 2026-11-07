@@ -32,9 +32,16 @@ DEVICE_ENV_VAR = "OCR_DEVICE"
 DEFAULT_DET_MODEL = "PP-OCRv6_small_det"
 DEFAULT_REC_MODEL = "PP-OCRv6_small_rec"
 
+#: Whole-page orientation classifier (0/90/180/270) run on photos before OCR.
+#: Overridable with OCR_ORIENTATION_MODEL.
+DEFAULT_ORIENTATION_MODEL = "PP-LCNet_x1_0_doc_ori"
+
 #: PaddleOCR instances are expensive to build - one model load each - and are
 #: safe to reuse across documents. Keyed by the settings that affect the model.
 _ocr_instances: dict[tuple[str, str, bool], Any] = {}
+
+#: Orientation classifiers, keyed by device. Built lazily, like the OCR models.
+_orientation_classifiers: dict[str, Any] = {}
 
 #: A PaddleOCR predictor is not safe to call from two threads at once, and a
 #: long-lived server (the FastAPI worker) serves requests from a thread pool.
@@ -136,6 +143,93 @@ def get_ocr(device: str | None = None, lang: str = "en", textline_orientation: b
         kwargs["text_recognition_model_name"] = os.environ.get("OCR_REC_MODEL") or DEFAULT_REC_MODEL
         _ocr_instances[key] = PaddleOCR(**kwargs)
     return _ocr_instances[key]
+
+
+# --------------------------------------------------------------------------
+# Image orientation
+# --------------------------------------------------------------------------
+def image_autorotate_enabled() -> bool:
+    """Whether photos get whole-page orientation correction before OCR.
+
+    On by default: a sideways or upside-down photo otherwise reads as noise.
+    Skipped when OCR_DOC_ORIENTATION/OCR_AUTOROTATE already turn on PaddleOCR's
+    own page classifier, so a page is never rotated twice.
+    """
+    if _env_flag("OCR_DOC_ORIENTATION", False) or _env_flag("OCR_AUTOROTATE", False):
+        return False
+    return _env_flag("OCR_IMAGE_AUTOROTATE", True)
+
+
+def load_upright_image(file_path: str):
+    """Decode a photo as an upright BGR array, honouring its EXIF orientation.
+
+    Phones usually store a portrait photo as landscape pixels plus an EXIF
+    "rotate 90" tag. Browsers apply the tag, so the patient sees an upright
+    report, but OpenCV - which PaddleOCR reads files with - ignores it and the
+    OCR sees the page sideways. Returns None for anything Pillow cannot open
+    as an image (PDFs), which PaddleOCR keeps reading from the path itself.
+    """
+    import numpy as np  # noqa: PLC0415 - heavy imports stay off module import
+    from PIL import Image, ImageOps, UnidentifiedImageError  # noqa: PLC0415
+
+    try:
+        with Image.open(file_path) as img:
+            upright = ImageOps.exif_transpose(img).convert("RGB")
+    except (UnidentifiedImageError, OSError):
+        return None
+    # RGB -> BGR: PaddleOCR expects arrays in OpenCV channel order.
+    return np.ascontiguousarray(np.asarray(upright)[:, :, ::-1])
+
+
+def get_orientation_classifier(device: str | None = None):
+    """Return a cached whole-page orientation classifier."""
+    from paddleocr import DocImgOrientationClassification  # noqa: PLC0415
+
+    resolved = resolve_device(device)
+    if resolved not in _orientation_classifiers:
+        model_name = os.environ.get("OCR_ORIENTATION_MODEL") or DEFAULT_ORIENTATION_MODEL
+        logger.info("Loading orientation classifier (device=%s)", resolved)
+        _orientation_classifiers[resolved] = DocImgOrientationClassification(
+            model_name=model_name, device=resolved
+        )
+    return _orientation_classifiers[resolved]
+
+
+def correct_orientation(image, classifier) -> tuple[Any, int]:
+    """Rotate a page upright using the classifier's 0/90/180/270 label.
+
+    Matches PaddleOCR's own document preprocessor, which turns the page
+    counter-clockwise by the predicted angle. np.rot90 does that losslessly for
+    right angles. Returns (image, degrees_rotated).
+    """
+    import numpy as np  # noqa: PLC0415
+
+    results = list(classifier.predict(image))
+    if not results:
+        return image, 0
+    fields = results[0] if hasattr(results[0], "keys") else getattr(results[0], "res", {})
+    try:
+        angle = int((fields.get("label_names") or [0])[0]) % 360
+    except (TypeError, ValueError):
+        return image, 0
+    if angle not in (90, 180, 270):
+        return image, 0
+    return np.ascontiguousarray(np.rot90(image, k=angle // 90)), angle
+
+
+def prepare_ocr_input(file_path: str, device: str | None = None) -> tuple[Any, int]:
+    """What to hand PaddleOCR: an upright array for photos, the path for PDFs.
+
+    Returns (input, degrees_rotated_by_classifier). EXIF rotation is always
+    applied to photos; classifier rotation only when image autorotate is on.
+    Caller must hold _ocr_lock (the classifier shares the inference lock).
+    """
+    image = load_upright_image(file_path)
+    if image is None:
+        return file_path, 0
+    if not image_autorotate_enabled():
+        return image, 0
+    return correct_orientation(image, get_orientation_classifier(device))
 
 
 # --------------------------------------------------------------------------
@@ -294,7 +388,13 @@ def page_size(page_result) -> tuple[int | None, int | None]:
         return None, None
 
 
-def _page_payload(page_number: int, items: list[dict], width: int | None = None, height: int | None = None) -> dict:
+def _page_payload(
+    page_number: int,
+    items: list[dict],
+    width: int | None = None,
+    height: int | None = None,
+    rotation_degrees: int = 0,
+) -> dict:
     lines = [item["text"] for item in items]
     confidences = [item["confidence"] for item in items]
     return {
@@ -302,6 +402,9 @@ def _page_payload(page_number: int, items: list[dict], width: int | None = None,
         # Pixel size of the page image the boxes below are measured in.
         "width": width,
         "height": height,
+        # Counter-clockwise turn applied (after EXIF) to read the page upright.
+        # Boxes are in the rotated image's pixels.
+        "rotation_degrees": rotation_degrees,
         "line_count": len(lines),
         "avg_confidence": round(sum(confidences) / len(confidences), 3) if confidences else 0.0,
         "lines": lines,
@@ -341,9 +444,17 @@ def extract_and_format(
     # carries the rendered page image, and holding every one of them at once
     # is what exhausts memory on a long scanned PDF.
     with _ocr_lock:
+        ocr_input, rotation = prepare_ocr_input(file_path, resolved_device)
+        if rotation:
+            logger.info("Rotated page %d degrees before OCR", rotation)
         pages = [
-            _page_payload(index + 1, page_items(page_result, min_confidence), *page_size(page_result))
-            for index, page_result in enumerate(ocr.predict(file_path))
+            _page_payload(
+                index + 1,
+                page_items(page_result, min_confidence),
+                *page_size(page_result),
+                rotation_degrees=rotation,
+            )
+            for index, page_result in enumerate(ocr.predict(ocr_input))
         ]
 
     all_confidences = [item["confidence"] for page in pages for item in page["items"]]

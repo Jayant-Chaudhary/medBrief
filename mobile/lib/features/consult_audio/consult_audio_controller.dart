@@ -148,6 +148,122 @@ class ConsultAudioController extends ChangeNotifier {
     }
   }
 
+  /// Stages where the patient is in a room but nothing has been recorded.
+  static const _roomStages = {
+    PatientConsultStage.consent,
+    PatientConsultStage.permissions,
+    PatientConsultStage.levelCheck,
+    PatientConsultStage.readyWait,
+  };
+
+  bool _leaving = false;
+  bool get leaving => _leaving;
+
+  /// The patient can leave a room they joined until recording starts.
+  bool get canLeaveRoom =>
+      !_runtime &&
+      _sessionId != null &&
+      (_roomStages.contains(_stage) ||
+          (_stage == PatientConsultStage.error &&
+              store?.control['captureZero'] == null));
+
+  /// Leaves the room: tells the server (best effort), stops the waiting
+  /// service, and forgets the room on this phone so the next open shows the
+  /// code entry screen.
+  Future<void> leaveRoom() async {
+    if (!canLeaveRoom || _leaving) return;
+    _leaving = true;
+    _errorMessage = null;
+    _notify();
+    final sessionId = _sessionId!;
+    try {
+      // The waiting service owns the audio files while it runs: stop it before
+      // this isolate opens them. Its shutdown records a final count, so only a
+      // capture start proves anything was recorded.
+      if (await _foreground.isRunning()) {
+        await _foreground.shutdown();
+        store = null; // Reopen the files the service just released.
+      }
+      store ??= PendingAudioStore(sessionId: sessionId, config: config);
+      await store!.initialize();
+      if (store!.control['captureZero'] != null) {
+        // Recording began meanwhile: keep the files so they still upload.
+        _errorMessage = 'Recording has already started for this visit.';
+        setStage(PatientConsultStage.pending);
+        return;
+      }
+      final token = _scopedToken;
+      if (token != null) {
+        try {
+          await repository.leaveSession(
+            sessionId: sessionId,
+            scopedToken: token,
+          );
+        } on AppException catch (error) {
+          // Already started, closed, or no longer ours: nothing to leave.
+          if (![401, 403, 404, 409].contains(error.status)) rethrow;
+        }
+      }
+      await _forgetRoom(sessionId);
+      setStage(PatientConsultStage.entry);
+    } catch (_) {
+      _errorMessage = 'Could not leave the room. Check your connection and retry.';
+      _notify();
+    } finally {
+      _leaving = false;
+      _notify();
+    }
+  }
+
+  /// Checks the remembered room with the server when the screen opens. A room
+  /// the doctor closed or restarted, or one this patient was dropped from, is
+  /// forgotten so the patient can enter the new code instead of being stuck.
+  Future<void> refreshRoom() async {
+    if (_runtime || _sessionId == null || _scopedToken == null) return;
+    if (!{
+      PatientConsultStage.consent,
+      PatientConsultStage.permissions,
+      PatientConsultStage.levelCheck,
+    }.contains(_stage)) {
+      return;
+    }
+    final sessionId = _sessionId!;
+    bool closed;
+    try {
+      final state = await repository.getSessionState(
+        sessionId: sessionId,
+        scopedToken: _scopedToken!,
+      );
+      closed = !{
+            ConsultSessionState.created,
+            ConsultSessionState.waiting,
+            ConsultSessionState.ready,
+          }.contains(state.status) ||
+          !state.patientInRoom;
+    } on AppException catch (error) {
+      closed = [401, 403, 404].contains(error.status);
+    } catch (_) {
+      return; // Offline: keep the room; the next open checks again.
+    }
+    if (!closed || _sessionId != sessionId) return;
+    await _forgetRoom(sessionId);
+    _errorMessage =
+        'That consultation room is no longer open. Enter the new code from your doctor.';
+    setStage(PatientConsultStage.entry);
+  }
+
+  Future<void> _forgetRoom(String sessionId) async {
+    await recorder?.dispose().catchError((Object _) {});
+    recorder = null;
+    await repository.clearScopedToken(sessionId);
+    await repository.forgetActive(ownerId);
+    _sessionId = null;
+    _scopedToken = null;
+    store = null;
+    _micCheckReady = false;
+    _micLevelDbfs = -100;
+  }
+
   Future<void> submitRoomCode(String code) async {
     if (_stage != PatientConsultStage.entry) return;
     if (!RegExp(r'^[A-Za-z0-9]{6}$').hasMatch(code.trim())) {

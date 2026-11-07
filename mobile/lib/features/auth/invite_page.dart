@@ -76,9 +76,10 @@ class _InvitePageState extends State<InvitePage> {
   @override
   Widget build(BuildContext context) {
     final invite = _invite;
-    final canSignIn =
-        invite != null &&
-        (_accepted || invite.isUsed || invite.isReturningPatient);
+    final canSignIn = invite != null && (_accepted || invite.isUsed);
+    // A returning patient accepts with their current password: accepting is
+    // what links the clinic to their records, so it needs their consent.
+    final returning = invite?.isReturningPatient == true;
     final unavailable = invite?.isExpired == true || invite?.isUsed == true;
     final scheduled = invite?.scheduledAt?.toLocal();
     return PopScope(
@@ -90,7 +91,7 @@ class _InvitePageState extends State<InvitePage> {
           const SizedBox(height: 32),
           Text(
             _accepted
-                ? 'Your account is ready'
+                ? (returning ? 'Appointment accepted' : 'Your account is ready')
                 : canSignIn
                 ? 'Welcome back'
                 : 'Your clinic invitation',
@@ -141,7 +142,9 @@ class _InvitePageState extends State<InvitePage> {
             if (canSignIn) ...[
               Text(
                 _accepted
-                    ? 'Sign in with the password you just created.'
+                    ? (returning
+                          ? 'Appointment accepted. Sign in with your usual password.'
+                          : 'Sign in with the password you just created.')
                     : 'Use your existing password. An invitation does not change it.',
               ),
               const SizedBox(height: 24),
@@ -156,6 +159,34 @@ class _InvitePageState extends State<InvitePage> {
               TextButton(
                 onPressed: () => Navigator.pop(context),
                 child: const Text('Back to sign in'),
+              ),
+            ] else if (returning) ...[
+              const Text(
+                'You already have an account. Enter your current password to '
+                'accept this appointment. Accepting lets this clinic see your records.',
+              ),
+              const SizedBox(height: 24),
+              Form(
+                key: _form,
+                child: Column(
+                  children: [
+                    PasswordInput(
+                      controller: _password,
+                      label: 'Current password',
+                      enabled: !_busy,
+                      validator: (value) => value == null || value.isEmpty
+                          ? 'Enter your current password.'
+                          : null,
+                      onSubmitted: _accept,
+                    ),
+                    const SizedBox(height: 24),
+                    ErrorNotice(_error),
+                    FilledButton(
+                      onPressed: _busy ? null : _accept,
+                      child: buttonLabel('Accept appointment', _busy),
+                    ),
+                  ],
+                ),
               ),
             ] else ...[
               const Text(

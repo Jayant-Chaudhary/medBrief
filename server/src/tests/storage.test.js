@@ -198,6 +198,25 @@ describe('Storage Proxy API', () => {
       expect(decrypted.equals(plaintext)).toBe(true);
     });
 
+    test('encrypts an upload even when it already starts with the ENCR magic bytes', async () => {
+      const mockUpload = jest.fn().mockResolvedValue({ data: { path: 'stored/path' }, error: null });
+      supabaseAdmin.storage.from = jest.fn().mockReturnValue({ upload: mockUpload });
+
+      // Synthetic attacker-style payload: looks like an envelope but is plaintext.
+      const fakeEnvelope = Buffer.concat([Buffer.from('ENCR'), Buffer.from('synthetic plaintext payload')]);
+      await uploadFile({
+        bucket: LAB_REPORTS_BUCKET,
+        ownerId: 'patient-abc',
+        buffer: fakeEnvelope,
+        originalName: 'scan.pdf',
+      });
+
+      const uploadedBuffer = mockUpload.mock.calls[0][1];
+      expect(uploadedBuffer.equals(fakeEnvelope)).toBe(false);
+      expect(uploadedBuffer.toString('utf8')).not.toContain('synthetic plaintext payload');
+      expect(storageEncryption.decrypt(uploadedBuffer).equals(fakeEnvelope)).toBe(true);
+    });
+
     test('throws error if Supabase storage upload fails', async () => {
       const mockUpload = jest.fn().mockResolvedValue({ data: null, error: { message: 'Bucket quota exceeded' } });
       supabaseAdmin.storage.from = jest.fn().mockReturnValue({ upload: mockUpload });

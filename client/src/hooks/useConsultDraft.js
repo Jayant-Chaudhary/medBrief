@@ -24,7 +24,16 @@ export function useConsultDraft(appointmentId, enabled = true) {
   const [error, setError] = useState(null);
   const [stalled, setStalled] = useState(false);
   const [finished, setFinished] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const attempts = useRef(0);
+
+  const refresh = useCallback(() => {
+    setDraft(null);
+    setStalled(false);
+    setError(null);
+    attempts.current = 0;
+    setReloadKey((k) => k + 1);
+  }, []);
 
   useEffect(() => {
     setDraft(null);
@@ -75,7 +84,26 @@ export function useConsultDraft(appointmentId, enabled = true) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [appointmentId, enabled, draft]);
+  }, [appointmentId, enabled, draft, reloadKey]);
+
+  // If a draft is already present, detect if a newer session was started for this visit (e.g. Record Again)
+  useEffect(() => {
+    if (!enabled || !appointmentId || !draft) return undefined;
+    let timer;
+    const pollForNewerSession = async () => {
+      try {
+        const session = await getSessionByAppointment(appointmentId);
+        const id = session?.id || session?.sessionId;
+        if (id && draft?.session_id && id !== draft.session_id) {
+          refresh();
+          return;
+        }
+      } catch {}
+      timer = setTimeout(pollForNewerSession, 15000);
+    };
+    timer = setTimeout(pollForNewerSession, 15000);
+    return () => clearTimeout(timer);
+  }, [appointmentId, enabled, draft, refresh]);
 
   const review = useCallback(
     async (action, options = {}) => {
@@ -123,10 +151,12 @@ export function useConsultDraft(appointmentId, enabled = true) {
 
   return {
     draft,
+    sessionId,
     busy,
     error,
     stalled,
     waiting,
+    refresh,
     generate,
     approve: (opts) => review('approve', opts),
     reject: (opts) => review('reject', opts),

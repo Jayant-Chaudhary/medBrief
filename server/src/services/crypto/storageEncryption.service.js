@@ -17,13 +17,28 @@ const SUITE_AES_256_GCM_RSA_OAEP = 1;
 const GCM_IV_LENGTH = 12; // 96-bit nonce
 const GCM_TAG_LENGTH = 16; // 128-bit authentication tag
 
-// In test / dev environments, an in-memory keypair can be generated automatically
-// if environment variables are not yet configured.
+// Under NODE_ENV=test only, an in-memory keypair is generated when no keys are
+// configured. It is never used in development or production: anything stored
+// with it becomes permanently unreadable once the process restarts.
 let devFallbackKeyPair = null;
+
+function isTestEnv() {
+  return process.env.NODE_ENV === 'test';
+}
+
+function missingKeyError(kind) {
+  const err = new Error(
+    `Storage encryption ${kind} key is not configured. ` +
+      'Set STORAGE_ENCRYPTION_RSA_PUBLIC_KEY and STORAGE_ENCRYPTION_RSA_PRIVATE_KEY ' +
+      '(generate a pair with: npm run generate-keys --prefix server)'
+  );
+  err.code = 'ERR_ENCRYPTION_CONFIG_MISSING';
+  return err;
+}
 
 function getDevFallbackKeyPair() {
   if (!devFallbackKeyPair) {
-    logger.info('Generating ephemeral in-memory RSA-2048 keypair for local test/dev use');
+    logger.info('Generating ephemeral in-memory RSA-2048 keypair for test use');
     const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
       modulusLength: 2048,
       publicKeyEncoding: { type: 'spki', format: 'pem' },
@@ -38,26 +53,16 @@ function resolvePublicKey(options = {}) {
   if (options.publicKey) return config.normalizePem(options.publicKey);
   if (config.rsaPublicKey) return config.rsaPublicKey;
 
-  const nodeEnv = process.env.NODE_ENV || 'development';
-  if (nodeEnv === 'development' || nodeEnv === 'test') {
-    return getDevFallbackKeyPair().publicKey;
-  }
-  const err = new Error('Storage encryption public key is not configured');
-  err.code = 'ERR_ENCRYPTION_CONFIG_MISSING';
-  throw err;
+  if (isTestEnv()) return getDevFallbackKeyPair().publicKey;
+  throw missingKeyError('public');
 }
 
 function resolvePrivateKey(options = {}) {
   if (options.privateKey) return config.normalizePem(options.privateKey);
   if (config.rsaPrivateKey) return config.rsaPrivateKey;
 
-  const nodeEnv = process.env.NODE_ENV || 'development';
-  if (nodeEnv === 'development' || nodeEnv === 'test') {
-    return getDevFallbackKeyPair().privateKey;
-  }
-  const err = new Error('Storage encryption private key is not configured');
-  err.code = 'ERR_ENCRYPTION_CONFIG_MISSING';
-  throw err;
+  if (isTestEnv()) return getDevFallbackKeyPair().privateKey;
+  throw missingKeyError('private');
 }
 
 /**
@@ -297,6 +302,33 @@ function decrypt(data, options = {}) {
   }
 }
 
+/**
+ * Confirms the configured public and private keys form a working pair by
+ * wrapping and unwrapping a random value. Call at startup so a mismatched pair
+ * is caught before any file is stored with an unrecoverable key.
+ *
+ * @param {object} [options]
+ * @param {string} [options.publicKey] - PEM override (tests)
+ * @param {string} [options.privateKey] - PEM override (tests)
+ * @returns {{ ok: true } | { ok: false, code: string }} Never includes key material.
+ */
+function verifyKeyPair(options = {}) {
+  const publicKey = options.publicKey ? config.normalizePem(options.publicKey) : config.rsaPublicKey;
+  const privateKey = options.privateKey ? config.normalizePem(options.privateKey) : config.rsaPrivateKey;
+  if (!publicKey || !privateKey) return { ok: false, code: 'ERR_ENCRYPTION_CONFIG_MISSING' };
+
+  try {
+    const probe = crypto.randomBytes(32);
+    const params = { padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' };
+    const wrapped = crypto.publicEncrypt({ ...params, key: publicKey }, probe);
+    const unwrapped = crypto.privateDecrypt({ ...params, key: privateKey }, wrapped);
+    if (!unwrapped.equals(probe)) return { ok: false, code: 'ERR_ENCRYPTION_KEYPAIR_MISMATCH' };
+    return { ok: true };
+  } catch (_err) {
+    return { ok: false, code: 'ERR_ENCRYPTION_KEYPAIR_MISMATCH' };
+  }
+}
+
 module.exports = {
   MAGIC,
   VERSION,
@@ -304,4 +336,5 @@ module.exports = {
   encrypt,
   decrypt,
   getDevFallbackKeyPair,
+  verifyKeyPair,
 };

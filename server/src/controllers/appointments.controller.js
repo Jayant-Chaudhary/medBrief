@@ -1,7 +1,7 @@
 const supabaseAdmin = require('../config/supabaseAdminClient');
 const { createAndSendInvite } = require('../services/invite.service');
 const { findAuthUserByEmail } = require('../services/authUsers.service');
-const { assertAppointmentAccess } = require('../services/access.service');
+const { assertAppointmentAccess, clinicianHasPatient } = require('../services/access.service');
 const logger = require('../utils/logger');
 
 /** A patient may only report that they have checked in; the rest is the clinic's call. */
@@ -10,10 +10,12 @@ const PATIENT_SETTABLE_STATUSES = new Set(['checked_in']);
 /**
  * Creates an appointment and invites the patient to it.
  *
- * A patient who already has an account is linked to the appointment straight
- * away, so returning patients see the new visit the next time they sign in.
- * They still get an invite email, but it is a notification rather than a
- * sign-up step.
+ * Linking a patient to an appointment is what gives the clinician access to
+ * their records, so it needs the patient's consent. A patient this clinician
+ * already treats is linked straight away. Anyone else, including a patient who
+ * has an account but has never seen this clinician, stays `invited` until
+ * they accept the emailed invite (returning patients confirm with their own
+ * password).
  */
 async function createAppointment(req, res, next) {
   try {
@@ -24,15 +26,17 @@ async function createAppointment(req, res, next) {
     // half-created appointment behind.
     const templateIds = await ownTemplateIds(clinicianId, [...new Set(questionnaireTemplateIds)]);
     const existingPatientId = await findPatientIdByEmail(patientEmail);
-    // A returning patient is linked straight away, so there is nothing left
-    // for them to accept; a new one stays `invited` until they set a password.
-    const appointmentStatus = existingPatientId ? 'active' : 'invited';
+    const alreadyTreating = existingPatientId
+      ? await clinicianHasPatient(clinicianId, existingPatientId)
+      : false;
+    const linkedPatientId = alreadyTreating ? existingPatientId : null;
+    const appointmentStatus = linkedPatientId ? 'active' : 'invited';
 
     const { data: appointment, error } = await supabaseAdmin
       .from('appointments')
       .insert({
         clinician_id: clinicianId,
-        patient_id: existingPatientId,
+        patient_id: linkedPatientId,
         scheduled_at: scheduledAt,
         status: appointmentStatus,
       })
@@ -57,6 +61,8 @@ async function createAppointment(req, res, next) {
     res.status(201).json({
       ...appointment,
       isReturningPatient: Boolean(existingPatientId),
+      // False until the patient accepts the invite, unless already treated here.
+      patientLinked: Boolean(linkedPatientId),
       inviteLink: invite?.inviteLink ?? null,
       inviteEmailSent: invite?.emailSent === true,
     });

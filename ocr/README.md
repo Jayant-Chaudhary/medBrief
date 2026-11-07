@@ -155,6 +155,9 @@ missing and columns had to be inferred from whitespace.
   ~80s for the medium models with no loss on our samples); override with
   `OCR_DET_MODEL` / `OCR_REC_MODEL`. Document orientation and UVDoc unwarping
   are off by default (`OCR_DOC_ORIENTATION` / `OCR_DOC_UNWARPING` to enable).
+  Photos are still read upright: EXIF orientation is applied and a light
+  0/90/180/270° page classifier runs on images only (`OCR_IMAGE_AUTOROTATE`,
+  on by default; `OCR_ORIENTATION_MODEL` overrides the model).
   Requires PaddleOCR >= 3.7.
 - **Geometry.** OCR results keep their detection boxes in `pages[].items[]`,
   and the router structures them with tolerances scaled from the median box

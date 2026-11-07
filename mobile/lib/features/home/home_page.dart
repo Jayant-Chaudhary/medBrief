@@ -534,6 +534,8 @@ class _HomePageState extends State<HomePage> {
         controller.setStage(PatientConsultStage.error);
       }
     }
+    // Every open: drop a remembered room the doctor closed or replaced.
+    await controller.refreshRoom();
     if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(

@@ -11,9 +11,10 @@ import { Spinner } from '../../components/ui/Spinner';
  * Where the invite email lands.
  *
  * Two cases, decided by the server: a first-time patient sets a password
- * here, while someone who already has an account is only being added to a
- * new appointment and signs in normally — an invite must never be able to
- * change the password on an existing account.
+ * here, while someone who already has an account accepts the appointment by
+ * entering their current password. Accepting is what links the clinician to
+ * the patient, so it needs the patient's consent; an invite must never be
+ * able to change the password on an existing account.
  */
 export default function InvitePage() {
   const { token } = useParams();
@@ -39,8 +40,10 @@ export default function InvitePage() {
     event.preventDefault();
     setError(null);
 
-    if (password.length < 8) return setError('Use at least 8 characters.');
-    if (password !== confirm) return setError('The two passwords do not match.');
+    if (!invite.isReturningPatient) {
+      if (password.length < 8) return setError('Use at least 8 characters.');
+      if (password !== confirm) return setError('The two passwords do not match.');
+    }
 
     setSubmitting(true);
     try {
@@ -90,18 +93,36 @@ export default function InvitePage() {
             </Link>
           </>
         ) : invite.isReturningPatient ? (
-          <>
+          <form onSubmit={handleSubmit}>
             <h1 className="text-2xl font-bold text-ink mb-2">You have a new appointment</h1>
             <p className="text-ink-soft mb-6">
               {scheduled
                 ? `Scheduled for ${scheduled.toLocaleString()}. `
                 : ''}
-              It is already on your account — sign in with your usual password to see it.
+              Enter your current password to accept it. Accepting lets this clinic see your records.
             </p>
-            <Link to="/login">
-              <Button className="w-full">Sign in</Button>
-            </Link>
-          </>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-bold text-ink-soft">Email</label>
+                <p className="text-ink font-medium">{invite.patientEmail}</p>
+              </div>
+
+              <PasswordField
+                label="Current password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </div>
+
+            {error && <p className="mt-4 text-sm text-danger font-medium">{error}</p>}
+
+            <Button type="submit" className="w-full mt-6" disabled={submitting}>
+              {submitting ? 'Accepting…' : 'Accept appointment'}
+            </Button>
+          </form>
         ) : (
           <form onSubmit={handleSubmit}>
             <h1 className="text-2xl font-bold text-ink mb-1">

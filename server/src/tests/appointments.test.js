@@ -77,7 +77,7 @@ describe('Appointments API', () => {
       expect(response.body).toMatchObject({ inviteEmailSent: false, inviteLink: 'http://localhost:5173/invite/tok' });
     });
 
-    it('should link a returning patient and mark the appointment active', async () => {
+    it('leaves a returning patient unlinked until they accept, when this clinician has not treated them', async () => {
       supabaseAdmin.auth.admin.listUsers.mockResolvedValue({
         data: { users: [{ id: 'patient-9', email: 'Patient@Example.com' }] },
         error: null,
@@ -85,14 +85,37 @@ describe('Appointments API', () => {
       const chains = mockTables(supabaseAdmin, {
         // authGuard's read, then the returning patient's profile lookup.
         profiles: [profileRow('clinician'), ok({ id: 'patient-9', role: 'patient' })],
-        appointments: ok({ id: 'appt-7', status: 'active' }),
+        // The "already treating?" check finds nothing, then the insert.
+        appointments: [ok([]), ok({ id: 'appt-7', status: 'invited' })],
       });
 
       const response = await send('post', '/api/appointments').send(validPayload);
 
       expect(response.status).toBe(201);
-      expect(response.body.isReturningPatient).toBe(true);
-      expect(chains.appointments[0].insert).toHaveBeenCalledWith(
+      expect(response.body).toMatchObject({ isReturningPatient: true, patientLinked: false });
+      expect(chains.appointments[0].eq).toHaveBeenCalledWith('clinician_id', mockUser.id);
+      expect(chains.appointments[0].eq).toHaveBeenCalledWith('patient_id', 'patient-9');
+      expect(chains.appointments[1].insert).toHaveBeenCalledWith(
+        expect.objectContaining({ patient_id: null, status: 'invited' })
+      );
+      expect(createAndSendInvite).toHaveBeenCalled();
+    });
+
+    it('links a returning patient straight away when this clinician already treats them', async () => {
+      supabaseAdmin.auth.admin.listUsers.mockResolvedValue({
+        data: { users: [{ id: 'patient-9', email: 'Patient@Example.com' }] },
+        error: null,
+      });
+      const chains = mockTables(supabaseAdmin, {
+        profiles: [profileRow('clinician'), ok({ id: 'patient-9', role: 'patient' })],
+        appointments: [ok([{ id: 'earlier-appt' }]), ok({ id: 'appt-7', status: 'active' })],
+      });
+
+      const response = await send('post', '/api/appointments').send(validPayload);
+
+      expect(response.status).toBe(201);
+      expect(response.body).toMatchObject({ isReturningPatient: true, patientLinked: true });
+      expect(chains.appointments[1].insert).toHaveBeenCalledWith(
         expect.objectContaining({ patient_id: 'patient-9', status: 'active' })
       );
     });

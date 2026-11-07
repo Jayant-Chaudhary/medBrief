@@ -154,6 +154,7 @@ class ConsultSessionSummary {
     this.patientReady = false,
     this.doctorConsent = false,
     this.patientConsent = false,
+    this.patientInRoom = true,
     this.captureStartedAtDeviceMs,
   });
 
@@ -164,6 +165,10 @@ class ConsultSessionSummary {
   final bool patientReady;
   final bool doctorConsent;
   final bool patientConsent;
+
+  /// False once this patient left the room or was dropped because the doctor
+  /// started without them.
+  final bool patientInRoom;
   final int? captureStartedAtDeviceMs;
 
   factory ConsultSessionSummary.fromJson(Map<String, dynamic> json) {
@@ -173,10 +178,12 @@ class ConsultSessionSummary {
 
     bool docReady = false;
     bool patReady = false;
+    bool patInRoom = false;
     for (final d in devices) {
       if (d is Map<String, dynamic>) {
         if (d['device'] == 'doctor' && d['status'] == 'ready') docReady = true;
         if (d['device'] == 'patient' && d['status'] == 'ready') patReady = true;
+        if (d['device'] == 'patient' && d['status'] != 'gone') patInRoom = true;
       }
     }
 
@@ -197,6 +204,7 @@ class ConsultSessionSummary {
       patientReady: patReady,
       doctorConsent: docConsent,
       patientConsent: patConsent,
+      patientInRoom: patInRoom,
       captureStartedAtDeviceMs:
           (sessionMap['capture_started_at_device_ms'] as num?)?.toInt(),
     );

@@ -124,8 +124,15 @@ export function ConsultancyNotes({
 
       {draftText && (
         <div className="mb-3 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50/70 to-purple-50/40 dark:border-indigo-900/50 dark:from-indigo-950/40 dark:to-purple-950/30 p-4 shadow-xs" role="region" aria-label="Draft from consultation audio">
-          <div className="flex items-center gap-1.5 text-label-sm font-bold uppercase tracking-wider text-indigo-900 dark:text-indigo-200">
-            <span>🎙️ Ambient Audio Draft</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-label-sm font-bold uppercase tracking-wider text-indigo-900 dark:text-indigo-200">
+              <span>🎙️ Ambient Audio Draft</span>
+              {draft.model_version && draft.model_version !== 'not-called' && (
+                <span className="text-[10px] font-normal lowercase bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-300 px-2 py-0.5 rounded-full">
+                  {draft.model_version}
+                </span>
+              )}
+            </div>
           </div>
           <p className="mt-1 text-body-sm text-slate-600 dark:text-slate-300">
             Generated from the ambient consultation recording. Review and edit before inserting into notes:
@@ -144,6 +151,36 @@ export function ConsultancyNotes({
             <button
               type="button"
               className="rounded-xl border border-line bg-surface px-3.5 py-1.5 text-label-md font-medium text-ink hover:bg-subcanvas disabled:opacity-60 transition-all"
+              disabled={draftBusy}
+              onClick={() => onRejectDraft?.().catch(() => {})}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Draft was generated but captured no dialogue (silent mic or empty audio) */}
+      {!draftText && draft && draft.status === 'needs_review' && (
+        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/40 p-4 shadow-xs" role="region" aria-label="No speech captured notice">
+          <div className="flex items-center gap-2 text-label-sm font-bold uppercase tracking-wider text-amber-900 dark:text-amber-200">
+            <span>🎙️ No Speech Detected in Consultation</span>
+          </div>
+          <p className="mt-1 text-body-sm text-amber-800 dark:text-amber-300">
+            The consultation audio recording did not capture any speech segments (microphone was silent or muted). You can enter observations directly in the notes below or record a new session.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              className="rounded-xl border border-amber-300 bg-white dark:bg-surface px-3 py-1.5 text-label-md font-medium text-amber-900 dark:text-amber-200 hover:bg-amber-100/50 shadow-xs transition-all"
+              disabled={draftBusy}
+              onClick={() => onGenerateDraft?.()}
+            >
+              Retry draft generation
+            </button>
+            <button
+              type="button"
+              className="rounded-xl border border-line bg-surface px-3 py-1.5 text-label-md font-medium text-ink-3 hover:bg-subcanvas transition-all"
               disabled={draftBusy}
               onClick={() => onRejectDraft?.().catch(() => {})}
             >

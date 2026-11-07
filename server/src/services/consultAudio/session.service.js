@@ -9,7 +9,7 @@ const supabaseAdmin = require('../../config/supabaseAdminClient');
 const config = require('../../config/consultAudio.config');
 const { generateRoomCode, getRoomCodeExpiry, checkRateLimit, recordFailedAttempt, clearRateLimit } = require('./roomCode.service');
 const { signSessionToken } = require('./token.service');
-const { STATES, transitionSession } = require('./stateMachine');
+const { STATES, transitionSession, activePatientDevice, patientParticipates } = require('./stateMachine');
 const socketService = require('./socket.service');
 const orchestratorService = require('./orchestrator.service');
 const { mergeSegments } = require('./mergeSegments');
@@ -18,7 +18,57 @@ const logger = require('../../utils/logger');
 /**
  * Creates a consultation session for an appointment.
  */
-async function createSession({ appointmentId, doctorId, patientRequired = true, languageCode = null }) {
+/** States in which a session has not started recording and can still be (re)opened. */
+const OPEN_STATES = [STATES.CREATED, STATES.WAITING, STATES.READY];
+
+const asList = (rows) => (Array.isArray(rows) ? rows : (rows ? [rows] : []));
+
+function doctorSessionPayload(session, doctorToken, { reused = false, devices = [] } = {}) {
+  const patient = activePatientDevice(devices);
+  return {
+    sessionId: session.id,
+    session_id: session.id,
+    id: session.id,
+    status: session.status,
+    reused,
+    roomCode: session.room_code,
+    room_code: session.room_code,
+    roomCodeExpiresAt: session.room_code_expires_at,
+    expires_at: session.room_code_expires_at,
+    doctorToken,
+    doctor_token: doctorToken,
+    token: doctorToken,
+    patientRequired: session.patient_required,
+    patient_required: session.patient_required,
+    patientJoined: Boolean(patient),
+    patientReady: patient?.status === 'ready',
+  };
+}
+
+/** A fresh room code for an open session nobody is using it to join. */
+async function refreshRoomCode(session) {
+  const roomCode = generateRoomCode();
+  const roomCodeExpiresAt = getRoomCodeExpiry();
+  const { data: updated, error } = await supabaseAdmin
+    .from('consult_sessions')
+    .update({ room_code: roomCode, room_code_expires_at: roomCodeExpiresAt })
+    .eq('id', session.id)
+    .select()
+    .single();
+  if (error) throw new Error(`Failed to refresh room code: ${error.message}`);
+  return { ...session, ...(updated || {}), room_code: roomCode, room_code_expires_at: roomCodeExpiresAt };
+}
+
+/**
+ * Creates a consultation session for an appointment, or reopens the doctor's
+ * session for it that has not started recording yet. Reopening means closing
+ * and reopening the dialog keeps one room: the patient who already joined stays
+ * joined, and finished visits are never buried under empty new sessions.
+ *
+ * When forceNew is true, any unstarted open session is cancelled and a fresh
+ * session is created so the doctor can record again.
+ */
+async function createSession({ appointmentId, doctorId, patientRequired = false, languageCode = null, forceNew = false }) {
   if (!appointmentId) throw new Error('appointmentId is required');
   if (!doctorId) throw new Error('doctorId is required');
 
@@ -39,6 +89,61 @@ async function createSession({ appointmentId, doctorId, patientRequired = true, 
     const err = new Error('Not authorized: clinician does not own this appointment');
     err.status = 403;
     throw err;
+  }
+
+  if (forceNew) {
+    // When forcing a new session, cancel any lingering unstarted sessions for this appointment
+    await supabaseAdmin
+      .from('consult_sessions')
+      .update({ status: STATES.CANCELLED })
+      .eq('appointment_id', appointmentId)
+      .eq('doctor_id', doctorId)
+      .in('status', OPEN_STATES);
+  } else {
+    const { data: openSession } = await supabaseAdmin
+      .from('consult_sessions')
+      .select('*')
+      .eq('appointment_id', appointmentId)
+      .eq('doctor_id', doctorId)
+      .in('status', OPEN_STATES)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (openSession && OPEN_STATES.includes(openSession.status)) {
+      const { data: devices } = await supabaseAdmin
+        .from('session_devices')
+        .select('device, status')
+        .eq('session_id', openSession.id);
+      const deviceList = asList(devices);
+
+      let session = openSession;
+
+      // If reopening a session where patient is optional (default for doctor),
+      // update existing session's patient_required so the doctor can record alone.
+      if (!patientRequired && session.patient_required) {
+        await supabaseAdmin
+          .from('consult_sessions')
+          .update({ patient_required: false })
+          .eq('id', session.id);
+        session = { ...session, patient_required: false };
+      }
+
+      const codeExpired = !session.room_code
+        || (session.room_code_expires_at && new Date(session.room_code_expires_at) < new Date());
+      if (codeExpired && !activePatientDevice(deviceList)) {
+        session = await refreshRoomCode(session);
+      }
+
+      const doctorToken = signSessionToken({
+        sessionId: session.id,
+        device: 'doctor',
+        role: 'doctor',
+        userId: doctorId,
+      });
+      logger.info('Reopened consult session', { scope: 'consult-audio', sessionId: session.id, status: session.status });
+      return doctorSessionPayload(session, doctorToken, { reused: true, devices: deviceList });
+    }
   }
 
   const roomCode = generateRoomCode();
@@ -80,20 +185,7 @@ async function createSession({ appointmentId, doctorId, patientRequired = true, 
     userId: doctorId,
   });
 
-  return {
-    sessionId: session.id,
-    session_id: session.id,
-    id: session.id,
-    roomCode: session.room_code,
-    room_code: session.room_code,
-    roomCodeExpiresAt: session.room_code_expires_at,
-    expires_at: session.room_code_expires_at,
-    doctorToken,
-    doctor_token: doctorToken,
-    token: doctorToken,
-    patientRequired: session.patient_required,
-    patient_required: session.patient_required,
-  };
+  return doctorSessionPayload(session, doctorToken);
 }
 
 /**
@@ -131,8 +223,9 @@ async function joinSessionByRoomCode({ roomCode, patientUser, clientIp = 'unknow
     throw err;
   }
 
-  // Check state: patient cannot join an already ending/processing/draft_ready session
-  if (![STATES.CREATED, STATES.WAITING].includes(session.status)) {
+  // Check state: patients join only before recording starts. A doctor who is
+  // already ready (READY) does not lock the patient out.
+  if (!OPEN_STATES.includes(session.status)) {
     recordFailedAttempt(rateLimitKey);
     const err = new Error(`Cannot join session in '${session.status}' state`);
     err.status = 409;
@@ -154,11 +247,11 @@ async function joinSessionByRoomCode({ roomCode, patientUser, clientIp = 'unknow
       room_code: null,
       room_code_expires_at: null,
       patient_id: patientUser.id,
-      status: STATES.WAITING,
+      status: session.status === STATES.CREATED ? STATES.WAITING : session.status,
     })
     .eq('id', session.id)
     .eq('room_code', normCode)
-    .in('status', [STATES.CREATED, STATES.WAITING])
+    .in('status', OPEN_STATES)
     .select('id, status')
     .maybeSingle();
 
@@ -190,8 +283,9 @@ async function joinSessionByRoomCode({ roomCode, patientUser, clientIp = 'unknow
 
   socketService.emitSessionState(session.id, {
     sessionId: session.id,
-    status: STATES.WAITING,
+    status: updatedSession.status || STATES.WAITING,
   });
+  socketService.emitDeviceEvent(session.id, 'device_joined', 'patient');
 
   return {
     sessionId: session.id,
@@ -206,8 +300,41 @@ async function joinSessionByRoomCode({ roomCode, patientUser, clientIp = 'unknow
 /**
  * Records doctor or patient consent for a session.
  */
+/**
+ * A patient may only act in a room they are still in, before recording starts.
+ * Stops a patient who left (or was dropped when the doctor started alone) from
+ * reviving their device with an old token.
+ */
+async function assertPatientStillInRoom(sessionId) {
+  const { data: session } = await supabaseAdmin
+    .from('consult_sessions')
+    .select('id, status')
+    .eq('id', sessionId)
+    .single();
+  if (!session) throw Object.assign(new Error('Session not found'), { status: 404 });
+  if (!OPEN_STATES.includes(session.status)) {
+    throw Object.assign(new Error('This consultation has already started or ended'), {
+      status: 409,
+      code: 'ERR_SESSION_NOT_OPEN',
+    });
+  }
+  const { data: device } = await supabaseAdmin
+    .from('session_devices')
+    .select('status')
+    .eq('session_id', sessionId)
+    .eq('device', 'patient')
+    .maybeSingle();
+  if (!device || device.status === 'gone') {
+    throw Object.assign(new Error('You are no longer in this consultation room. Join again with a new code.'), {
+      status: 409,
+      code: 'ERR_NOT_IN_ROOM',
+    });
+  }
+}
+
 async function recordSessionConsent({ sessionId, role, userId, consentTextVersion }) {
   const version = consentTextVersion || config.consentTextVersion;
+  if (role === 'patient') await assertPatientStillInRoom(sessionId);
 
   const { data: consent, error } = await supabaseAdmin
     .from('session_consents')
@@ -235,6 +362,22 @@ async function recordSessionConsent({ sessionId, role, userId, consentTextVersio
  * Marks a device ready after mic and level check with its clock handshake results.
  */
 async function markDeviceReady({ sessionId, device, offsetMs = 0, rttMs = 0 }) {
+  if (device === 'patient') {
+    await assertPatientStillInRoom(sessionId);
+  } else {
+    const { data: session } = await supabaseAdmin
+      .from('consult_sessions')
+      .select('id, status')
+      .eq('id', sessionId)
+      .single();
+    if (session && !OPEN_STATES.includes(session.status)) {
+      throw Object.assign(new Error('This consultation has already started or ended'), {
+        status: 409,
+        code: 'ERR_SESSION_NOT_OPEN',
+      });
+    }
+  }
+
   const { data: updatedDevice, error } = await supabaseAdmin
     .from('session_devices')
     .upsert({
@@ -250,6 +393,8 @@ async function markDeviceReady({ sessionId, device, offsetMs = 0, rttMs = 0 }) {
   if (error) {
     throw new Error(`Failed to mark device ready: ${error.message}`);
   }
+
+  socketService.emitDeviceEvent(sessionId, 'device_ready', device);
 
   // Check if session can transition to READY
   await evaluateAndTransitionToReady(sessionId);
@@ -288,13 +433,10 @@ async function evaluateAndTransitionToReady(sessionId) {
   const doctorDevice = deviceList.find((d) => d.device === 'doctor');
   const doctorReady = doctorConsent && doctorDevice?.status === 'ready';
 
-  let patientReady = true;
-  const patientJoined = deviceList.some((d) => d.device === 'patient');
-  if (patientJoined || session.patient_required) {
-    const patientConsent = consentList.some((c) => c.role === 'patient');
-    const patientDevice = deviceList.find((d) => d.device === 'patient');
-    patientReady = patientConsent && patientDevice?.status === 'ready';
-  }
+  // The doctor never waits for a patient unless the session requires one.
+  const patientReady = session.patient_required
+    ? patientParticipates(consentList, deviceList)
+    : true;
 
   if (doctorReady && patientReady) {
     await transitionSession({
@@ -327,6 +469,35 @@ async function startConsultation({ sessionId, doctorUserId }) {
     throw err;
   }
 
+  // Ensure solo doctor can start if patient has not joined or is not ready
+  const [{ data: initialConsents }, { data: initialDevices }] = await Promise.all([
+    supabaseAdmin.from('session_consents').select('role').eq('session_id', sessionId),
+    supabaseAdmin.from('session_devices').select('device, status').eq('session_id', sessionId),
+  ]);
+  const consentList = asList(initialConsents);
+  const deviceList = asList(initialDevices);
+  const patientJoinedAndReady = patientParticipates(consentList, deviceList);
+
+  if (!patientJoinedAndReady) {
+    if (session.patient_required) {
+      await supabaseAdmin
+        .from('consult_sessions')
+        .update({ patient_required: false })
+        .eq('id', sessionId);
+      session.patient_required = false;
+    }
+
+    if (activePatientDevice(deviceList)) {
+      await supabaseAdmin
+        .from('session_devices')
+        .update({ status: 'gone' })
+        .eq('session_id', sessionId)
+        .eq('device', 'patient');
+      socketService.emitDeviceEvent(sessionId, 'device_left', 'patient');
+      logger.info('Starting without unready patient device', { scope: 'consult-audio', sessionId });
+    }
+  }
+
   // If session is still in CREATED or WAITING, evaluate if it can transition to READY first
   if ([STATES.CREATED, STATES.WAITING].includes(session.status)) {
     await evaluateAndTransitionToReady(sessionId);
@@ -347,6 +518,98 @@ async function startConsultation({ sessionId, doctorUserId }) {
   socketService.emitSessionStarted(sessionId, nowServerMs);
 
   return updatedSession;
+}
+
+/**
+ * Doctor requests a fresh room code for an open session.
+ */
+async function refreshSessionRoomCode({ sessionId, doctorUserId }) {
+  const { data: session, error } = await supabaseAdmin
+    .from('consult_sessions')
+    .select('*')
+    .eq('id', sessionId)
+    .single();
+
+  if (error || !session) {
+    const err = new Error('Session not found');
+    err.status = 404;
+    throw err;
+  }
+
+  if (doctorUserId && session.doctor_id !== doctorUserId) {
+    const err = new Error('Not authorized: only the session doctor can refresh room code');
+    err.status = 403;
+    throw err;
+  }
+
+  if (!OPEN_STATES.includes(session.status)) {
+    const err = new Error(`Cannot refresh room code for session in state '${session.status}'`);
+    err.status = 409;
+    throw err;
+  }
+
+  const refreshed = await refreshRoomCode(session);
+
+  return {
+    sessionId: refreshed.id,
+    session_id: refreshed.id,
+    id: refreshed.id,
+    roomCode: refreshed.room_code,
+    room_code: refreshed.room_code,
+    roomCodeExpiresAt: refreshed.room_code_expires_at,
+    expires_at: refreshed.room_code_expires_at,
+    status: refreshed.status,
+  };
+}
+
+/**
+ * Patient leaves the room before recording starts.
+ *
+ * Their device is marked gone and their consent withdrawn, so the doctor is
+ * not left waiting on them and recording never uses that consent. The room
+ * gets a new single-use code, so the patient (or the right patient, if the
+ * wrong one joined) can come back in.
+ */
+async function leaveSession({ sessionId, userId }) {
+  const { data: session } = await supabaseAdmin
+    .from('consult_sessions')
+    .select('*')
+    .eq('id', sessionId)
+    .single();
+
+  if (!session) throw Object.assign(new Error('Session not found'), { status: 404 });
+  if (userId && session.patient_id && session.patient_id !== userId) {
+    throw Object.assign(new Error('Not authorized for this consultation'), { status: 403 });
+  }
+  if (!OPEN_STATES.includes(session.status)) {
+    throw Object.assign(new Error('This consultation has already started or ended'), {
+      status: 409,
+      code: 'ERR_SESSION_NOT_OPEN',
+    });
+  }
+
+  await supabaseAdmin
+    .from('session_devices')
+    .update({ status: 'gone' })
+    .eq('session_id', sessionId)
+    .eq('device', 'patient');
+  await supabaseAdmin
+    .from('session_consents')
+    .delete()
+    .eq('session_id', sessionId)
+    .eq('role', 'patient');
+
+  const roomPatch = { room_code: generateRoomCode(), room_code_expires_at: getRoomCodeExpiry() };
+  if (session.status === STATES.WAITING) {
+    // Nobody is in the room but the doctor any more.
+    await transitionSession({ sessionId, toState: STATES.CREATED, patch: roomPatch, socketEmitter: socketService });
+  } else {
+    await supabaseAdmin.from('consult_sessions').update(roomPatch).eq('id', sessionId);
+  }
+
+  socketService.emitDeviceEvent(sessionId, 'device_left', 'patient');
+  logger.info('Patient left consult room', { scope: 'consult-audio', sessionId });
+  return { ok: true };
 }
 
 /**
@@ -446,26 +709,52 @@ async function getSessionState(sessionId, callerUserId) {
     .eq('session_id', sessionId);
   if (gapError) throw Object.assign(new Error('ERR_GAP_READ'), { status: 503 });
 
+  // Only the doctor's own view carries the room code to show the patient.
+  const isDoctor = callerUserId === session.doctor_id;
+  const patientDevice = activePatientDevice(asList(devices));
+
+  // If the session is open, caller is doctor, no patient has joined, and room code is missing or expired,
+  // auto-refresh the room code so a valid code is always available.
+  let currentSession = session;
+  if (isDoctor && OPEN_STATES.includes(session.status) && !patientDevice) {
+    const codeMissingOrExpired = !session.room_code
+      || (session.room_code_expires_at && new Date(session.room_code_expires_at) < new Date());
+    if (codeMissingOrExpired) {
+      try {
+        currentSession = await refreshRoomCode(session);
+      } catch (refreshErr) {
+        logger.warn('Failed to auto-refresh room code in getSessionState', { error: refreshErr.message });
+      }
+    }
+  }
+
   return {
     session: {
-      id: session.id,
-      sessionId: session.id,
-      session_id: session.id,
-      status: session.status,
-      patientRequired: session.patient_required,
-      patient_required: session.patient_required,
-      languageCode: session.language_code,
-      language_code: session.language_code,
-      startedAt: session.started_at,
-      started_at: session.started_at,
-      endedAt: session.ended_at,
-      ended_at: session.ended_at,
-      endDeadlineAt: session.end_deadline_at,
-      end_deadline_at: session.end_deadline_at,
-      incompleteSides: session.incomplete_sides || [],
-      incomplete_sides: session.incomplete_sides || [],
-      draftOutdated: session.draft_outdated || false,
-      draft_outdated: session.draft_outdated || false,
+      id: currentSession.id,
+      sessionId: currentSession.id,
+      session_id: currentSession.id,
+      status: currentSession.status,
+      ...(isDoctor && {
+        roomCode: currentSession.room_code,
+        room_code: currentSession.room_code,
+        roomCodeExpiresAt: currentSession.room_code_expires_at,
+      }),
+      patientJoined: Boolean(patientDevice),
+      patientReady: patientDevice?.status === 'ready',
+      patientRequired: currentSession.patient_required,
+      patient_required: currentSession.patient_required,
+      languageCode: currentSession.language_code,
+      language_code: currentSession.language_code,
+      startedAt: currentSession.started_at,
+      started_at: currentSession.started_at,
+      endedAt: currentSession.ended_at,
+      ended_at: currentSession.ended_at,
+      endDeadlineAt: currentSession.end_deadline_at,
+      end_deadline_at: currentSession.end_deadline_at,
+      incompleteSides: currentSession.incomplete_sides || [],
+      incomplete_sides: currentSession.incomplete_sides || [],
+      draftOutdated: currentSession.draft_outdated || false,
+      draft_outdated: currentSession.draft_outdated || false,
     },
     devices: (devices || []).map((d) => ({
       device: d.device,
@@ -629,12 +918,38 @@ async function getLatestSessionByAppointment(appointmentId, doctorUserId = null)
   };
 }
 
+/**
+ * Throws 404/403 unless the user is this session's doctor (or, when
+ * doctorOnly is false, its patient). For routes reached with a normal
+ * login token, which is not bound to a session the way scoped tokens are.
+ */
+async function assertSessionParticipant(sessionId, userId, { doctorOnly = false } = {}) {
+  const { data: session, error } = await supabaseAdmin
+    .from('consult_sessions')
+    .select('id, doctor_id, patient_id')
+    .eq('id', sessionId)
+    .maybeSingle();
+
+  if (error || !session) {
+    throw Object.assign(new Error('Session not found'), { status: 404 });
+  }
+
+  const allowed = doctorOnly ? [session.doctor_id] : [session.doctor_id, session.patient_id];
+  if (!userId || !allowed.includes(userId)) {
+    throw Object.assign(new Error('Not authorized for this consultation'), { status: 403 });
+  }
+  return session;
+}
+
 module.exports = {
+  assertSessionParticipant,
   createSession,
+  refreshSessionRoomCode,
   joinSessionByRoomCode,
   recordSessionConsent,
   markDeviceReady,
   startConsultation,
+  leaveSession,
   endConsultation,
   recordCaptureStarted,
   getSessionState,

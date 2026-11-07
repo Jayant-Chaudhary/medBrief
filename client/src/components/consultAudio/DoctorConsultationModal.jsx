@@ -31,9 +31,19 @@ import {
   endConsultation,
   connectConsultationSocket,
   getConsultationTranscript,
+  getConsultationState,
   getSessionByAppointment,
   testSpeechToText,
+  refreshConsultRoomCode,
+
 } from '../../services/consultAudio/consultClient.service.js';
+
+
+// States after recording has started: reopening shows that visit's transcript
+// rather than creating a new session that would hide it.
+const STARTED_SESSION_STATES = ['recording', 'ending', 'processing', 'draft_ready'];
+// How often the lobby re-reads patient presence over HTTP (socket events are only hints).
+const LOBBY_POLL_MS = 3000;
 import { getApiBaseUrl } from '../../services/apiClient.js';
 import { WebRecorder } from '../../services/consultAudio/webRecorder.js';
 
@@ -41,10 +51,11 @@ export function DoctorConsultationModal({
   isOpen,
   onClose,
   appointment,
-  initialTab = 'RECORD', // 'RECORD' | 'TRANSCRIPT'
+  initialTab = 'RECORD', // 'RECORD' | 'TRANSCRIPT' | 'NOTES'
   onConsultationFinished,
+  onInsertNotes,
 }) {
-  const [activeTab, setActiveTab] = useState(initialTab); // 'RECORD' | 'TRANSCRIPT'
+  const [activeTab, setActiveTab] = useState(initialTab); // 'RECORD' | 'TRANSCRIPT' | 'NOTES'
   const [step, setStep] = useState('LOBBY'); // LOBBY | CHECK | RECORDING | ENDING | DONE
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -60,6 +71,13 @@ export function DoctorConsultationModal({
   const [transcriptData, setTranscriptData] = useState(null);
   const [loadingTranscript, setLoadingTranscript] = useState(false);
   const [copiedTranscript, setCopiedTranscript] = useState(false);
+
+  // Draft notes state
+  const [draftData, setDraftData] = useState(null);
+  const [loadingDraft, setLoadingDraft] = useState(false);
+  const [draftError, setDraftError] = useState(null);
+  const [approvingDraft, setApprovingDraft] = useState(false);
+  const [copiedDraftText, setCopiedDraftText] = useState(false);
 
   const [micLevelDbfs, setMicLevelDbfs] = useState(-100);
   const [offsetInfo, setOffsetInfo] = useState(null);
@@ -147,6 +165,80 @@ export function DoctorConsultationModal({
     }
   }, [session]);
 
+  // Load AI notes draft data
+  const loadDraft = useCallback(async (sessId, pollAttempts = 15) => {
+    const idToUse = sessId || getSessionId();
+    if (!idToUse) return;
+
+    setLoadingDraft(true);
+    setDraftError(null);
+
+    let attempts = 0;
+    const fetchLoop = async () => {
+      attempts += 1;
+      try {
+        const found = await getConsultationDraft({ sessionId: idToUse });
+        if (found) {
+          setDraftData(found);
+          setLoadingDraft(false);
+          return found;
+        }
+      } catch (err) {
+        if (err?.status !== 404) {
+          console.warn('[DoctorConsultationModal] Draft fetch attempt error:', err.message);
+        }
+      }
+
+      if (attempts < pollAttempts) {
+        setTimeout(fetchLoop, 3000);
+      } else {
+        setLoadingDraft(false);
+      }
+    };
+
+    fetchLoop();
+  }, [session]);
+
+  // Approve draft and insert into clinical notes
+  const handleApproveDraft = async () => {
+    const idToUse = getSessionId();
+    if (!idToUse || !draftData) return;
+    setApprovingDraft(true);
+    setDraftError(null);
+    try {
+      await reviewConsultationDraft({
+        sessionId: idToUse,
+        draftId: draftData.id,
+        action: 'approve',
+      });
+      const notesText = draftToNotesText(draftData.doctor_notes);
+      if (onInsertNotes) {
+        await onInsertNotes(notesText);
+      }
+      onClose();
+    } catch (err) {
+      setDraftError(err.message || 'Could not approve and insert draft');
+    } finally {
+      setApprovingDraft(false);
+    }
+  };
+
+  // Trigger manual generation of draft
+  const handleGenerateDraft = async () => {
+    const idToUse = getSessionId();
+    if (!idToUse) return;
+    setLoadingDraft(true);
+    setDraftError(null);
+    try {
+      const created = await generateConsultationDraft({ sessionId: idToUse });
+      setDraftData(created);
+    } catch (err) {
+      setDraftError('Could not generate notes draft. Please try again.');
+    } finally {
+      setLoadingDraft(false);
+    }
+  };
+
   // Initialize or fetch session when modal opens
   useEffect(() => {
     const targetAppointmentId = appointment?.appointmentId || appointment?.id || appointment?.appointment_id;
@@ -170,19 +262,22 @@ export function DoctorConsultationModal({
     getSessionByAppointment(targetAppointmentId)
       .then((existingSession) => {
         if (!mounted) return;
-        if (existingSession && (initialTab === 'TRANSCRIPT' || existingSession.session_state === 'ended')) {
+        const alreadyStarted = existingSession && STARTED_SESSION_STATES.includes(existingSession.status);
+        if (existingSession && (initialTab === 'TRANSCRIPT' || alreadyStarted)) {
           setSession(existingSession);
           loadTranscript(existingSession.id || existingSession.sessionId);
-          if (initialTab === 'TRANSCRIPT' || existingSession.session_state === 'ended') {
-            setActiveTab('TRANSCRIPT');
-          }
+          setActiveTab('TRANSCRIPT');
+          if (alreadyStarted) setStep('DONE');
           return;
         }
 
         // Otherwise create / fetch current active consultation session
-        return createConsultSession(targetAppointmentId).then((data) => {
+        return createConsultSession(targetAppointmentId, { patientRequired: false }).then((data) => {
           if (!mounted) return;
           setSession(data);
+          // A reopened session keeps the patient who already joined.
+          setPatientJoined(Boolean(data?.patientJoined));
+          setPatientReady(Boolean(data?.patientReady));
           const token = data?.doctorToken || data?.doctor_token || data?.token;
           const sessId = data?.sessionId || data?.session_id || data?.id;
 
@@ -195,7 +290,12 @@ export function DoctorConsultationModal({
                 setPatientJoined(true);
               }
               if (eventName === 'device_ready' && payload.device === 'patient') {
+                setPatientJoined(true);
                 setPatientReady(true);
+              }
+              if (eventName === 'device_left' && payload.device === 'patient') {
+                setPatientJoined(false);
+                setPatientReady(false);
               }
               if (eventName === 'end_requested') {
                 handleStopConsultation();
@@ -231,6 +331,38 @@ export function DoctorConsultationModal({
       document.title = originalTitleRef.current;
     };
   }, [isOpen, appointment?.appointmentId, appointment?.id, appointment?.appointment_id, initialTab]);
+
+  // Lobby: re-read patient presence and the current room code over HTTP, so a
+  // patient joining, finishing setup or leaving shows even without the socket.
+  useEffect(() => {
+    const sessId = getSessionId();
+    const token = getDoctorToken();
+    if (!isOpen || !sessId || !token || !['LOBBY', 'CHECK'].includes(step)) return undefined;
+
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const state = await getConsultationState({ sessionId: sessId, token });
+        if (cancelled || !state?.session) return;
+        setPatientJoined(Boolean(state.session.patientJoined));
+        setPatientReady(Boolean(state.session.patientReady));
+        const code = state.session.roomCode;
+        if (code !== undefined) {
+          setSession((prev) => (prev && (prev.roomCode !== code)
+            ? { ...prev, roomCode: code, room_code: code }
+            : prev));
+        }
+      } catch {
+        // Transient: the next poll retries.
+      }
+    };
+    refresh();
+    const timer = setInterval(refresh, LOBBY_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [isOpen, step, session?.sessionId, session?.session_id, session?.id]);
 
   // Polling hook for transcript processing progress
   useEffect(() => {
@@ -279,13 +411,117 @@ export function DoctorConsultationModal({
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
+  // Refresh Room Code Helper
+  const handleRefreshRoomCode = async () => {
+    const sessionId = getSessionId();
+    const token = getDoctorToken();
+    if (!sessionId) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await refreshConsultRoomCode({ sessionId, token });
+      const newCode = res?.roomCode || res?.room_code;
+      if (newCode) {
+        setSession((prev) => (prev ? { ...prev, roomCode: newCode, room_code: newCode } : prev));
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to refresh room code');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Start a fresh new consultation session for this appointment (Record Again)
+  const handleRecordAgain = async () => {
+    const targetAppointmentId = appointment?.appointmentId || appointment?.id || appointment?.appointment_id;
+    if (!targetAppointmentId) {
+      setError('No appointment specified for consultation session.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (recorderRef.current) {
+      try {
+        await recorderRef.current.cleanup();
+      } catch {}
+      recorderRef.current = null;
+    }
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+
+    try {
+      const data = await createConsultSession(targetAppointmentId, { forceNew: true, patientRequired: false });
+      setSession(data);
+      setPatientJoined(Boolean(data?.patientJoined));
+      setPatientReady(Boolean(data?.patientReady));
+      setDoctorReadyState(false);
+      setConsentAccepted(false);
+      setTranscriptData(null);
+      setElapsedSec(0);
+      setChunksUploaded(0);
+      setRemainingQueue(0);
+      setMicLevelDbfs(-100);
+      setOffsetInfo(null);
+      setStep('LOBBY');
+      setActiveTab('RECORD');
+
+      const token = data?.doctorToken || data?.doctor_token || data?.token;
+      const sessId = data?.sessionId || data?.session_id || data?.id;
+
+      const socket = connectConsultationSocket({
+        sessionId: sessId,
+        token,
+        onEvent: (eventName, payload) => {
+          if (eventName === 'device_joined' && payload.device === 'patient') {
+            setPatientJoined(true);
+          }
+          if (eventName === 'device_ready' && payload.device === 'patient') {
+            setPatientJoined(true);
+            setPatientReady(true);
+          }
+          if (eventName === 'device_left' && payload.device === 'patient') {
+            setPatientJoined(false);
+            setPatientReady(false);
+          }
+          if (eventName === 'end_requested') {
+            handleStopConsultation();
+          }
+        },
+      });
+      socketRef.current = socket;
+    } catch (err) {
+      setError(err.message || 'Failed to start a new consultation session');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Start Mic Level Check & Clock Handshake
   const handleProceedToMicCheck = async () => {
     const sessionId = getSessionId();
     const token = getDoctorToken();
+    const roomCode = getRoomCode();
 
     if (!sessionId || !token) {
       setError('Consultation session is still initializing. Please wait a moment or reopen the dialog.');
+      return;
+    }
+
+    if (!roomCode || roomCode === '------') {
+      setError('A valid patient room code is required before proceeding. Please generate or refresh the room code.');
       return;
     }
 
@@ -450,7 +686,8 @@ export function DoctorConsultationModal({
       }
 
       setStep('DONE');
-      setActiveTab('TRANSCRIPT');
+      setActiveTab('NOTES');
+      loadDraft(sessionId);
       loadTranscript(sessionId, token);
 
       if (onConsultationFinished) {
@@ -532,7 +769,7 @@ export function DoctorConsultationModal({
       isOpen={isOpen}
       onClose={step === 'RECORDING' ? () => {} : onClose}
       title={step === 'RECORDING' ? 'Consultation In Progress' : 'Consultation Audio & Transcript'}
-      className={activeTab === 'TRANSCRIPT' ? 'max-w-2xl' : 'max-w-xl'}
+      className={activeTab === 'TRANSCRIPT' || activeTab === 'NOTES' ? 'max-w-2xl' : 'max-w-xl'}
     >
       <div className="space-y-4">
         {/* Navigation Tabs (Available when not actively recording) */}
@@ -569,6 +806,29 @@ export function DoctorConsultationModal({
               {transcriptData?.segments?.length > 0 && (
                 <span className="px-1.5 py-0.2 bg-white/20 text-white rounded-full text-[10px]">
                   {transcriptData.segments.length}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              data-assistant-effect="free"
+              onClick={() => {
+                setActiveTab('NOTES');
+                loadDraft();
+              }}
+              className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
+                activeTab === 'NOTES'
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'text-ink-2 hover:bg-subcanvas'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Clinical Notes Draft
+              {draftData && (
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                  draftData.status === 'approved' ? 'bg-emerald-500/30 text-emerald-100' : 'bg-indigo-500/30 text-indigo-100'
+                }`}>
+                  {draftData.status === 'approved' ? 'Approved' : 'Ready'}
                 </span>
               )}
             </button>
@@ -618,18 +878,34 @@ export function DoctorConsultationModal({
                     <span className="font-mono text-3xl font-extrabold tracking-widest text-ink">
                       {getRoomCode()}
                     </span>
-                    <button
-                      type="button"
-                      onClick={copyRoomCode}
-className="p-2 bg-surface hover:bg-subcanvas border border-line rounded-lg shadow-sm text-ink-2 transition"
-                      data-assistant-effect="free"
-                      title="Copy room code"
-                    >
-                      {copiedCode ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                    </button>
+                    {getRoomCode() !== '------' ? (
+                      <button
+                        type="button"
+                        onClick={copyRoomCode}
+                        className="p-2 bg-surface hover:bg-subcanvas border border-line rounded-lg shadow-sm text-ink-2 transition"
+                        data-assistant-effect="free"
+                        title="Copy room code"
+                      >
+                        {copiedCode ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleRefreshRoomCode}
+                        disabled={loading}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-xs font-semibold rounded-lg shadow-sm hover:bg-primary-dark transition disabled:opacity-50"
+                        data-assistant-effect="free"
+                        title="Generate a new room code"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                        Generate Code
+                      </button>
+                    )}
                   </div>
                   <p className="text-xs text-ink-3 mt-2 px-6">
-                    Ask the patient to enter this 6-character code on their phone to connect their microphone.
+                    {getRoomCode() !== '------'
+                      ? 'Ask the patient to enter this 6-character code on their phone to connect their microphone.'
+                      : 'No active room code. Click "Generate Code" above to create a patient connection code.'}
                   </p>
                 </div>
 
@@ -659,7 +935,7 @@ className="p-2 bg-surface hover:bg-subcanvas border border-line rounded-lg shado
                     type="button"
                     data-assistant-effect="never"
                     onClick={handleProceedToMicCheck}
-                    disabled={loading || !session}
+                    disabled={loading || !session || !getRoomCode() || getRoomCode() === '------'}
                     className="px-5 py-2 bg-primary text-white font-medium rounded-lg text-sm hover:bg-primary-dark transition flex items-center gap-2 shadow-sm disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
@@ -819,9 +1095,14 @@ className="p-2 bg-surface hover:bg-subcanvas border border-line rounded-lg shado
                   </div>
                   <div className={`p-3 border rounded-xl flex items-center justify-between text-xs ${patientReady ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800/40 dark:text-emerald-300' : 'bg-subcanvas border-line text-ink-3'}`}>
                     <span className="font-medium">Patient Device</span>
-                    {patientReady ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <span className="text-slate-400 font-medium">Optional / Joined</span>}
+                    {patientReady
+                      ? <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      : <span className="text-slate-400 font-medium">{patientJoined ? 'Joined, setting up' : 'Not joined (optional)'}</span>}
                   </div>
                 </div>
+                <p className="text-xs text-ink-3">
+                  You can start without the patient&apos;s phone. A patient who has not finished setup on their phone is not recorded from their device.
+                </p>
 
                 <label className="flex items-start gap-3 p-3.5 bg-subcanvas border border-line rounded-xl cursor-pointer select-none">
                   <input
@@ -943,7 +1224,28 @@ className="p-2 bg-surface hover:bg-subcanvas border border-line rounded-lg shado
                 <p className="text-xs text-ink-3 max-w-sm mx-auto">
                   All audio chunks have been captured and queued for background transcription.
                 </p>
-                <div className="pt-3 flex justify-center gap-3">
+                <div className="pt-3 flex flex-wrap justify-center gap-3">
+                  <button
+                    type="button"
+                    data-assistant-effect="never"
+                    onClick={handleRecordAgain}
+                    disabled={loading}
+                    className="px-5 py-2 bg-rose-600 text-white font-medium rounded-lg text-sm hover:bg-rose-700 transition flex items-center gap-2 shadow-sm disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    Record Again (New Session)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('NOTES');
+                      loadDraft();
+                    }}
+                    className="px-5 py-2 bg-indigo-600 text-white font-medium rounded-lg text-sm hover:bg-indigo-700 transition flex items-center gap-2 shadow-sm"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Review Clinical Notes
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -1025,6 +1327,17 @@ className="p-1.5 hover:bg-subcanvas border border-line rounded-lg text-ink-2 tex
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Download</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-assistant-effect="never"
+                    onClick={handleRecordAgain}
+                    disabled={loading}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition shadow-xs disabled:opacity-50"
+                    title="Start a new consultation recording for this visit"
+                  >
+                    {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mic className="w-3.5 h-3.5" />}
+                    <span>Record Again</span>
                   </button>
                 </div>
               </div>
@@ -1136,6 +1449,176 @@ className="p-1.5 hover:bg-subcanvas border border-line rounded-lg text-ink-2 tex
                 Done
               </button>
             </div>
+          </div>
+        )}
+
+        {/* TAB 3: CLINICAL NOTES DRAFT VIEW */}
+        {activeTab === 'NOTES' && (
+          <div className="space-y-4">
+            {loadingDraft && !draftData ? (
+              <div className="py-12 px-6 text-center border-2 border-dashed border-indigo-200 dark:border-indigo-900/50 rounded-xl space-y-3 bg-indigo-50/40 dark:bg-indigo-950/20">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-600 dark:text-indigo-400" />
+                <p className="text-sm font-semibold text-ink">Synthesizing Clinical Notes with Gemini AI…</p>
+                <p className="text-xs text-ink-3 max-w-sm mx-auto leading-relaxed">
+                  Analyzing speech segments to generate structured chief complaint, vitals observed, clinical assessment, and follow-up plan.
+                </p>
+              </div>
+            ) : draftData ? (
+              <div className="space-y-3">
+                {/* Status banner */}
+                <div className="flex items-center justify-between p-3 rounded-xl bg-indigo-50/70 border border-indigo-200 dark:bg-indigo-950/40 dark:border-indigo-900/60">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <span className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">
+                      AI Consultation Draft
+                    </span>
+                    {draftData.model_version && draftData.model_version !== 'not-called' && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-300">
+                        {draftData.model_version}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const txt = draftToNotesText(draftData.doctor_notes);
+                        if (txt) {
+                          navigator.clipboard.writeText(txt);
+                          setCopiedDraftText(true);
+                          setTimeout(() => setCopiedDraftText(false), 2000);
+                        }
+                      }}
+                      className="p-1.5 hover:bg-subcanvas border border-line rounded-lg text-ink-2 text-xs transition flex items-center gap-1"
+                      title="Copy notes draft"
+                    >
+                      {copiedDraftText ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedDraftText ? 'Copied' : 'Copy'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleGenerateDraft}
+                      disabled={loadingDraft}
+                      className="p-1.5 hover:bg-subcanvas border border-line rounded-lg text-ink-2 text-xs transition"
+                      title="Regenerate draft"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${loadingDraft ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Draft content or no-speech warning */}
+                {draftData.review_reasons?.includes('no_speech_captured') || !draftToNotesText(draftData.doctor_notes) ? (
+                  <div className="py-8 px-6 text-center border-2 border-dashed border-amber-200 dark:border-amber-900/50 rounded-xl space-y-2 bg-amber-50/40 dark:bg-amber-950/20">
+                    <AlertCircle className="w-7 h-7 mx-auto text-amber-600 dark:text-amber-400" />
+                    <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">No Speech Detected in Consultation</p>
+                    <p className="text-xs text-amber-800 dark:text-amber-300 max-w-sm mx-auto leading-relaxed">
+                      The audio recording captured no dialogue (the microphone was silent or muted), so Gemini was not invoked. You can record again with a fresh session.
+                    </p>
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={handleRecordAgain}
+                        className="px-4 py-2 bg-rose-600 text-white font-medium rounded-lg text-xs hover:bg-rose-700 transition inline-flex items-center gap-1.5 shadow-sm"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Record Again (New Session)
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="max-h-[380px] overflow-y-auto space-y-3 pr-1">
+                    {/* Chief Complaint */}
+                    {draftData.doctor_notes?.chief_complaint && (
+                      <div className="p-3 bg-surface border border-line rounded-xl space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Chief Complaint</span>
+                        <p className="text-xs text-ink leading-relaxed">{draftData.doctor_notes.chief_complaint}</p>
+                      </div>
+                    )}
+                    {/* Vitals Observed */}
+                    {draftData.doctor_notes?.vitals_observed && (
+                      <div className="p-3 bg-surface border border-line rounded-xl space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Vitals Observed</span>
+                        <p className="text-xs text-ink leading-relaxed">{draftData.doctor_notes.vitals_observed}</p>
+                      </div>
+                    )}
+                    {/* Assessment */}
+                    {draftData.doctor_notes?.assessment && (
+                      <div className="p-3 bg-surface border border-line rounded-xl space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Assessment</span>
+                        <p className="text-xs text-ink leading-relaxed">{draftData.doctor_notes.assessment}</p>
+                      </div>
+                    )}
+                    {/* Plan & Recommendations */}
+                    {draftData.doctor_notes?.plan_and_recommendations?.length > 0 && (
+                      <div className="p-3 bg-surface border border-line rounded-xl space-y-1.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Plan & Recommendations</span>
+                        <ul className="space-y-1 text-xs text-ink">
+                          {draftData.doctor_notes.plan_and_recommendations.map((rec, i) => (
+                            <li key={i} className="flex items-start gap-1.5">
+                              <span className="text-primary font-bold">•</span>
+                              <span>{rec.recommendation}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {draftError && <p className="text-xs text-rose-600">{draftError}</p>}
+
+                {/* Bottom Actions */}
+                <div className="pt-2 flex justify-between items-center border-t border-line">
+                  <button
+                    type="button"
+                    onClick={handleRecordAgain}
+                    disabled={loading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Record Again
+                  </button>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="px-4 py-2 border border-line rounded-lg text-xs text-ink-2 hover:bg-subcanvas transition"
+                    >
+                      Close
+                    </button>
+                    {draftToNotesText(draftData?.doctor_notes) && (
+                      <button
+                        type="button"
+                        onClick={handleApproveDraft}
+                        disabled={approvingDraft}
+                        className="px-4 py-2 bg-primary hover:bg-primary-dark text-white text-xs font-semibold rounded-lg shadow-sm transition flex items-center gap-1.5 disabled:opacity-60"
+                      >
+                        {approvingDraft ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                        Approve & Insert into Notes
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="py-12 px-6 text-center border-2 border-dashed border-line rounded-xl space-y-2">
+                <FileText className="w-8 h-8 mx-auto text-ink-3 opacity-60" />
+                <p className="text-xs font-semibold text-ink">No Notes Draft Available</p>
+                <p className="text-[11px] text-ink-3 max-w-sm mx-auto">
+                  Click "Generate Notes Draft" to synthesize notes from the recorded dialogue.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleGenerateDraft}
+                  disabled={loadingDraft}
+                  className="mt-2 px-4 py-2 bg-primary text-white text-xs font-semibold rounded-lg shadow-sm"
+                >
+                  Generate Notes Draft
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
