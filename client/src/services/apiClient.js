@@ -7,8 +7,10 @@ export function getApiBaseUrl() {
     if (host !== 'localhost' && host !== '127.0.0.1') {
       try {
         const parsed = new URL(envUrl);
-        parsed.hostname = host;
-        return parsed.origin;
+        if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+          parsed.hostname = host;
+          return parsed.origin;
+        }
       } catch {
         return `http://${host}:4000`;
       }
